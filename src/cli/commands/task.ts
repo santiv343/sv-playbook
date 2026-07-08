@@ -15,6 +15,7 @@ import {
   movePacket,
   notePacket,
   recoverPacket,
+  releaseLease,
   startPacket,
   takeoverPacket,
 } from '../../tasks/service.js';
@@ -180,6 +181,17 @@ function handleTakeover(args: string[], io: Io): number {
   });
 }
 
+function handleRelease(args: string[], io: Io): number {
+  const [packetId] = args;
+  if (args.length !== 1 || packetId === undefined) throw new UsageError('release requires <ID>');
+  return withStore((store) => {
+    const sessionId = ensureSession(store, process.cwd());
+    releaseLease(store, sessionId, packetId);
+    io.out(`released ${packetId}`);
+    return EXIT.OK;
+  });
+}
+
 function handleNote(args: string[], io: Io): number {
   const [packetId, ...parts] = args;
   if (packetId === undefined || parts.length === 0) throw new UsageError('note requires <ID> <text...>');
@@ -228,6 +240,10 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   [EVENT_TAKEOVER, {
     usage: 'sv-playbook task takeover <ID> [--force]',
     run: handleTakeover,
+  }],
+  ['release', {
+    usage: 'sv-playbook task release <ID>',
+    run: (rest, io) => handleRelease(rest, io),
   }],
   [EVENT_NOTE, {
     usage: 'sv-playbook task note <ID> <text...>',

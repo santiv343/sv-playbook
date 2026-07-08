@@ -12,6 +12,7 @@ import {
   movePacket,
   listPackets,
   leaseOf,
+  releaseLease,
   overlaps,
   rebuildFromFiles,
   refreshHeartbeat,
@@ -184,6 +185,26 @@ test('ready demotes to draft and review rejection releases the packet', async ()
   const wt2 = await mkdtemp(join(tmpdir(), 'svp-wt2-'));
   const s2 = ensureSession(store, wt2);
   startPacket(store, s2, wt2, 'F1-001');
+});
+
+test('demotion and rejection release the lease; release frees an own lease', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('FLOW-LEASE-001'), 'a');
+  const session = ensureSession(store, root);
+  movePacket(store, undefined, 'FLOW-LEASE-001', 'ready');
+  startPacket(store, session, root, 'FLOW-LEASE-001');
+
+  movePacket(store, session, 'FLOW-LEASE-001', 'blocked');
+  assert.ok(leaseOf(store, 'FLOW-LEASE-001') !== undefined);
+  movePacket(store, session, 'FLOW-LEASE-001', 'ready');
+  assert.equal(leaseOf(store, 'FLOW-LEASE-001'), undefined);
+
+  startPacket(store, session, root, 'FLOW-LEASE-001');
+  releaseLease(store, session, 'FLOW-LEASE-001');
+  assert.equal(leaseOf(store, 'FLOW-LEASE-001'), undefined);
+  assert.throws(() => {
+    releaseLease(store, session, 'FLOW-LEASE-001');
+  }, /no lease/);
 });
 
 test('overlaps detects overlapping globs', () => {
