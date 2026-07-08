@@ -1,0 +1,280 @@
+# sv-playbook — Design Specification
+
+- **Date:** 2026-07-07
+- **Status:** Approved design, pre-implementation
+- **Tier:** TIER-3 (public, portfolio flagship) — with ruthlessly minimal v1 scope as the counterweight
+- **License:** MIT
+- **Provenance:** Distilled from the Aurora project post-mortem (81 task packets, 733 commits, 5 remediation waves) and the retirement of two prior methodology attempts (sv-forge, agentic-workflow-toolkit).
+
+## 1. Thesis
+
+sv-playbook is an end-to-end methodology for building software with AI agents — from raw idea to finished product — packaged so that any agent, on any harness, driving any model, can execute it with consistent quality.
+
+It rests on one empirical finding from the Aurora project: **everything that worked was mechanized; everything that failed was prose.** Agents (especially cheap models) violate written rules but cannot violate an exit code. Therefore the playbook is two layers with a hard boundary:
+
+- **The constitution** — markdown process documents, templates, and contracts. Gives capable models judgment and context.
+- **The police** — a CLI that verifies, scaffolds, and tracks state. Gives cheap models a floor. It verifies; it never decides.
+
+Every CLI gate cites the ID of the written rule it enforces. A rule with no executable gate is explicitly tagged `[criterion]` (advisory) instead of `[gate]` (blocking).
+
+## 2. Goals
+
+- G1. A standard, repeatable procedure from "I have an idea" to "the product is finished," with explicit phase gates.
+- G2. Agent-agnostic: any harness, any model tier. All agent interaction happens through files and shell commands.
+- G3. Project-agnostic: no assumed language, stack, or hosting. Stack presets are optional plugins, not core.
+- G4. Zero-ambiguity handoffs: an agent picks up a task packet and executes it exactly, or stops with evidence.
+- G5. Adoptable mid-flight: works on existing messy projects (`adopt`), not only greenfield (`init`).
+- G6. Deterministic validation wherever possible (PRINCIPLE-001).
+- G7. Human effort concentrated where it matters: decisions and review, never bookkeeping.
+
+## 3. Non-goals
+
+- NG1. Not a general project-management SaaS. Single-user, local-first, one repo per project.
+- NG2. Not an agent runtime or orchestrator. It does not spawn, schedule, or supervise agent processes; harnesses do that. It coordinates through state.
+- NG3. Not an LLM product. The CLI contains no model calls (the sv-forge lesson).
+- NG4. No hard kill of agents. Control is cooperative (pause flags + lease revocation at gate points); hard kill is per-harness territory.
+- NG5. v1 does not include: the `serve` web viewer, the MCP wrapper, multi-machine sync, or a custom memory implementation.
+
+## 4. Principles
+
+- **PRINCIPLE-001 — Determinism first.** If something can be validated deterministically, it MUST be. Every rule is `[gate]` or justified `[criterion]`. Every agent claim is backed by literal command output. Every requirement (`REQ-xxx`) maps to at least one executable acceptance test, with ID traceability.
+- **PRINCIPLE-002 — Spec-driven above, test-driven below.** The wizard → dossier → packets pipeline is SDD. Inside a packet, TDD with RED-first evidence (failing output committed before implementation) is the anti-hallucination gate. Test quality is a mandatory human-review item (anti "TDD theater").
+- **PRINCIPLE-003 — Nothing important lives only in a memory tool.** Committed files are the source of truth. Memory systems (engram or others) are optional derived indexes; losing them loses nothing.
+- **PRINCIPLE-004 — One source, N mirrors.** Canonical agent instructions are generated from one source; harness-specific files (CLAUDE.md, .cursorrules, etc.) are emitted mirrors. `check` fails on drift.
+- **PRINCIPLE-005 — Complexity budget is declared before code.** Every project declares a tier in its foundation document. Architecture ambition beyond the tier is a gap, not a virtue.
+- **PRINCIPLE-006 — Stopping is success.** An agent that halts with evidence at a stop condition is the system working. Scope-widening, fabricated green, and invented evidence are the failure modes the gates exist to prevent.
+- **PRINCIPLE-007 — Nothing dies without a tombstone.** Projects freeze or die via checklist: clean worktrees, closed packets, a README tombstone (frozen date, state, revival pointer).
+- **PRINCIPLE-008 — The methodology is not a second product.** Process tooling grows only when a real project demonstrates the need (the anti-sv-forge rule). v1 must be used on a real project before v2 work starts.
+
+## 5. The process
+
+Four phases plus a change bridge. Each phase has written inputs, artifact outputs, and an exit gate.
+
+### Phase 0 — Analysis wizard (idea → dossier)
+
+Interview + research, section by section. The agent interviews the user (grill style: no advance while a decision is open) and researches independently to bring options with trade-offs instead of empty questions. Each section closes with a user-approved artifact.
+
+Dossier contents (depth scales with tier):
+- `brief.md` — single primary objective, what this project is NOT, tier, definition of done.
+- `requirements.md` — `REQ-xxx` items, each with an executable acceptance criterion.
+- `architecture.md` + ADRs — decisions with rationale, **including rejected patterns** (`RP-xxx`).
+- `risks.md` — every agent assumption made explicit and user-approved.
+- `roadmap.md` — vertical slices.
+
+Exit gate: `sv-playbook grill --dossier` (structural: zero `TBD`/`OPEN:` markers, all sections present, every REQ has an acceptance block) + explicit user approval. Semantic ambiguity is hunted by the interviewing agent via checklist and by the human — the grill's determinism boundary is declared, not oversold.
+
+### Phase 1 — Execution setup (dossier → ready repo)
+
+Project skeleton with **gates from commit 0**: single root `verify` command, strict lint, CI, pre-push hooks, task tracking initialized. The empty skeleton must pass `verify` green before the first feature packet. (Aurora lesson: retrofitting quality cost five remediation waves.)
+
+### Phase 2 — Execution by packets (repo → product)
+
+Spec → task packets (exclusive write-set, stop conditions, required evidence) → implementation under the agent contract → human review → serial merge. One packet = one branch = one worktree = one PR. Detailed in §9–§10.
+
+### Phase 3 — Closure (product → delivered)
+
+- End-to-end verification driving the real application against the brief's definition of done; every REQ checked against its acceptance test.
+- doc-audit gate: docs must match code (aspirational docs block closure).
+- Final `STATUS.md`, `ops/` runbook complete per tier, hygiene gate (zero dangling worktrees/branches/orphan files).
+- Learnings distilled from `learnings/inbox` → proposed playbook changes (§15).
+
+### Change bridge (any modification, any time)
+
+**Nothing is implemented from conversation.** Every mid-flight change runs the bridge:
+1. Classify: adjustment within an existing REQ / new requirement / brief change.
+2. Mini-interview with wizard rules to remove ambiguity; ADRs updated or issued.
+3. Record `CHANGE-xxx`, update the dossier.
+4. Grill gate, then emit packets. Priority changes require a recorded human decision.
+
+A **brief change (pivot)** freezes new packet emission until dossier v2 passes the grill. Active packets are finished or explicitly aborted — never left as zombies.
+
+**Tier promotion** is a formal bridge event: new tier proposed, tier gap analysis, adaptation packets, gates activate in baseline mode (existing violations don't block; regressions do) until adaptation closes.
+
+### Adoption (existing project → governed project)
+
+`sv-playbook adopt`: non-destructive scaffold, then the agent runs the adoption procedure: (1) real-state inventory contrasted against code, not docs; (2) retroactive intake — brief and tier for the project as it is TODAY; (3) gap analysis: every playbook rule marked complies / violates / not-applicable, with evidence; (4) prioritized remediation packets (security → gates → debt). Accepted gaps are recorded decisions. `check` runs in baseline mode. Aurora is the first adoption target and the portability test.
+
+## 6. Tiers
+
+| | TIER-1 Experiment | TIER-2 Personal product | TIER-3 Sellable product |
+|---|---|---|---|
+| Question answered | Is this idea worth anything? | Does this serve me daily? | Would someone pay for this? |
+| Wizard | Intake + brief (one session) | + light requirements & architecture | Full dossier, market research |
+| Architecture | Simplest thing that works | Modules with boundaries | Ports & adapters, arch-tests |
+| Testing | Happy-path smoke tests | TDD on core logic | Full TDD, real-DB integration, e2e |
+| Security | Secrets out of repo (all tiers) | + basic auth, deps audit | Full checklist |
+| Gates | verify + clean git | + strict lint, task states | All: grill, doc-audit, arch, coverage |
+| Closure | Tombstone or promotion | Manual e2e + final STATUS | Automated e2e + ops runbook + audited docs |
+
+Tier lives in `playbook.config.json`; gates read it. TIER-1 is not "low quality" — same clean-code bar, less ceremony.
+
+## 7. What lives where
+
+**In the consuming project (only what belongs to that project):**
+
+```
+playbook.config.json    # single source of configurables: product name, chat_language,
+                        # tier, verify command, playbook version, lease TTL
+AGENTS.md               # generated, short: project rules + pointer to `npx sv-playbook docs`
+STATUS.md               # two sections: generated (from DB/git — cannot be stale)
+                        # + narrative (handoff notes, grill-validated)
+docs/dossier/           # brief, requirements, architecture, risks, roadmap (~6 files)
+docs/decisions/         # this project's ADRs
+docs/packets/           # active packets; closed ones move to packets/archive/
+docs/learnings/         # inbox of lessons
+ops/                    # deploy, secrets handling, rollback runbook
+.svp/                   # local, gitignored: SQLite DB, session files
+```
+
+**In the sv-playbook npm package:** all process docs (wizard, contract, workflow, adoption, change bridge, tiers), templates, stack presets. Consulted via `npx sv-playbook docs <topic>` — zero process files copied into projects, versioned automatically by the package.
+
+**Documentation budget rule:** every project doc must be on the canonical list above or cited by an active packet; `check` fails on orphans. Generated views are never committed.
+
+## 8. State architecture — two planes
+
+**Definition plane (markdown in git — source of truth for WHAT).** The packet document: goal, write-set, acceptance criteria, required and final evidence. Plus dossier, ADRs, learnings. Content is reviewable in PRs, versioned with the code it describes, and travels with every clone. Packet + branch + evidence is a portable task: any agent on any harness can take over mid-task.
+
+**Execution plane (SQLite via `node:sqlite`, written ONLY by the CLI — source of truth for HOW IT'S GOING).** Statuses, transitions with timestamps, owners, leases, agent sessions, events, sprints, priority ordering. Full audit trail with zero commit noise and zero merge conflicts on state.
+
+**Durability rule:** long-term facts (packet closed, final evidence, final SHA) are stamped into the packet file at close — one commit per meaningful transition. Git is the durable archive; the DB is the live operational plane. **Losing the DB is harmless**: durable facts survive in git; live facts (current lease holders) reset or rebuild. Nothing irrecoverable lives only in the DB.
+
+**Port & adapter:** the CLI is the port; SQLite is the first storage adapter. Swappable later (including wrapping third-party trackers like beads) because no irrecoverable state is adapter-local.
+
+## 9. The task packet
+
+File schema (frontmatter + body):
+
+```yaml
+id: PACKET-031
+title: ...
+status: ready            # mirror of last durable transition; DB is live truth
+priority: 2
+depends_on: [PACKET-029]
+write_set: ["src/feature-x/**", "tests/feature-x/**"]
+requirements: [REQ-014]  # traceability
+tier_gates: inherit
+evidence_required: [red-test-output, verify-root, final-sha]
+```
+
+Body: context, exact task, RED test to write, reuse pointers (context routing), stop conditions, evidence section (filled at close).
+
+DB records per packet: transition log (state, timestamp, session), lease (session id, heartbeat, TTL), events, session log (commands run).
+
+## 10. Task lifecycle
+
+States: `draft → ready → active → review → done`, lateral exits `blocked` (subtype + evidence) and `dropped` (reason). Lease is an attribute of `active`, not a state.
+
+### start vs takeover matrix
+
+| Packet situation | `task start` | Correct verb |
+|---|---|---|
+| `ready`, no lease | ✅ creates lease + worktree | — |
+| Live lease, OTHER session | ❌ "held by session X" | `takeover --force` (explicit, typically human) |
+| Stale lease (TTL expired) | ❌ "stale lease" + hint | `takeover` (allowed without force) |
+| Live lease, SAME session | ✅ idempotent success | — (safe retry for flaky agents) |
+| `review`/`done`/`dropped` | ❌ "wrong state" | reopen goes through the change bridge |
+
+`takeover` is atomic: (1) revoke old lease, (2) run the `recover` inspection (worktree state, last commit, verify result) and attach the report to the new session, (3) issue new lease. It deliberately unifies "relieve another agent" and "resume after a crash" — sessions are ephemeral, so there is no special case, and no special-case bugs.
+
+`recover` alone = read-only inspection without taking the lease.
+
+**Concurrency invariants:**
+- One active lease per packet (DB uniqueness; SQLite serializes writes — simultaneous `start` has one winner).
+- `task start`/`move active` fails on write-set overlap with another active packet — collisions rejected before work starts.
+- Session identity: `start`/`takeover` emit a session ID stored in a gitignored file in the worktree. The worktree IS the identity (coherent with one packet = one worktree).
+- Heartbeat: every CLI call refreshes the lease. Generous TTL to tolerate long silent operations (builds).
+- **The zombie hole, honestly:** the CLI gates transitions, but a live rogue process writes files directly. Defenses: takeover of a non-stale lease requires `--force` or pause-first protocol; the zombie's next CLI call fails and the contract mandates stop; and the ultimate invariant — **merge requires a live lease + green gates** — bounds every coordination failure's blast radius to wasted work on one branch. Never corruption of the mainline.
+- Work only exists committed. Implementers commit incrementally on the feature branch (WIP, squashed later). Power cut ⇒ resume point is the branch, not anyone's memory.
+
+**Cooperative agent control:** `sv-playbook agent pause PACKET-031` sets a DB flag; the contract requires agents to check it at every gate point. Lease revocation stops an agent at its next CLI call.
+
+## 11. CLI surface (v1)
+
+```
+sv-playbook init <name>       # scaffold new project (git init, config, mirrors, hooks, docs skeleton)
+sv-playbook adopt             # non-destructive scaffold on existing repo + adoption procedure entry
+sv-playbook docs <topic>      # print process docs from the package (wizard/*, contract, cli guide, ...)
+sv-playbook grill [--dossier | --task <id>]   # structural ambiguity/evidence gate
+sv-playbook check [--frozen]  # rule gates; baseline mode after adopt/promotion; mirror-drift check
+sv-playbook task list|next|start|move|takeover|recover|handoff  [--json]
+sv-playbook agent pause|resume <id>
+sv-playbook describe --json   # machine-readable command catalog (feeds MCP wrapper + skills)
+sv-playbook upgrade           # diff pinned playbook version vs current; emit adaptation packets
+```
+
+- TypeScript strict, TDD, minimal dependencies (`node:sqlite`, `node:test`). The tool obeys the rules it enforces.
+- **Windows is first-class**: developed and CI-tested on Windows + Linux from commit 1 (the Aurora workspace's `nul` files and shell-typo directories are the evidence for why).
+- All mutations of process state go through the CLI — agents always use the CLI (assumed and contractual).
+- Multi-surface guidance from one source: `docs cli` (when/why per command) + `describe --json`; `init` emits thin harness skills that point at them.
+
+## 12. Multi-harness mirrors
+
+`init` generates AGENTS.md from the contract + project config, then emits mirrors (CLAUDE.md, .cursorrules, etc. — list configurable). Editing the source and regenerating is the only supported flow; `check` fails on mirror drift.
+
+## 13. Humans, models, escalation
+
+**Mandatory human review (short, explicit list):** the brief, every ADR, every PR diff against its declared write-set, test quality (does the RED test prove anything real?), closure evidence. Everything else is delegated to gates. Backlog reordering always requires a recorded human decision.
+
+**Model × role matrix (per-project, in config):** cheap models = implementers of narrow packets under hard gates; wizard, planning, and review require capable models. Fed by learnings (which packet types failed with which model tier).
+
+**Escalation ladder** (after 3 failed verify cycles or a stop condition, packet → `blocked` with evidence):
+1. Same model, packet split smaller.
+2. Same packet, more capable model (failure evidence travels with the packet).
+3. Human — at this rung the problem is almost always the spec: route through the change bridge.
+
+## 14. Cold start
+
+A new agent session is operational after reading **two files**: AGENTS.md (short; points to STATUS and `docs`) and STATUS.md (generated section cannot be stale). Context routing per role/phase defines mandatory reads, on-demand references, and preload prohibitions. Memory adapters are accelerators only (PRINCIPLE-003).
+
+## 15. Learning loop and playbook evolution
+
+Packet close may emit a learning to `learnings/inbox`. Periodically (and at project closure) learnings are distilled into proposed playbook changes; user approves; semantic version bump (new/hardened rule = minor; removed rule or contract change = major). Projects pin a version; `upgrade` lists rule diffs and emits adaptation packets. Frozen projects never upgrade — they upgrade on revival.
+
+## 16. Use cases
+
+Thirteen walkthroughs (who does what, minute by minute, which gate validates) are documented in the design companion: new project, adoption, packet loop, add feature, drop/reprioritize, bug (implementation vs spec), pivot, tier promotion, cold-start session, cheap-model escalation, product closure, freeze/tombstone, playbook upgrade.
+
+## 17. Versioning & roadmap
+
+- **v1 (single release, used on a real project before any v2 work — PRINCIPLE-008):**
+  - The constitution: wizard, contract, workflow, adoption, change bridge, tiers, templates, principles with verbose IDs.
+  - The CLI: everything in §11, SQLite execution plane, leases, durable stamping, mirrors, `describe --json`.
+  - First stack preset: TypeScript + pnpm.
+- **v2 (gated on v1 real-world use):**
+  - `serve`: local web viewer — live board (which agent, which packet, which step), sprint/roadmap/docs views, metrics. **Read-only rendering; its control buttons call the CLI** — one write path, always. Fresh market scan first (beads, vibe-kanban et al. — wrap before build).
+  - MCP wrapper autogenerated from `describe --json` (a transport, not a product).
+
+## 18. Accepted risks
+
+- R1. Single-machine SQLite; no multi-machine sync. Benign degradation (durable facts in git). Revisit behind the storage port if ever needed.
+- R2. Doc↔tool drift between constitution and gates. Mitigated by rule-ID citation in every gate + a test that every `[gate]` rule has a gate and vice versa.
+- R3. TIER-3 self-imposed ceremony may slow v1 (user decision, accepted). Counterweight: minimal v1 scope, no additions without a real-project demand.
+- R4. Zombie-process file writes bypass the CLI. Bounded by the merge invariant (§10).
+- R5. Grill determinism boundary: semantic ambiguity detection stays human+agent judgment.
+
+## 19. v1 success criteria
+
+- S1. A new project goes idea → dossier → first merged packet entirely through the playbook, with every phase gate passing.
+- S2. Aurora is adopted: inventory, tier decision, gap analysis, remediation backlog — and `check` runs green in baseline mode.
+- S3. A cheap model completes a narrow packet under the contract with zero human corrections beyond review.
+- S4. A takeover mid-packet (simulated crash) resumes correctly from branch + session log.
+- S5. The playbook repo itself passes its own gates (dogfood).
+
+## 20. Decision log
+
+| # | Decision | Rationale | Rejected alternative |
+|---|---|---|---|
+| D1 | Hybrid: markdown constitution + verifier CLI | Agents need judgment (text) AND a floor (exit codes) | Docs-only (prose gets violated); CLI-centric (framework maintenance, sv-forge pattern) |
+| D2 | Verbose IDs (PRINCIPLE-, CONTRACT-, REQ-, PACKET-, CHANGE-) | Grepable, self-explanatory, cheap-model-proof | Short prefixes (P-01 ambiguity) |
+| D3 | Tiers with formal promotion | Aurora was TIER-1 with TIER-3 ambitions, never decided | Uniform max rigor (cost explosion); two playbooks (duplication) |
+| D4 | Wizard = interview + research | Assumption-driven analysis reproduces the misunderstandings we're eliminating | Fixed questionnaire (rigid); agent-drafts-human-corrects (assumptions win) |
+| D5 | Process docs distributed in the npm package, never copied | Kills doc noise and per-project drift; versioned by the package | Copy into each project (159-md Aurora outcome) |
+| D6 | Two-plane state: git (definition) + SQLite (execution), CLI-only writes | Commit noise / merge conflicts / heartbeats make git wrong for hot state; DB-as-SoT splits truth from code | All-frontmatter (initial design, retracted); DB as sole SoT |
+| D7 | start ≠ takeover; takeover unifies relief and crash recovery | Silent lease theft by confused agents is the bug; ephemeral sessions mean no special cases | start auto-degrades to takeover |
+| D8 | Merge requires live lease + green gates | Bounds every coordination failure to one branch | Trusting cooperative behavior alone |
+| D9 | New repo + tombstone for agentic-workflow-toolkit; MIT; public from day 1 | Clean public history; code imported selectively | Renaming toolkit repo (mixed-language history) |
+| D10 | TIER-3 for sv-playbook itself | User decision: portfolio flagship, public | TIER-2 (recommended by assistant; rejected) |
+| D11 | English core docs, `chat_language` configurable | Cheap-model fidelity + public repo; conversation language is independent | Spanish core; bilingual maintenance |
+| D12 | Memory = committed files; tools are adapters | Agent-agnostic, versioned, resilient (engram failed twice this session, nothing lost) | Memory-API port with custom implementation |
+| D13 | serve is v2, read-only rendering, buttons call the CLI | One write path; anti-Jira-rebuild | Mutating web UI |
+| D14 | MCP = autogenerated wrapper over `describe --json`, v2 | Transport, not product; zero marginal maintenance | Hand-built MCP server (less agnostic than shell, sv-forge pattern) |
