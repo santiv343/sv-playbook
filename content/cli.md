@@ -23,6 +23,8 @@ unclear. Without argument, lists topics. With a topic id (e.g.
 Why: process docs live in the package, not in your project. Never copy
 them into the repo; read them on demand.
 
+The reviewer checklist lives at `sv-playbook docs review` and runs in full on every PR.
+
 ### `sv-playbook task create|list|start|move|show|recover|takeover|note|brief`
 
 When: use `task create` to author a packet before implementation, `task list`
