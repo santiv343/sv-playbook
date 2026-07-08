@@ -19,6 +19,14 @@ export interface LeaseInfo {
   stale: boolean;
 }
 
+export interface RecoveryReport {
+  packetId: string;
+  status: string;
+  lease: LeaseInfo | undefined;
+  lastTransitions: string[];
+  lastNotes: string[];
+}
+
 const LEASE_TTL_MS = 30 * 60 * 1000;
 
 const ALLOWED: ReadonlyMap<string, readonly PacketStatus[]> = new Map([
@@ -131,4 +139,53 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
     store.db.prepare('DELETE FROM leases WHERE packet_id = ?').run(packetId);
   }
   recordTransition(store, packetId, from, to, sessionId);
+}
+
+export function recoverPacket(store: Store, packetId: string): RecoveryReport {
+  const status = currentStatus(store, packetId);
+  const transitionRows = store.db.prepare(
+    "SELECT at, from_status, to_status, COALESCE(session_id, '-') AS session_id FROM transitions WHERE packet_id = ? ORDER BY seq DESC LIMIT 5",
+  ).all(packetId);
+  const noteRows = store.db.prepare(
+    "SELECT at, detail FROM events WHERE packet_id = ? AND command = 'note' ORDER BY seq DESC LIMIT 5",
+  ).all(packetId);
+  return {
+    packetId,
+    status,
+    lease: leaseOf(store, packetId),
+    lastTransitions: transitionRows.map((row) => {
+      const at = stringColumn(row, 'at');
+      const from = stringColumn(row, 'from_status');
+      const to = stringColumn(row, 'to_status');
+      const sessionId = stringColumn(row, 'session_id');
+      return `${at} ${from}->${to} (${sessionId})`;
+    }),
+    lastNotes: noteRows.map((row) => `${stringColumn(row, 'at')} ${stringColumn(row, 'detail')}`),
+  };
+}
+
+export function takeoverPacket(
+  store: Store,
+  sessionId: string,
+  worktree: string,
+  packetId: string,
+  force: boolean,
+): RecoveryReport {
+  const lease = leaseOf(store, packetId);
+  if (lease === undefined) throw new LifecycleError('no lease to take over', 'use task start');
+  if (lease.sessionId === sessionId && !lease.stale) throw new LifecycleError('you already hold this lease');
+  if (!lease.stale && !force) throw new LifecycleError('lease is live', 'pause the holder or pass --force');
+  try {
+    store.db.exec('BEGIN IMMEDIATE');
+    store.db.prepare('DELETE FROM leases WHERE packet_id = ?').run(packetId);
+    store.db.prepare('INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES (?,?,?,?,?)')
+      .run(packetId, sessionId, worktree, now(), now());
+    store.db.prepare('INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)')
+      .run(sessionId, packetId, 'takeover', `from ${lease.sessionId} force=${force}`, now());
+    store.db.exec('COMMIT');
+  } catch (error) {
+    store.db.exec('ROLLBACK');
+    throw error;
+  }
+  return recoverPacket(store, packetId);
 }

@@ -13,6 +13,8 @@ import {
   LifecycleError,
   leaseOf,
   refreshHeartbeat,
+  takeoverPacket,
+  recoverPacket,
 } from './service.js';
 
 const def = (id: string) => ({
@@ -113,4 +115,32 @@ test('leaseOf reports holder and freshness; refreshHeartbeat updates it', async 
   assert.equal(old?.stale, true);
   refreshHeartbeat(store, s1);
   assert.equal(leaseOf(store, 'P3-001')?.stale, false);
+});
+
+test('takeover: no lease -> error; stale lease -> allowed; live lease needs force', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('P3-002'), 'a');
+  const s1 = ensureSession(store, root);
+  const wt2 = await mkdtemp(join(tmpdir(), 'svp-wt3-'));
+  const s2 = ensureSession(store, wt2);
+  assert.throws(() => { takeoverPacket(store, s2, wt2, 'P3-002', false); }, /no lease/);
+  movePacket(store, undefined, 'P3-002', 'ready');
+  startPacket(store, s1, root, 'P3-002');
+  assert.throws(() => { takeoverPacket(store, s2, wt2, 'P3-002', false); }, /lease is live/);
+  const forced = takeoverPacket(store, s2, wt2, 'P3-002', true);
+  assert.equal(forced.lease?.sessionId, s2);
+  store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE packet_id = ?')
+    .run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), 'P3-002');
+  const back = takeoverPacket(store, s1, root, 'P3-002', false); // stale: no force needed
+  assert.equal(back.lease?.sessionId, s1);
+});
+
+test('recover reports status, lease and recent history without mutating', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('P3-003'), 'a');
+  movePacket(store, undefined, 'P3-003', 'ready');
+  const report = recoverPacket(store, 'P3-003');
+  assert.equal(report.status, 'ready');
+  assert.equal(report.lease, undefined);
+  assert.ok(report.lastTransitions.length >= 2);
 });
