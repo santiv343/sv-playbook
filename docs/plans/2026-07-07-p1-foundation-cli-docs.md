@@ -96,6 +96,17 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-non-null-assertion': 'error',
+      // Scoped safe-call configuration, not a suppression: node:test's runners
+      // return promises the test runner itself awaits; top-level `test(...)`
+      // calls are the documented usage pattern.
+      '@typescript-eslint/no-floating-promises': [
+        'error',
+        {
+          allowForKnownSafeCalls: [
+            { from: 'package', name: ['test', 'suite', 'describe', 'it'], package: 'node:test' },
+          ],
+        },
+      ],
     },
   },
   {
