@@ -27,6 +27,14 @@ checklist). 4. `task show <id>`. 5. The taste files named by project config.
 | 8 | JUDGMENT | Taste pass: diff vs every taste entry; corrections you request become proposed taste additions | — | Same as 7. |
 | 9 | JUDGMENT | Per new/changed test: name the plausible regression it would catch; no answer = vacuous | Every test has an answer | Finding "vacuous test <name>" + the missing scenario. |
 
+## Merge procedure (when merge-on-approved is delegated, D25)
+
+| # | Type | Do | Expected | On mismatch |
+|---|------|----|----------|-------------|
+| M1 | EXEC | Run the merge command | — | — |
+| M2 | EXEC | `gh pr view <n> --json state` | `MERGED` | If OPEN (protection rejected it): `gh pr update-branch <n>`, wait for green checks, retry M1. NEVER close the packet or delete branches before M2 says MERGED. (Origin: the same premature-close mistake was made twice, PRs #6 and #9.) |
+| M3 | EXEC | Pull main; only NOW `task move <id> done`, remove the worktree, delete the local branch, and rebuild the CLI if src changed | Board shows done; `git worktree list` clean | Report the exact failing step. |
+
 ## Output (fixed structure, always)
 1. Verdict: `APPROVED` | `REQUEST CHANGES`.
 2. Evidence: literal outputs of steps 1–3 as run by YOU.
