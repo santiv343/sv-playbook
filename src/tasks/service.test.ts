@@ -163,7 +163,7 @@ test('note records a breadcrumb event visible in recover', async () => {
 test('brief has the fixed structure and embeds the packet document', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P3-005'), 'Implement the thing.\n');
-  const brief = briefPacket(store, root, 'P3-005');
+  const brief = briefPacket(store, 'P3-005');
   for (const marker of ['# Brief: P3-005', '## Status', '## Definition', '## Process', 'Implement the thing.']) {
     assert.ok(brief.includes(marker), `missing ${marker}`);
   }

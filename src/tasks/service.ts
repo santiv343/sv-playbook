@@ -42,10 +42,10 @@ export function overlaps(a: string, b: string): boolean {
   return prefixA.startsWith(prefixB + '/') || prefixB.startsWith(prefixA + '/');
 }
 
-export function createPacket(store: Store, repoRoot: string, def: PacketDefinition, body: string): void {
+export function createPacket(store: Store, docRoot: string, def: PacketDefinition, body: string): void {
   const exists = store.db.prepare('SELECT 1 FROM packets WHERE id = ?').get(def.id);
   if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`);
-  const dir = join(repoRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
+  const dir = join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${def.id}.md`);
   writeFileSync(path, generatePacketDocument(def, body), 'utf8');
@@ -275,7 +275,7 @@ export function notePacket(store: Store, sessionId: string, packetId: string, te
     .run(sessionId, packetId, EVENT_NOTE, detail, now());
 }
 
-export function briefPacket(store: Store, _repoRoot: string, packetId: string): string {
+export function briefPacket(store: Store, packetId: string): string {
   const row = store.db.prepare('SELECT id, title, path, status FROM packets WHERE id = ?').get(packetId);
   if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
   const id = stringColumn(row, 'id');
