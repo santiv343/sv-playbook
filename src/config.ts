@@ -8,12 +8,15 @@ export class ConfigError extends Error {
   }
 }
 
+export type Tier = 'TIER-1' | 'TIER-2' | 'TIER-3';
+export type Autonomy = 'strict' | 'standard' | 'high';
+
 export interface PlaybookConfig {
   productName: string;
   chatLanguage: string;
-  tier: 'TIER-1' | 'TIER-2' | 'TIER-3';
+  tier: Tier;
   verifyCommand: string;
-  autonomy: 'strict' | 'standard' | 'high';
+  autonomy: Autonomy;
 }
 
 const DEFAULTS: PlaybookConfig = {
@@ -24,24 +27,33 @@ const DEFAULTS: PlaybookConfig = {
   autonomy: 'strict',
 };
 
-function isTier(value: unknown): value is 'TIER-1' | 'TIER-2' | 'TIER-3' {
+function isTier(value: unknown): value is Tier {
   return value === 'TIER-1' || value === 'TIER-2' || value === 'TIER-3';
 }
 
-function isAutonomy(value: unknown): value is 'strict' | 'standard' | 'high' {
+function isAutonomy(value: unknown): value is Autonomy {
   return value === 'strict' || value === 'standard' || value === 'high';
 }
 
-function assertString(value: unknown, field: string): string {
-  if (typeof value !== 'string') {
-    throw new ConfigError(`${field} must be a string`);
-  }
+function requireValid<T>(value: unknown, guard: (v: unknown) => v is T, fallback: T, field: string): T {
+  if (value === undefined) return fallback;
+  if (!guard(value)) throw new ConfigError(`${field}: invalid value`);
   return value;
+}
+
+function stringOr(value: unknown, fallback: string, field: string): string {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string') throw new ConfigError(`${field} must be a string`);
+  return value;
+}
+
+function field(raw: object, key: string): unknown {
+  return Object.entries(raw).find(([k]) => k === key)?.[1];
 }
 
 function readConfigFile(repoRoot: string): unknown {
   try {
-    const text = readFileSync(join(repoRoot, 'playbook.config.json'), 'utf-8');
+    const text = readFileSync(join(repoRoot, 'playbook.config.json'), 'utf8');
     return JSON.parse(text);
   } catch (err) {
     if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT') {
@@ -64,24 +76,11 @@ export function loadConfig(repoRoot: string): PlaybookConfig {
     throw new ConfigError('playbook.config.json: expected an object');
   }
 
-  const data: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(raw)) {
-    data[key] = value;
-  }
-
-  const tier = data.tier !== undefined
-    ? (isTier(data.tier) ? data.tier : (() => { throw new ConfigError('tier: invalid value'); })())
-    : DEFAULTS.tier;
-
-  const autonomy = data.autonomy !== undefined
-    ? (isAutonomy(data.autonomy) ? data.autonomy : (() => { throw new ConfigError('autonomy: invalid value'); })())
-    : DEFAULTS.autonomy;
-
   return {
-    productName: data.productName !== undefined ? assertString(data.productName, 'productName') : DEFAULTS.productName,
-    chatLanguage: data.chatLanguage !== undefined ? assertString(data.chatLanguage, 'chatLanguage') : DEFAULTS.chatLanguage,
-    tier,
-    verifyCommand: data.verifyCommand !== undefined ? assertString(data.verifyCommand, 'verifyCommand') : DEFAULTS.verifyCommand,
-    autonomy,
+    productName: stringOr(field(raw, 'productName'), DEFAULTS.productName, 'productName'),
+    chatLanguage: stringOr(field(raw, 'chatLanguage'), DEFAULTS.chatLanguage, 'chatLanguage'),
+    tier: requireValid(field(raw, 'tier'), isTier, DEFAULTS.tier, 'tier'),
+    verifyCommand: stringOr(field(raw, 'verifyCommand'), DEFAULTS.verifyCommand, 'verifyCommand'),
+    autonomy: requireValid(field(raw, 'autonomy'), isAutonomy, DEFAULTS.autonomy, 'autonomy'),
   };
 }
