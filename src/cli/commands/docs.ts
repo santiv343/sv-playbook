@@ -1,12 +1,14 @@
-import { EXIT, type Command } from '../command.js';
+import { EXIT } from '../command.constants.js';
+import type { Command } from '../command.types.js';
 import { listTopics, readTopic } from '../../content.js';
 
 const AVAILABLE_TOPICS = 'Available topics:';
 
-export const docsCommand: Command = {
-  name: 'docs',
-  summary: 'Print a playbook process document (list topics when no argument)',
-  async run(args, io) {
+export function docsCommand(): Command {
+  return {
+    name: 'docs',
+    summary: 'Print a playbook process document (list topics when no argument)',
+    async run(args, io) {
     const [topic] = args;
     if (topic === undefined) {
       io.out(AVAILABLE_TOPICS);
@@ -22,5 +24,6 @@ export const docsCommand: Command = {
     }
     io.out(text);
     return EXIT.OK;
-  },
-};
+    },
+  };
+}

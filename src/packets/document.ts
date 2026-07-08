@@ -1,15 +1,6 @@
-export interface PacketDefinition {
-  id: string;
-  title: string;
-  dependsOn: string[];
-  writeSet: string[];
-  requirements: string[];
-  evidenceRequired: string[];
-}
-
-export class PacketFormatError extends Error {}
-
-const ID_RE = /^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$/;
+import { ID_RE } from './document.constants.js';
+import { PacketFormatError } from './document.errors.js';
+import type { PacketDefinition } from './document.types.js';
 
 function assertValid(def: PacketDefinition): void {
   if (!ID_RE.test(def.id)) throw new PacketFormatError(`invalid packet id: ${def.id}`);

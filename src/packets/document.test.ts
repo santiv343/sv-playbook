@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generatePacketDocument, parsePacketDocument, PacketFormatError } from './document.js';
+import { generatePacketDocument, parsePacketDocument } from './document.js';
+import { PacketFormatError } from './document.errors.js';
 
 const def = {
   id: 'PACKET-001',

@@ -11,7 +11,6 @@ import {
   startPacket,
   movePacket,
   listPackets,
-  LifecycleError,
   leaseOf,
   overlaps,
   rebuildFromFiles,
@@ -21,6 +20,7 @@ import {
   notePacket,
   briefPacket,
 } from './service.js';
+import { LifecycleError } from './service.errors.js';
 
 const def = (id: string) => ({
   id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'],

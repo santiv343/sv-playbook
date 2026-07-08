@@ -2,55 +2,30 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { openStore, SVP_DIR, DB_FILE, type Store } from '../db/store.js';
+import { openStore } from '../db/store.js';
+import { SVP_DIR, DB_FILE } from '../db/store.constants.js';
+import type { Store } from '../db/store.types.js';
 import { numberColumn, stringColumn } from '../db/rows.js';
-import { generatePacketDocument, parsePacketDocument, type PacketDefinition } from '../packets/document.js';
-
-export type PacketStatus = 'draft' | 'ready' | 'active' | 'review' | 'done' | 'blocked' | 'dropped';
-export const PACKET_STATUS_DRAFT: PacketStatus = 'draft';
-export const PACKET_STATUSES: readonly PacketStatus[] = [PACKET_STATUS_DRAFT, 'ready', 'active', 'review', 'done', 'blocked', 'dropped'];
-export const EVENT_TRANSITION = 'transition';
-export const EVENT_NOTE = 'note';
-export const EVENT_TAKEOVER = 'takeover';
-export const EVENT_EVIDENCE = 'evidence';
-export const SESSION_FILE_NAME = '.svp-session';
-export const PACKETS_DOCS_DIR = 'docs';
-export const PACKETS_DIR = 'packets';
-export const DEFAULT_EVIDENCE: readonly string[] = ['final-sha'];
-
-export class LifecycleError extends Error {
-  constructor(message: string, readonly hint?: string) { super(message); }
-}
-
-export interface LeaseInfo {
-  sessionId: string;
-  worktree: string;
-  acquiredAt: string;
-  heartbeatAt: string;
-  stale: boolean;
-}
-
-export interface RecoveryReport {
-  packetId: string;
-  status: string;
-  lease: LeaseInfo | undefined;
-  lastTransitions: string[];
-  lastNotes: string[];
-}
-
-const LEASE_TTL_MS = 30 * 60 * 1000;
-const INSERT_EVENT_SQL = 'INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)';
-const INSERT_LEASE_SQL = 'INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES (?,?,?,?,?)';
-const DELETE_LEASE_SQL = 'DELETE FROM leases WHERE packet_id = ?';
-const INSERT_PACKET_SQL = 'INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES (?,?,?,?,?,?,?)';
-
-const ALLOWED: ReadonlyMap<string, readonly PacketStatus[]> = new Map([
-  [PACKET_STATUS_DRAFT, ['ready', 'dropped']],
-  ['ready', ['active', 'dropped', 'draft']],
-  ['active', ['review', 'blocked']],
-  ['blocked', ['ready', 'dropped']],
-  ['review', ['active', 'done', 'ready']],
-]);
+import { generatePacketDocument, parsePacketDocument } from '../packets/document.js';
+import type { PacketDefinition } from '../packets/document.types.js';
+import { LifecycleError } from './service.errors.js';
+import {
+  ALLOWED,
+  DELETE_LEASE_SQL,
+  EVENT_EVIDENCE,
+  EVENT_NOTE,
+  EVENT_TAKEOVER,
+  EVENT_TRANSITION,
+  INSERT_EVENT_SQL,
+  INSERT_LEASE_SQL,
+  INSERT_PACKET_SQL,
+  LEASE_TTL_MS,
+  PACKETS_DIR,
+  PACKETS_DOCS_DIR,
+  SESSION_FILE_NAME,
+  STATUS,
+} from './service.constants.js';
+import type { LeaseInfo, PacketStatus, RebuildCounts, RecoveryReport } from './service.types.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -76,8 +51,8 @@ export function createPacket(store: Store, repoRoot: string, def: PacketDefiniti
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${def.id}.md`);
   writeFileSync(path, generatePacketDocument(def, body), 'utf8');
-  store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, PACKET_STATUS_DRAFT, JSON.stringify(def.writeSet), now(), now());
-  recordTransition(store, def.id, 'none', PACKET_STATUS_DRAFT);
+  store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, STATUS.DRAFT, JSON.stringify(def.writeSet), now(), now());
+  recordTransition(store, def.id, 'none', STATUS.DRAFT);
 }
 
 export function listPackets(store: Store): Array<{ id: string; title: string; status: string; priority: number; updatedAt: string }> {
@@ -110,6 +85,10 @@ function currentStatus(store: Store, packetId: string): string {
   return stringColumn(row, 'status');
 }
 
+function blocksReopen(status: string): boolean {
+  return status === STATUS.REVIEW || status === STATUS.DONE || status === STATUS.DROPPED;
+}
+
 export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
   const row = store.db.prepare('SELECT session_id, worktree, acquired_at, heartbeat_at FROM leases WHERE packet_id = ?')
     .get(packetId);
@@ -136,12 +115,12 @@ export function startPacket(store: Store, sessionId: string, worktree: string, p
     if (lease.sessionId === sessionId) return; // idempotent retry
     throw new LifecycleError(`held by session ${lease.sessionId}`, 'use takeover once available; do not delete the lease by hand');
   }
-  if (status !== 'ready') {
-    const hint = ['review', 'done', 'dropped'].includes(status) ? 'reopening goes through the change bridge' : undefined;
+  if (status !== STATUS.READY) {
+    const hint = blocksReopen(status) ? 'reopening goes through the change bridge' : undefined;
     throw new LifecycleError(`wrong state ${status}`, hint);
   }
   store.db.prepare(INSERT_LEASE_SQL).run(packetId, sessionId, worktree, now(), now());
-  recordTransition(store, packetId, 'ready', 'active', sessionId);
+  recordTransition(store, packetId, STATUS.READY, STATUS.ACTIVE, sessionId);
 }
 
 function assertLeaseForActive(store: Store, sessionId: string | undefined, packetId: string): void {
@@ -151,11 +130,11 @@ function assertLeaseForActive(store: Store, sessionId: string | undefined, packe
 }
 
 function shouldReleaseLease(from: string, to: string): boolean {
-  return to === 'done' || to === 'dropped' || (from === 'review' && to === 'ready');
+  return to === STATUS.DONE || to === STATUS.DROPPED || (from === STATUS.REVIEW && to === STATUS.READY);
 }
 
 function stampClosed(store: Store, packetId: string, status: string): void {
-  if (status !== 'done' && status !== 'dropped') return;
+  if (status !== STATUS.DONE && status !== STATUS.DROPPED) return;
   const row = store.db.prepare('SELECT path FROM packets WHERE id = ?').get(packetId);
   if (row === undefined) return;
   const path = stringColumn(row, 'path');
@@ -192,7 +171,7 @@ function checkWriteSetConflict(store: Store, packetId: string): void {
   const ours = ourGlobs(store, packetId);
   if (ours.length === 0) return;
   const rows = store.db.prepare('SELECT id, write_set FROM packets WHERE (status = ? OR status = ?) AND id != ?')
-    .all('ready', 'active', packetId);
+    .all(STATUS.READY, STATUS.ACTIVE, packetId);
   for (const row of rows) {
     if (conflictsWith(ours, row)) {
       throw new LifecycleError(`write_set conflict with ${stringColumn(row, 'id')}`);
@@ -201,7 +180,7 @@ function checkWriteSetConflict(store: Store, packetId: string): void {
 }
 
 function captureEvidence(store: Store, packetId: string, from: string, to: string): void {
-  if (from !== 'active' || to !== 'review') return;
+  if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
   const lease = leaseOf(store, packetId);
   if (lease === undefined) return;
   try {
@@ -219,11 +198,11 @@ function captureEvidence(store: Store, packetId: string, from: string, to: strin
 export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): string {
   if (sessionId !== undefined) refreshHeartbeat(store, sessionId);
   const from = currentStatus(store, packetId);
-  if (to === 'active') throw new LifecycleError('use task start to activate a packet');
+  if (to === STATUS.ACTIVE) throw new LifecycleError('use task start to activate a packet');
   const allowed = ALLOWED.get(from) ?? [];
   if (!allowed.includes(to)) throw new LifecycleError(`illegal transition ${from} -> ${to}`);
-  if (to === 'ready') checkWriteSetConflict(store, packetId);
-  if (from === 'active') assertLeaseForActive(store, sessionId, packetId);
+  if (to === STATUS.READY) checkWriteSetConflict(store, packetId);
+  if (from === STATUS.ACTIVE) assertLeaseForActive(store, sessionId, packetId);
   if (shouldReleaseLease(from, to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
   stampClosed(store, packetId, to);
   captureEvidence(store, packetId, from, to);
@@ -288,17 +267,13 @@ export function notePacket(store: Store, sessionId: string, packetId: string, te
     .run(sessionId, packetId, EVENT_NOTE, detail, now());
 }
 
-interface RebuildCounts {
-  total: number; done: number; dropped: number; draft: number;
-}
-
 function parseStatus(text: string): { status: string; cleanText: string } {
   const closedMatch = text.match(/\nclosed: (\S+) (\S+)\s*$/);
   if (closedMatch !== null && closedMatch[1] !== undefined) {
     const cleanText = closedMatch.index !== undefined ? text.slice(0, closedMatch.index) : text;
     return { status: closedMatch[1], cleanText };
   }
-  return { status: PACKET_STATUS_DRAFT, cleanText: text };
+  return { status: STATUS.DRAFT, cleanText: text };
 }
 
 function rebuildOne(store: Store, file: string, dir: string, counts: RebuildCounts): void {
@@ -310,8 +285,8 @@ function rebuildOne(store: Store, file: string, dir: string, counts: RebuildCoun
   recordTransition(store, definition.id, 'none', status);
   store.db.prepare(INSERT_EVENT_SQL).run(null, definition.id, EVENT_NOTE, 'rebuilt from files', now());
   counts.total++;
-  if (status === 'done') counts.done++;
-  else if (status === 'dropped') counts.dropped++;
+  if (status === STATUS.DONE) counts.done++;
+  else if (status === STATUS.DROPPED) counts.dropped++;
   else counts.draft++;
 }
 
