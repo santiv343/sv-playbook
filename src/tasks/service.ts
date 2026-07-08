@@ -11,6 +11,16 @@ export class LifecycleError extends Error {
   constructor(message: string, readonly hint?: string) { super(message); }
 }
 
+export interface LeaseInfo {
+  sessionId: string;
+  worktree: string;
+  acquiredAt: string;
+  heartbeatAt: string;
+  stale: boolean;
+}
+
+const LEASE_TTL_MS = 30 * 60 * 1000;
+
 const ALLOWED: ReadonlyMap<string, readonly PacketStatus[]> = new Map([
   ['draft', ['ready', 'dropped']],
   ['ready', ['active', 'dropped']],
@@ -71,13 +81,26 @@ function currentStatus(store: Store, packetId: string): string {
   return stringColumn(row, 'status');
 }
 
-function leaseOf(store: Store, packetId: string): { sessionId: string } | undefined {
-  const row = store.db.prepare('SELECT session_id FROM leases WHERE packet_id = ?').get(packetId);
+export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
+  const row = store.db.prepare('SELECT session_id, worktree, acquired_at, heartbeat_at FROM leases WHERE packet_id = ?')
+    .get(packetId);
   if (row === undefined) return undefined;
-  return { sessionId: stringColumn(row, 'session_id') };
+  const heartbeatAt = stringColumn(row, 'heartbeat_at');
+  return {
+    sessionId: stringColumn(row, 'session_id'),
+    worktree: stringColumn(row, 'worktree'),
+    acquiredAt: stringColumn(row, 'acquired_at'),
+    heartbeatAt,
+    stale: Date.now() - Date.parse(heartbeatAt) > LEASE_TTL_MS,
+  };
+}
+
+export function refreshHeartbeat(store: Store, sessionId: string): void {
+  store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE session_id = ?').run(now(), sessionId);
 }
 
 export function startPacket(store: Store, sessionId: string, worktree: string, packetId: string): void {
+  refreshHeartbeat(store, sessionId);
   const status = currentStatus(store, packetId);
   const lease = leaseOf(store, packetId);
   if (lease !== undefined) {
@@ -94,6 +117,7 @@ export function startPacket(store: Store, sessionId: string, worktree: string, p
 }
 
 export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): void {
+  if (sessionId !== undefined) refreshHeartbeat(store, sessionId);
   const from = currentStatus(store, packetId);
   if (to === 'active') throw new LifecycleError('use task start to activate a packet');
   const allowed = ALLOWED.get(from) ?? [];

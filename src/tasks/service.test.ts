@@ -4,7 +4,16 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../db/store.js';
-import { createPacket, ensureSession, startPacket, movePacket, listPackets, LifecycleError } from './service.js';
+import {
+  createPacket,
+  ensureSession,
+  startPacket,
+  movePacket,
+  listPackets,
+  LifecycleError,
+  leaseOf,
+  refreshHeartbeat,
+} from './service.js';
 
 const def = (id: string) => ({
   id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'],
@@ -86,4 +95,22 @@ test('ensureSession is stable per worktree (reads .svp-session back)', async () 
   assert.equal(a, b);
   const onDisk = (await readFile(join(root, '.svp-session'), 'utf8')).trim();
   assert.equal(onDisk, a);
+});
+
+test('leaseOf reports holder and freshness; refreshHeartbeat updates it', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('P3-001'), 'a');
+  const s1 = ensureSession(store, root);
+  movePacket(store, undefined, 'P3-001', 'ready');
+  startPacket(store, s1, root, 'P3-001');
+  const lease = leaseOf(store, 'P3-001');
+  assert.ok(lease !== undefined);
+  assert.equal(lease.sessionId, s1);
+  assert.equal(lease.stale, false);
+  store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE packet_id = ?')
+    .run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), 'P3-001');
+  const old = leaseOf(store, 'P3-001');
+  assert.equal(old?.stale, true);
+  refreshHeartbeat(store, s1);
+  assert.equal(leaseOf(store, 'P3-001')?.stale, false);
 });
