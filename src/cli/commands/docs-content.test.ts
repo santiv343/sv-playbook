@@ -24,3 +24,11 @@ test('cli topic documents the task lifecycle', async () => {
     assert.ok(text.toLowerCase().includes(s.toLowerCase()), `missing ${s}`);
   }
 });
+
+test('cli topic documents takeover and brief', async () => {
+  const text = await readTopic('cli');
+  assert.ok(text !== undefined);
+  for (const s of ['takeover', 'brief', 'stale', 'note']) {
+    assert.ok(text.toLowerCase().includes(s), `missing ${s}`);
+  }
+});

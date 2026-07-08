@@ -29,6 +29,8 @@ npx sv-playbook task create --id P2-101 --title "Do work" --write "src/**" --bod
 npx sv-playbook task list --json
 npx sv-playbook task start P2-101
 npx sv-playbook task move P2-101 review
+npx sv-playbook task brief P2-101
+npx sv-playbook task takeover P2-101 --force
 ```
 
 ## Development
