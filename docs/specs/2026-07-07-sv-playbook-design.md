@@ -183,6 +183,10 @@ Body: context, exact task, RED test to write, reuse pointers (context routing), 
 
 DB records per packet: transition log (state, timestamp, session), lease (session id, heartbeat, TTL), events, session log (commands run).
 
+**Event taxonomy (D23 — the complete task record).** Every event row is `(type, packet, session, detail, at)`; types: `transition` · `note` · `takeover` · `red-test` (captured failing output) · `verify-run` (exit code + output hash) · `evidence` (CLI-captured, see below) · `deviation` · `review-round` (n, verdict) · `finding` (severity, file:line, fix, resolved?) · `correction` (finding resolved by commit X) · `pause`/`resume` · `escalation` (rung, from, to) · `dispatch` (harness, model, best-effort cost). Together they answer, per card and forever: who did what, when, what went wrong, what it cost, and how it was fixed — feeding serve views, rework metrics and the learnings loop with zero extra agent effort.
+
+**Evidence is captured, never transcribed (D24).** The class of fabricated-SHA errors is eliminated structurally: `task move <id> review` runs `git rev-parse HEAD` and the project verify ITSELF, recording outputs as `evidence` events and stamping them into the packet — agents stop typing SHAs or pasting verify output at all, and the reviewer compares machine-captured values. A transcription step that can be deleted is a hallucination class that can be deleted. (Origin: DeepSeek flash fabricated a SHA tail on its first report, 2026-07-08; caught by reviewer charter step 1.)
+
 ## 10. Task lifecycle
 
 States: `draft → ready → active → review → done`, lateral exits `blocked` (subtype + evidence) and `dropped` (reason). Lease is an attribute of `active`, not a state.
@@ -340,5 +344,7 @@ Thirteen walkthroughs (who does what, minute by minute, which gate validates) we
 | D18 | All verification under `check <target>`; CLI-wide plain-word naming rule | Self-evident names for outsiders; "grill" collided with the grill-me skill | Separate grill/check verbs (confusing boundary) |
 | D19 | Configurable autonomy levels (strict/standard/high) with mandatory DEVIATION records | P1 blockers showed trivially-safe fixes blocking capable agents; evidence duty stays identical at every level | Fixed maximal strictness (wastes capable models); trust-based autonomy (hallucination risk) |
 | D20 | `check plan`: a plan's embedded code is typechecked/linted before implementation starts | P1 blockers #1/#2 were plan/tool-config contradictions — mechanically catchable (PRINCIPLE-001 applied to plans) | Trusting planner review alone |
+| D23 | Full event taxonomy: findings, review rounds, corrections, pauses, escalations, dispatch recorded as typed events | Complete per-card history for serve/metrics/learnings at zero agent effort | Prose reports as the only record |
+| D24 | Evidence captured by the CLI at transition time, never transcribed by agents | Cheap model fabricated a SHA tail; transcription steps are a deletable hallucination class | Trusting agents to copy outputs |
 | D22 | Thesis-validation queue (cheap model, parallel run, self-adoption) runs before further feature work | Each test is cheap and can invalidate load-bearing decisions; better now than under Aurora | Building features on an untested core |
 | D21 | CLI is the sole author of structured content: validate-at-write, DB + generated markdown as dual projections; .sqlite never committed | One write path ends SoT ambiguity; agents get queryable context, humans get diffable files; binary DBs are unmergeable in git | Committing SQLite (unmergeable, opaque); agents hand-writing docs (format drift, post-hoc validation) |
