@@ -16,3 +16,11 @@ test('cli topic documents the docs command and exit codes', async () => {
   assert.ok(text.includes('sv-playbook docs'));
   assert.ok(text.toLowerCase().includes('exit code'));
 });
+
+test('cli topic documents the task lifecycle', async () => {
+  const text = await readTopic('cli');
+  assert.ok(text !== undefined);
+  for (const s of ['task create', 'task start', 'refusal', 'draft', 'dropped']) {
+    assert.ok(text.toLowerCase().includes(s.toLowerCase()), `missing ${s}`);
+  }
+});
