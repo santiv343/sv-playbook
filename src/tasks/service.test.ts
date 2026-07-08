@@ -4,7 +4,20 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../db/store.js';
-import { createPacket, ensureSession, startPacket, movePacket, listPackets, LifecycleError } from './service.js';
+import {
+  createPacket,
+  ensureSession,
+  startPacket,
+  movePacket,
+  listPackets,
+  LifecycleError,
+  leaseOf,
+  refreshHeartbeat,
+  takeoverPacket,
+  recoverPacket,
+  notePacket,
+  briefPacket,
+} from './service.js';
 
 const def = (id: string) => ({
   id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'],
@@ -86,4 +99,77 @@ test('ensureSession is stable per worktree (reads .svp-session back)', async () 
   assert.equal(a, b);
   const onDisk = (await readFile(join(root, '.svp-session'), 'utf8')).trim();
   assert.equal(onDisk, a);
+});
+
+test('leaseOf reports holder and freshness; refreshHeartbeat updates it', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('P3-001'), 'a');
+  const s1 = ensureSession(store, root);
+  movePacket(store, undefined, 'P3-001', 'ready');
+  startPacket(store, s1, root, 'P3-001');
+  const lease = leaseOf(store, 'P3-001');
+  assert.ok(lease !== undefined);
+  assert.equal(lease.sessionId, s1);
+  assert.equal(lease.stale, false);
+  store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE packet_id = ?')
+    .run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), 'P3-001');
+  const old = leaseOf(store, 'P3-001');
+  assert.equal(old?.stale, true);
+  refreshHeartbeat(store, s1);
+  assert.equal(leaseOf(store, 'P3-001')?.stale, false);
+});
+
+test('takeover: no lease -> error; stale lease -> allowed; live lease needs force', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('P3-002'), 'a');
+  const s1 = ensureSession(store, root);
+  const wt2 = await mkdtemp(join(tmpdir(), 'svp-wt3-'));
+  const s2 = ensureSession(store, wt2);
+  assert.throws(() => { takeoverPacket(store, s2, wt2, 'P3-002', false); }, /no lease/);
+  movePacket(store, undefined, 'P3-002', 'ready');
+  startPacket(store, s1, root, 'P3-002');
+  assert.throws(() => { takeoverPacket(store, s2, wt2, 'P3-002', false); }, /lease is live/);
+  const forced = takeoverPacket(store, s2, wt2, 'P3-002', true);
+  assert.equal(forced.lease?.sessionId, s2);
+  store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE packet_id = ?')
+    .run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), 'P3-002');
+  const back = takeoverPacket(store, s1, root, 'P3-002', false); // stale: no force needed
+  assert.equal(back.lease?.sessionId, s1);
+});
+
+test('recover reports status, lease and recent history without mutating', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('P3-003'), 'a');
+  movePacket(store, undefined, 'P3-003', 'ready');
+  const report = recoverPacket(store, 'P3-003');
+  assert.equal(report.status, 'ready');
+  assert.equal(report.lease, undefined);
+  assert.ok(report.lastTransitions.length >= 2);
+});
+
+test('note records a breadcrumb event visible in recover', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('P3-004'), 'a');
+  const s1 = ensureSession(store, root);
+  notePacket(store, s1, 'P3-004', 'halfway through the RED test');
+  const report = recoverPacket(store, 'P3-004');
+  assert.ok(report.lastNotes.some((n) => n.includes('halfway through')));
+  assert.throws(() => { notePacket(store, s1, 'P3-004', '   '); }, LifecycleError);
+});
+
+test('brief has the fixed structure and embeds the packet document', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('P3-005'), 'Implement the thing.\n');
+  const brief = briefPacket(store, root, 'P3-005');
+  for (const marker of ['# Brief: P3-005', '## Status', '## Definition', '## Process', 'Implement the thing.']) {
+    assert.ok(brief.includes(marker), `missing ${marker}`);
+  }
+});
+
+test('raw SQL cannot insert an invalid packet status', async () => {
+  const { store } = await setup();
+  assert.throws(() => {
+    store.db.prepare('INSERT INTO packets (id, title, path, status, created_at, updated_at) VALUES (?,?,?,?,?,?)')
+      .run('P3-006', 'Packet P3-006', 'docs/packets/P3-006.md', 'invalid', new Date().toISOString(), new Date().toISOString());
+  });
 });

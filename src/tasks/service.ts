@@ -6,10 +6,36 @@ import { numberColumn, stringColumn } from '../db/rows.js';
 import { generatePacketDocument, type PacketDefinition } from '../packets/document.js';
 
 export type PacketStatus = 'draft' | 'ready' | 'active' | 'review' | 'done' | 'blocked' | 'dropped';
+export const PACKET_STATUSES: readonly PacketStatus[] = ['draft', 'ready', 'active', 'review', 'done', 'blocked', 'dropped'];
+export const EVENT_TRANSITION = 'transition';
+export const EVENT_NOTE = 'note';
+export const EVENT_TAKEOVER = 'takeover';
+export const SESSION_FILE_NAME = '.svp-session';
+export const PACKETS_DOCS_DIR = 'docs';
+export const PACKETS_DIR = 'packets';
+export const DEFAULT_EVIDENCE: readonly string[] = ['final-sha'];
 
 export class LifecycleError extends Error {
   constructor(message: string, readonly hint?: string) { super(message); }
 }
+
+export interface LeaseInfo {
+  sessionId: string;
+  worktree: string;
+  acquiredAt: string;
+  heartbeatAt: string;
+  stale: boolean;
+}
+
+export interface RecoveryReport {
+  packetId: string;
+  status: string;
+  lease: LeaseInfo | undefined;
+  lastTransitions: string[];
+  lastNotes: string[];
+}
+
+const LEASE_TTL_MS = 30 * 60 * 1000;
 
 const ALLOWED: ReadonlyMap<string, readonly PacketStatus[]> = new Map([
   ['draft', ['ready', 'dropped']],
@@ -26,13 +52,13 @@ function recordTransition(store: Store, packetId: string, from: string, to: stri
     .run(packetId, from, to, sessionId ?? null, now());
   store.db.prepare('UPDATE packets SET status = ?, updated_at = ? WHERE id = ?').run(to, now(), packetId);
   store.db.prepare('INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)')
-    .run(sessionId ?? null, packetId, 'transition', `${from}->${to}`, now());
+    .run(sessionId ?? null, packetId, EVENT_TRANSITION, `${from}->${to}`, now());
 }
 
 export function createPacket(store: Store, repoRoot: string, def: PacketDefinition, body: string): void {
   const exists = store.db.prepare('SELECT 1 FROM packets WHERE id = ?').get(def.id);
   if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`);
-  const dir = join(repoRoot, 'docs', 'packets');
+  const dir = join(repoRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${def.id}.md`);
   writeFileSync(path, generatePacketDocument(def, body), 'utf8');
@@ -53,7 +79,7 @@ export function listPackets(store: Store): Array<{ id: string; title: string; st
 }
 
 export function ensureSession(store: Store, worktree: string): string {
-  const file = join(worktree, '.svp-session');
+  const file = join(worktree, SESSION_FILE_NAME);
   if (existsSync(file)) {
     const id = readFileSync(file, 'utf8').trim();
     const known = store.db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(id);
@@ -71,13 +97,26 @@ function currentStatus(store: Store, packetId: string): string {
   return stringColumn(row, 'status');
 }
 
-function leaseOf(store: Store, packetId: string): { sessionId: string } | undefined {
-  const row = store.db.prepare('SELECT session_id FROM leases WHERE packet_id = ?').get(packetId);
+export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
+  const row = store.db.prepare('SELECT session_id, worktree, acquired_at, heartbeat_at FROM leases WHERE packet_id = ?')
+    .get(packetId);
   if (row === undefined) return undefined;
-  return { sessionId: stringColumn(row, 'session_id') };
+  const heartbeatAt = stringColumn(row, 'heartbeat_at');
+  return {
+    sessionId: stringColumn(row, 'session_id'),
+    worktree: stringColumn(row, 'worktree'),
+    acquiredAt: stringColumn(row, 'acquired_at'),
+    heartbeatAt,
+    stale: Date.now() - Date.parse(heartbeatAt) > LEASE_TTL_MS,
+  };
+}
+
+export function refreshHeartbeat(store: Store, sessionId: string): void {
+  store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE session_id = ?').run(now(), sessionId);
 }
 
 export function startPacket(store: Store, sessionId: string, worktree: string, packetId: string): void {
+  refreshHeartbeat(store, sessionId);
   const status = currentStatus(store, packetId);
   const lease = leaseOf(store, packetId);
   if (lease !== undefined) {
@@ -94,6 +133,7 @@ export function startPacket(store: Store, sessionId: string, worktree: string, p
 }
 
 export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): void {
+  if (sessionId !== undefined) refreshHeartbeat(store, sessionId);
   const from = currentStatus(store, packetId);
   if (to === 'active') throw new LifecycleError('use task start to activate a packet');
   const allowed = ALLOWED.get(from) ?? [];
@@ -107,4 +147,92 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
     store.db.prepare('DELETE FROM leases WHERE packet_id = ?').run(packetId);
   }
   recordTransition(store, packetId, from, to, sessionId);
+}
+
+export function recoverPacket(store: Store, packetId: string): RecoveryReport {
+  const status = currentStatus(store, packetId);
+  const transitionRows = store.db.prepare(
+    "SELECT at, from_status, to_status, COALESCE(session_id, '-') AS session_id FROM transitions WHERE packet_id = ? ORDER BY seq DESC LIMIT 5",
+  ).all(packetId);
+  const noteRows = store.db.prepare(
+    'SELECT at, detail FROM events WHERE packet_id = ? AND command = ? ORDER BY seq DESC LIMIT 5',
+  ).all(packetId, EVENT_NOTE);
+  return {
+    packetId,
+    status,
+    lease: leaseOf(store, packetId),
+    lastTransitions: transitionRows.map((row) => {
+      const at = stringColumn(row, 'at');
+      const from = stringColumn(row, 'from_status');
+      const to = stringColumn(row, 'to_status');
+      const sessionId = stringColumn(row, 'session_id');
+      return `${at} ${from}->${to} (${sessionId})`;
+    }),
+    lastNotes: noteRows.map((row) => `${stringColumn(row, 'at')} ${stringColumn(row, 'detail')}`),
+  };
+}
+
+export function takeoverPacket(
+  store: Store,
+  sessionId: string,
+  worktree: string,
+  packetId: string,
+  force: boolean,
+): RecoveryReport {
+  const lease = leaseOf(store, packetId);
+  if (lease === undefined) throw new LifecycleError('no lease to take over', 'use task start');
+  if (lease.sessionId === sessionId && !lease.stale) throw new LifecycleError('you already hold this lease');
+  if (!lease.stale && !force) throw new LifecycleError('lease is live', 'pause the holder or pass --force');
+  try {
+    store.db.exec('BEGIN IMMEDIATE');
+    store.db.prepare('DELETE FROM leases WHERE packet_id = ?').run(packetId);
+    store.db.prepare('INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES (?,?,?,?,?)')
+      .run(packetId, sessionId, worktree, now(), now());
+    store.db.prepare('INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)')
+      .run(sessionId, packetId, EVENT_TAKEOVER, `from ${lease.sessionId} force=${force}`, now());
+    store.db.exec('COMMIT');
+  } catch (error) {
+    store.db.exec('ROLLBACK');
+    throw error;
+  }
+  return recoverPacket(store, packetId);
+}
+
+export function notePacket(store: Store, sessionId: string, packetId: string, text: string): void {
+  currentStatus(store, packetId);
+  const detail = text.trim();
+  if (detail.length === 0) throw new LifecycleError('note text required');
+  refreshHeartbeat(store, sessionId);
+  store.db.prepare('INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)')
+    .run(sessionId, packetId, EVENT_NOTE, detail, now());
+}
+
+export function briefPacket(store: Store, _repoRoot: string, packetId: string): string {
+  const row = store.db.prepare('SELECT id, title, path, status FROM packets WHERE id = ?').get(packetId);
+  if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
+  const id = stringColumn(row, 'id');
+  const title = stringColumn(row, 'title');
+  const path = stringColumn(row, 'path');
+  const status = stringColumn(row, 'status');
+  if (!existsSync(path)) throw new LifecycleError(`packet file missing: ${path}`);
+  const document = readFileSync(path, 'utf8');
+  const lease = leaseOf(store, packetId);
+  const leaseLine = lease === undefined
+    ? '<none>'
+    : `held by ${lease.sessionId} (${lease.stale ? 'stale' : 'fresh'})`;
+  return `# Brief: ${id} — ${title}
+
+## Status
+state: ${status}
+lease: ${leaseLine}
+
+## Definition (${PACKETS_DOCS_DIR}/${PACKETS_DIR}/${id}.md)
+${document}
+
+## Process
+- Contract and workflow: run \`npx sv-playbook docs cli\` before acting.
+- All state changes go through \`sv-playbook task move\` — never edit status by hand.
+- Leave breadcrumbs with \`sv-playbook task note ${id} "<text>"\` at each step.
+- Stop conditions and evidence duties are defined in the packet above.
+`;
 }

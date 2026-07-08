@@ -53,3 +53,29 @@ test('unknown subcommand exits 2 with usage', async () => {
   assert.equal(await taskCommand.run(['frobnicate'], io), 2);
   assert.ok(io.errLines.some((l) => l.includes('Usage')));
 });
+
+test('takeover without lease exits 1 with hint; brief prints the packet', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'Brief me.\n');
+    const io = fakeIo();
+    await taskCommand.run(['create', '--id', 'P3-101', '--title', 'X', '--write', 'src/**', '--body-file', 'body.md'], io);
+    const code = await taskCommand.run(['takeover', 'P3-101'], io);
+    assert.equal(code, 1);
+    assert.ok(io.errLines.some((l) => l.includes('no lease')));
+    const io2 = fakeIo();
+    assert.equal(await taskCommand.run(['brief', 'P3-101'], io2), 0);
+    assert.ok(io2.outLines.join('\n').includes('Brief me.'));
+  });
+});
+
+test('note then show surfaces the breadcrumb', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'x');
+    const io = fakeIo();
+    await taskCommand.run(['create', '--id', 'P3-102', '--title', 'X', '--write', 'src/**', '--body-file', 'body.md'], io);
+    await taskCommand.run(['note', 'P3-102', 'checkpoint', 'one'], io);
+    const io2 = fakeIo();
+    assert.equal(await taskCommand.run(['show', 'P3-102'], io2), 0);
+    assert.ok(io2.outLines.some((l) => l.includes('checkpoint one')));
+  });
+});
