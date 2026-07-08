@@ -232,6 +232,20 @@ const USAGE = [
   ...Array.from(SUBCOMMANDS.values()).map((subcommand) => `  ${subcommand.usage}`),
 ].join('\n');
 
+function handleTaskError(error: unknown, io: Io): number {
+  if (error instanceof LifecycleError || error instanceof PacketFormatError) {
+    io.err(`error: ${error.message}`);
+    if (error instanceof LifecycleError && error.hint !== undefined) io.err(`hint: ${error.hint}`);
+    return EXIT.GATE_FAIL;
+  }
+  if (error instanceof UsageError || error instanceof TypeError) {
+    io.err(USAGE);
+    io.err(`error: ${error.message}`);
+    return EXIT.USAGE;
+  }
+  throw error;
+}
+
 export const taskCommand: Command = {
   name: 'task',
   summary: 'Create, list, start, move, inspect, and recover execution packets',
@@ -242,17 +256,7 @@ export const taskCommand: Command = {
       if (command !== undefined) return Promise.resolve(command.run(rest, io));
       throw new UsageError(sub === undefined ? 'missing task subcommand' : `unknown task subcommand: ${sub}`);
     } catch (error) {
-      if (error instanceof LifecycleError || error instanceof PacketFormatError) {
-        io.err(`error: ${error.message}`);
-        if (error instanceof LifecycleError && error.hint !== undefined) io.err(`hint: ${error.hint}`);
-        return Promise.resolve(EXIT.GATE_FAIL);
-      }
-      if (error instanceof UsageError || error instanceof TypeError) {
-        io.err(USAGE);
-        io.err(`error: ${error.message}`);
-        return Promise.resolve(EXIT.USAGE);
-      }
-      throw error;
+      return Promise.resolve(handleTaskError(error, io));
     }
   },
 };

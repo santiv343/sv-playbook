@@ -38,6 +38,8 @@ export interface RecoveryReport {
 
 const LEASE_TTL_MS = 30 * 60 * 1000;
 const INSERT_EVENT_SQL = 'INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)';
+const INSERT_LEASE_SQL = 'INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES (?,?,?,?,?)';
+const DELETE_LEASE_SQL = 'DELETE FROM leases WHERE packet_id = ?';
 
 const ALLOWED: ReadonlyMap<string, readonly PacketStatus[]> = new Map([
   [PACKET_STATUS_DRAFT, ['ready', 'dropped']],
@@ -129,9 +131,18 @@ export function startPacket(store: Store, sessionId: string, worktree: string, p
     const hint = ['review', 'done', 'dropped'].includes(status) ? 'reopening goes through the change bridge' : undefined;
     throw new LifecycleError(`wrong state ${status}`, hint);
   }
-  store.db.prepare('INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES (?,?,?,?,?)')
-    .run(packetId, sessionId, worktree, now(), now());
+  store.db.prepare(INSERT_LEASE_SQL).run(packetId, sessionId, worktree, now(), now());
   recordTransition(store, packetId, 'ready', 'active', sessionId);
+}
+
+function assertLeaseForActive(store: Store, sessionId: string | undefined, packetId: string): void {
+  const lease = leaseOf(store, packetId);
+  if (lease === undefined || sessionId === undefined) throw new LifecycleError('lease required to leave active');
+  if (lease.sessionId !== sessionId) throw new LifecycleError(`lease held by another session ${lease.sessionId}`);
+}
+
+function isTerminal(to: PacketStatus): boolean {
+  return to === 'done' || to === 'dropped';
 }
 
 export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): void {
@@ -140,14 +151,8 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   if (to === 'active') throw new LifecycleError('use task start to activate a packet');
   const allowed = ALLOWED.get(from) ?? [];
   if (!allowed.includes(to)) throw new LifecycleError(`illegal transition ${from} -> ${to}`);
-  if (from === 'active') {
-    const lease = leaseOf(store, packetId);
-    if (lease === undefined || sessionId === undefined) throw new LifecycleError('lease required to leave active');
-    if (lease.sessionId !== sessionId) throw new LifecycleError(`lease held by another session ${lease.sessionId}`);
-  }
-  if (to === 'done' || to === 'dropped') {
-    store.db.prepare('DELETE FROM leases WHERE packet_id = ?').run(packetId);
-  }
+  if (from === 'active') assertLeaseForActive(store, sessionId, packetId);
+  if (isTerminal(to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
   recordTransition(store, packetId, from, to, sessionId);
 }
 
@@ -187,9 +192,8 @@ export function takeoverPacket(
   if (!lease.stale && !force) throw new LifecycleError('lease is live', 'pause the holder or pass --force');
   try {
     store.db.exec('BEGIN IMMEDIATE');
-    store.db.prepare('DELETE FROM leases WHERE packet_id = ?').run(packetId);
-    store.db.prepare('INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES (?,?,?,?,?)')
-      .run(packetId, sessionId, worktree, now(), now());
+    store.db.prepare(DELETE_LEASE_SQL).run(packetId);
+    store.db.prepare(INSERT_LEASE_SQL).run(packetId, sessionId, worktree, now(), now());
     store.db.prepare(INSERT_EVENT_SQL)
       .run(sessionId, packetId, EVENT_TAKEOVER, `from ${lease.sessionId} force=${force}`, now());
     store.db.exec('COMMIT');
