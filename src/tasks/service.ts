@@ -1,10 +1,10 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../db/store.js';
+import { openStore, SVP_DIR, DB_FILE, type Store } from '../db/store.js';
 import { numberColumn, stringColumn } from '../db/rows.js';
-import { generatePacketDocument, type PacketDefinition } from '../packets/document.js';
+import { generatePacketDocument, parsePacketDocument, type PacketDefinition } from '../packets/document.js';
 
 export type PacketStatus = 'draft' | 'ready' | 'active' | 'review' | 'done' | 'blocked' | 'dropped';
 export const PACKET_STATUS_DRAFT: PacketStatus = 'draft';
@@ -42,6 +42,7 @@ const LEASE_TTL_MS = 30 * 60 * 1000;
 const INSERT_EVENT_SQL = 'INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)';
 const INSERT_LEASE_SQL = 'INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES (?,?,?,?,?)';
 const DELETE_LEASE_SQL = 'DELETE FROM leases WHERE packet_id = ?';
+const INSERT_PACKET_SQL = 'INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES (?,?,?,?,?,?,?)';
 
 const ALLOWED: ReadonlyMap<string, readonly PacketStatus[]> = new Map([
   [PACKET_STATUS_DRAFT, ['ready', 'dropped']],
@@ -75,8 +76,7 @@ export function createPacket(store: Store, repoRoot: string, def: PacketDefiniti
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${def.id}.md`);
   writeFileSync(path, generatePacketDocument(def, body), 'utf8');
-  store.db.prepare('INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
-    .run(def.id, def.title, path, PACKET_STATUS_DRAFT, JSON.stringify(def.writeSet), now(), now());
+  store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, PACKET_STATUS_DRAFT, JSON.stringify(def.writeSet), now(), now());
   recordTransition(store, def.id, 'none', PACKET_STATUS_DRAFT);
 }
 
@@ -154,6 +154,14 @@ function shouldReleaseLease(from: string, to: string): boolean {
   return to === 'done' || to === 'dropped' || (from === 'review' && to === 'ready');
 }
 
+function stampClosed(store: Store, packetId: string, status: string): void {
+  if (status !== 'done' && status !== 'dropped') return;
+  const row = store.db.prepare('SELECT path FROM packets WHERE id = ?').get(packetId);
+  if (row === undefined) return;
+  const path = stringColumn(row, 'path');
+  writeFileSync(path, `\nclosed: ${status} ${now()}`, { flag: 'a' });
+}
+
 function parseGlobs(raw: string): string[] {
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) return [];
@@ -217,6 +225,7 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   if (to === 'ready') checkWriteSetConflict(store, packetId);
   if (from === 'active') assertLeaseForActive(store, sessionId, packetId);
   if (shouldReleaseLease(from, to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
+  stampClosed(store, packetId, to);
   captureEvidence(store, packetId, from, to);
   recordTransition(store, packetId, from, to, sessionId);
   return from;
@@ -277,6 +286,45 @@ export function notePacket(store: Store, sessionId: string, packetId: string, te
   refreshHeartbeat(store, sessionId);
   store.db.prepare(INSERT_EVENT_SQL)
     .run(sessionId, packetId, EVENT_NOTE, detail, now());
+}
+
+interface RebuildCounts {
+  total: number; done: number; dropped: number; draft: number;
+}
+
+function parseStatus(text: string): { status: string; cleanText: string } {
+  const closedMatch = text.match(/\nclosed: (\S+) (\S+)\s*$/);
+  if (closedMatch !== null && closedMatch[1] !== undefined) {
+    const cleanText = closedMatch.index !== undefined ? text.slice(0, closedMatch.index) : text;
+    return { status: closedMatch[1], cleanText };
+  }
+  return { status: PACKET_STATUS_DRAFT, cleanText: text };
+}
+
+function rebuildOne(store: Store, file: string, dir: string, counts: RebuildCounts): void {
+  const fullPath = join(dir, file);
+  const text = readFileSync(fullPath, 'utf8');
+  const { status, cleanText } = parseStatus(text);
+  const { definition } = parsePacketDocument(cleanText);
+  store.db.prepare(INSERT_PACKET_SQL).run(definition.id, definition.title, fullPath, status, JSON.stringify(definition.writeSet), now(), now());
+  recordTransition(store, definition.id, 'none', status);
+  store.db.prepare(INSERT_EVENT_SQL).run(null, definition.id, EVENT_NOTE, 'rebuilt from files', now());
+  counts.total++;
+  if (status === 'done') counts.done++;
+  else if (status === 'dropped') counts.dropped++;
+  else counts.draft++;
+}
+
+export function rebuildFromFiles(repoRoot: string): RebuildCounts {
+  const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
+  if (existsSync(dbPath)) rmSync(dbPath);
+  const store = openStore(repoRoot);
+  const dir = join(repoRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
+  const files = readdirSync(dir).filter((f) => f.endsWith('.md'));
+  const counts: RebuildCounts = { total: 0, done: 0, dropped: 0, draft: 0 };
+  for (const file of files) rebuildOne(store, file, dir, counts);
+  store.close();
+  return counts;
 }
 
 export function briefPacket(store: Store, _repoRoot: string, packetId: string): string {
