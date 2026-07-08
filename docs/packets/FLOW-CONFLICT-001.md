@@ -1,7 +1,7 @@
 ---
 id: FLOW-CONFLICT-001
 title: planning-time write_set conflict detection on move to ready
-depends_on: ["FLOW-TRANS-001"]
+depends_on: ["FLOW-TRANSITIONS-001"]
 write_set: ["src/tasks/service.ts","src/tasks/service.test.ts","src/db/store.ts","src/db/store.test.ts"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]

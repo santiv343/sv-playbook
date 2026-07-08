@@ -1,6 +1,6 @@
 ---
-id: FLOW-TRANS-001
-title: missing transitions: ready->draft demotion, review->ready rejection (releases lease)
+id: FLOW-TRANSITIONS-001
+title: missing lifecycle transitions: ready to draft demotion, review to ready rejection (releases lease)
 depends_on: []
 write_set: ["src/tasks/service.ts","src/tasks/service.test.ts"]
 requirements: []
