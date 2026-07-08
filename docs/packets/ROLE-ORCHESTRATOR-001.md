@@ -30,3 +30,5 @@ Anything outside the write_set; inventing rules not in the facts above.
 
 ## Evidence required at close
 verify-root, final-sha.
+
+closed: done 2026-07-08T15:11:59.364Z
