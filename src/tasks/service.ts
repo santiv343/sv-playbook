@@ -130,7 +130,17 @@ function assertLeaseForActive(store: Store, sessionId: string | undefined, packe
 }
 
 function shouldReleaseLease(from: string, to: string): boolean {
-  return to === STATUS.DONE || to === STATUS.DROPPED || (from === STATUS.REVIEW && to === STATUS.READY);
+  return !(from === STATUS.ACTIVE && to === STATUS.BLOCKED);
+}
+
+export function releaseLease(store: Store, sessionId: string, packetId: string): void {
+  const lease = leaseOf(store, packetId);
+  if (lease === undefined) throw new LifecycleError('no lease to release');
+  if (lease.sessionId !== sessionId) {
+    throw new LifecycleError(`lease held by another session ${lease.sessionId}`, 'use takeover');
+  }
+  refreshHeartbeat(store, sessionId);
+  store.db.prepare(DELETE_LEASE_SQL).run(packetId);
 }
 
 function stampClosed(store: Store, packetId: string, status: string): void {
@@ -203,9 +213,9 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   if (!allowed.includes(to)) throw new LifecycleError(`illegal transition ${from} -> ${to}`);
   if (to === STATUS.READY) checkWriteSetConflict(store, packetId);
   if (from === STATUS.ACTIVE) assertLeaseForActive(store, sessionId, packetId);
-  if (shouldReleaseLease(from, to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
   stampClosed(store, packetId, to);
   captureEvidence(store, packetId, from, to);
+  if (shouldReleaseLease(from, to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
   recordTransition(store, packetId, from, to, sessionId);
   return from;
 }

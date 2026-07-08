@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -65,6 +65,36 @@ test('takeover without lease exits 1 with hint; brief prints the packet', async 
     const io2 = fakeIo();
     assert.equal(await taskCommand().run(['brief', 'P3-101'], io2), 0);
     assert.ok(io2.outLines.join('\n').includes('Brief me.'));
+  });
+});
+
+test('release frees an own lease and reports no lease on retry', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'Do it.\n');
+    const io = fakeIo();
+    await taskCommand().run(['create', '--id', 'REL-001', '--title', 'X', '--write', 'src/**', '--body-file', 'body.md'], io);
+    await taskCommand().run(['move', 'REL-001', 'ready'], io);
+    await taskCommand().run(['start', 'REL-001'], io);
+    assert.equal(await taskCommand().run(['release', 'REL-001'], io), 0);
+    assert.ok(io.outLines.includes('released REL-001'));
+    assert.equal(await taskCommand().run(['release', 'REL-001'], io), 1);
+    assert.ok(io.errLines.some((line) => line.includes('no lease')));
+  });
+});
+
+test('release refuses a lease held by another session with takeover hint', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'Do it.\n');
+    const io = fakeIo();
+    await taskCommand().run(['create', '--id', 'REL-002', '--title', 'X', '--write', 'src/**', '--body-file', 'body.md'], io);
+    await taskCommand().run(['move', 'REL-002', 'ready'], io);
+    await taskCommand().run(['start', 'REL-002'], io);
+
+    await mkdir('other');
+    process.chdir('other');
+    assert.equal(await taskCommand().run(['release', 'REL-002'], io), 1);
+    assert.ok(io.errLines.some((line) => line.includes('lease held by another session')));
+    assert.ok(io.errLines.some((line) => line.includes('use takeover')));
   });
 });
 
