@@ -157,7 +157,7 @@ ops/                    # deploy, secrets handling, rollback runbook
 
 **Definition plane (markdown in git — source of truth for WHAT).** The packet document: goal, write-set, acceptance criteria, required and final evidence. Plus analysis, ADRs, learnings. Content is reviewable in PRs, versioned with the code it describes, and travels with every clone. Packet + branch + evidence is a portable task: any agent on any harness can take over mid-task.
 
-**Execution plane (SQLite via `node:sqlite`, written ONLY by the CLI — source of truth for HOW IT'S GOING).** Statuses, transitions with timestamps, owners, leases, agent sessions, events, sprints, priority ordering. Full audit trail with zero commit noise and zero merge conflicts on state.
+**Execution plane (SQLite via `node:sqlite`, written ONLY by the CLI — source of truth for HOW IT'S GOING).** Statuses, transitions with timestamps, owners, leases, agent sessions, events, sprints, priority ordering. Full audit trail with zero commit noise and zero merge conflicts on state. The CLI also maintains a **derived content index**: on packet/analysis changes it indexes document content into the DB (rebuildable from git at any time, like a code-intelligence index), so views and queries never parse markdown. Agents may leave optional `task note <id> "..."` breadcrumbs — cheap live-progress markers for the board.
 
 **Durability rule:** long-term facts (packet closed, final evidence, final SHA) are stamped into the packet file at close — one commit per meaningful transition. Git is the durable archive; the DB is the live operational plane. **Losing the DB is harmless**: durable facts survive in git; live facts (current lease holders) reset or rebuild. Nothing irrecoverable lives only in the DB.
 
