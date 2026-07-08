@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { main } from './main.js';
 import type { Io } from './command.js';
 
@@ -22,4 +23,12 @@ test('no args prints usage and exits 2', async () => {
   const code = await main([], io);
   assert.equal(code, 2);
   assert.ok(io.errLines.join('\n').includes('Usage: sv-playbook <command>'));
+});
+
+test('bin shim filters experimental warnings only', () => {
+  const result = spawnSync(process.execPath, ['bin/sv-playbook.js', 'docs'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  assert.ok(!result.stderr.includes('ExperimentalWarning'), `stderr had ExperimentalWarning:\n${result.stderr}`);
 });
