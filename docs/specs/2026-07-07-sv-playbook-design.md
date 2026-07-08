@@ -161,7 +161,7 @@ ops/                    # deploy, secrets handling, rollback runbook
 
 **Durability rule:** long-term facts (packet closed, final evidence, final SHA) are stamped into the packet file at close — one commit per meaningful transition. Git is the durable archive; the DB is the live operational plane. **Losing the DB is harmless**: durable facts survive in git; live facts (current lease holders) reset or rebuild. Nothing irrecoverable lives only in the DB.
 
-**Port & adapter:** the CLI is the port; SQLite is the first storage adapter. Swappable later (including wrapping third-party trackers like beads) because no irrecoverable state is adapter-local.
+**Single-author flow (DB-first ergonomics):** agents never hand-write structured project documents. Content mutations go through CLI commands (`task create|edit`, notes) that validate structure AT WRITE TIME, store to the DB, and regenerate the canonical markdown projection in the repo. The DB is the one place everything is read from (agents and serve); the generated markdown is the durable projection — branchable, mergeable, diffable in PRs, human-readable. They cannot diverge because nothing else writes. The `.sqlite` file is never committed (binary, unmergeable); it rebuilds from the files on any clone, so backup = git itself. v1 applies this to packets and state; analysis/ADRs stay file-authored + checked in v1 and graduate to CLI authoring once packets prove the pattern. **Port & adapter:** the CLI is the port; SQLite is the first storage adapter. Swappable later (including wrapping third-party trackers like beads) because no irrecoverable state is adapter-local.
 
 ## 9. The task packet
 
@@ -236,6 +236,8 @@ sv-playbook task brief <id>   # deterministic prompt assembly: contract refs + p
                               # briefed by the CLI, never by hand-written boilerplate. All task-state
                               # mutations likewise go through `task move` — an agent editing packet
                               # status by hand is a contract violation `check task` catches.
+sv-playbook task create|edit <id>  # sole author of packet documents: validates at write time,
+                              # stores to DB, regenerates canonical markdown (D21)
 sv-playbook agent pause|resume <id>
 sv-playbook describe --json   # machine-readable command catalog (feeds MCP wrapper + skills)
 sv-playbook upgrade           # diff pinned playbook version vs current; emit adaptation packets
@@ -335,3 +337,4 @@ Thirteen walkthroughs (who does what, minute by minute, which gate validates) we
 | D18 | All verification under `check <target>`; CLI-wide plain-word naming rule | Self-evident names for outsiders; "grill" collided with the grill-me skill | Separate grill/check verbs (confusing boundary) |
 | D19 | Configurable autonomy levels (strict/standard/high) with mandatory DEVIATION records | P1 blockers showed trivially-safe fixes blocking capable agents; evidence duty stays identical at every level | Fixed maximal strictness (wastes capable models); trust-based autonomy (hallucination risk) |
 | D20 | `check plan`: a plan's embedded code is typechecked/linted before implementation starts | P1 blockers #1/#2 were plan/tool-config contradictions — mechanically catchable (PRINCIPLE-001 applied to plans) | Trusting planner review alone |
+| D21 | CLI is the sole author of structured content: validate-at-write, DB + generated markdown as dual projections; .sqlite never committed | One write path ends SoT ambiguity; agents get queryable context, humans get diffable files; binary DBs are unmergeable in git | Committing SQLite (unmergeable, opaque); agents hand-writing docs (format drift, post-hoc validation) |
