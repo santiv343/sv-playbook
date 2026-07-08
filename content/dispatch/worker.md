@@ -14,6 +14,12 @@ MAINREPO = <absolute path to the main repo>
 CLI = node <MAINREPO>/bin/sv-playbook.js
 Use forward slashes in all paths when running commands.
 
+HARD PROHIBITION: never delete, edit, or work around the coordination
+database (.svp/ anywhere) or any file outside your write_set. A database
+error, schema mismatch, or stale-dist problem is ALWAYS: CLI task move
+PACKET_ID blocked, report the literal error, stop. Destroying shared state
+once cost the whole board history. There is no exception.
+
 DEVIATION RULE (applies to every step): anything you do that these steps
 or the brief did not literally specify — temp files, workaround commands,
 extra re-runs, editing something to unblock yourself — is a DEVIATION.
