@@ -32,3 +32,11 @@ test('cli topic documents takeover and brief', async () => {
     assert.ok(text.toLowerCase().includes(s), `missing ${s}`);
   }
 });
+
+test('review topic exists with the four checklist sections', async () => {
+  const text = await readTopic('review');
+  assert.ok(text !== undefined);
+  for (const s of ['Code judgment', 'Test quality', 'Scope and evidence', 'Taste pass']) {
+    assert.ok(text.includes(s), `missing ${s}`);
+  }
+});
