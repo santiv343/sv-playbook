@@ -29,3 +29,5 @@ Dogfooding finding (DROP-ROTATE-001 loop): `task create` writes the packet doc t
 
 ## Evidence
 (filled at close)
+
+closed: done 2026-07-08T23:25:31.733Z
