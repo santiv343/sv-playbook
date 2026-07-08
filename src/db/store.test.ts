@@ -29,16 +29,17 @@ test('openStore is idempotent (schema re-apply is safe)', async () => {
   again.close();
 });
 
-test('schema version mismatch triggers backup and self-heal', async () => {
+test('schema version mismatch refuses with the rebuild recovery message', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-ver-'));
   openStore(root).close();
   const db = new DatabaseSync(join(root, '.svp', 'playbook.sqlite'));
   db.exec('PRAGMA user_version = 1');
   db.close();
-  let spyCalled = 0;
-  const store = openStore(root, () => { spyCalled++; });
-  assert.equal(spyCalled, 1);
-  assert.ok(existsSync(join(root, '.svp', 'backups')));
-  assert.equal(numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version'), SCHEMA_VERSION);
+  assert.throws(() => openStore(root), /run sv-playbook rebuild/);
+  const store = openStore(root, { skipVersionCheck: true });
+  store.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   store.close();
+  const reopened = openStore(root);
+  assert.equal(numberColumn(reopened.db.prepare('PRAGMA user_version').get(), 'user_version'), SCHEMA_VERSION);
+  reopened.close();
 });

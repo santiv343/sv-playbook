@@ -1,11 +1,15 @@
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { EVENT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES } from '../tasks/service.js';
 import { numberColumn } from './rows.js';
 
 export interface Store { readonly db: DatabaseSync; readonly dir: string; close(): void; }
+
+export class StoreVersionError extends Error {
+  constructor(message: string) { super(message); this.name = 'StoreVersionError'; }
+}
 
 export const SCHEMA_VERSION = 2;
 export const SVP_DIR = '.svp';
@@ -67,32 +71,17 @@ export function commonRoot(startDir: string): string {
   return dirname(resolve(startDir, out));
 }
 
-function backupAndSelfHeal(repoRoot: string, oldVersion: number, rebuild?: (r: string) => void): Store {
-  const dir = join(repoRoot, SVP_DIR);
-  const dbPath = join(dir, DB_FILE);
-  const backupDir = join(dir, 'backups');
-  mkdirSync(backupDir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  copyFileSync(dbPath, join(backupDir, `playbook-corrupt-${stamp}.sqlite`));
-  rmSync(dbPath);
-  const fresh = new DatabaseSync(dbPath);
-  applyPragmas(fresh);
-  fresh.exec(SCHEMA);
-  fresh.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-  if (rebuild) {
-    rebuild(repoRoot);
-    console.error(`store auto-rebuilt (schema v${oldVersion} -> v${SCHEMA_VERSION})`);
-  }
-  return { db: fresh, dir, close: () => { fresh.close(); } };
-}
-
 function applyPragmas(db: DatabaseSync): void {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec('PRAGMA foreign_keys = ON;');
 }
 
-export function openStore(repoRoot: string, rebuild?: (r: string) => void): Store {
+interface OpenStoreOptions {
+  skipVersionCheck?: boolean;
+}
+
+export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   const dir = join(repoRoot, SVP_DIR);
   mkdirSync(dir, { recursive: true });
   const dbPath = join(dir, DB_FILE);
@@ -102,16 +91,14 @@ export function openStore(repoRoot: string, rebuild?: (r: string) => void): Stor
   db.exec(SCHEMA);
   if (isNew) {
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-  } else {
+  } else if (!options?.skipVersionCheck) {
     const row = db.prepare('PRAGMA user_version').get();
     const currentVersion = numberColumn(row, 'user_version');
-    if (currentVersion > SCHEMA_VERSION) {
+    if (currentVersion !== SCHEMA_VERSION) {
       db.close();
-      throw new Error('store is from a newer sv-playbook; upgrade the package');
-    }
-    if (currentVersion < SCHEMA_VERSION) {
-      db.close();
-      return backupAndSelfHeal(repoRoot, currentVersion, rebuild);
+      throw new StoreVersionError(
+        `store schema v${currentVersion} does not match v${SCHEMA_VERSION}: run sv-playbook rebuild from the main repo with no other sv-playbook processes running`,
+      );
     }
   }
   return { db, dir, close: () => { db.close(); } };
