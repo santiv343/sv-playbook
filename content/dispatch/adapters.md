@@ -9,7 +9,7 @@ rotation yields comparative rework/cost telemetry.
 | --- | --- | --- | --- | --- | --- |
 | opencode | 1.17.15 | `opencode serve --port <P>` once, then `POST /session` + `POST /session/{id}/prompt_async` | seconds (warm server) | `POST /session/{id}/abort` | `GET /session/{id}/message` |
 | kimi | 0.22.3 | `kimi -p "<prompt>"` | 9s | own PID | `kimi server` (REST+WS) exists — same warm-server pattern as opencode, unprobed. CAUTION: hit its usage limit (403) mid-mission 2026-07-08 — excellent worker, quota ceiling |
-| claude | 2.1.204 | `claude -p "<prompt>"` | 13s | own PID | `--output-format stream-json` |
+| claude | 2.1.204 | `claude -p "<prompt>" --model <MODEL>` — the model flag is MANDATORY: without it the user's default applies (was Fable, the most expensive; a worker inherited it 2026-07-08) | 13s | own PID | `--output-format stream-json` |
 | codex | 0.142.5 | `'' \| codex exec --sandbox danger-full-access '<prompt>'` — stdin MUST be closed (empty pipe) and cwd MUST be a trusted git repo (or add `--skip-git-repo-check`) | 15s | own PID | stdout stream |
 | commandcode | 0.41.1 | `commandcode -p '<prompt>' --skip-onboarding` | 46s | own PID | stdout stream |
 
@@ -26,10 +26,14 @@ rotation yields comparative rework/cost telemetry.
 4. Long-running commands (npm ci) inside opencode API sessions can zombie
    (observed once: 20+ min, no process activity) — pair every dispatch with
    a progress monitor, not just a boot check.
-5. Provider/limit errors (403 usage limit, 4xx) kill workers mid-mission:
+5. EVERY dispatch pins its model EXPLICITLY (claude --model, opencode -m
+   provider/model, kimi/codex equivalents). Inheriting defaults dispatched
+   the priciest model onto the biggest packet once. The dispatch event must
+   record the PINNED model, not an assumption.
+6. Provider/limit errors (403 usage limit, 4xx) kill workers mid-mission:
    the orchestrator treats them as worker death — salvage, rotate harness,
    redispatch (see roles/orchestrator.md salvage section).
-6. Every dispatch gets a boot timeout (no sign of life in 120s = kill +
+7. Every dispatch gets a boot timeout (no sign of life in 120s = kill +
    diagnose) and periodic polling. A dispatcher that waits forever is its
    own dead end (PRINCIPLE-010).
 
