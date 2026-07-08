@@ -4,8 +4,9 @@ import { mkdtemp } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openStore } from './store.js';
-import { stringColumn } from './rows.js';
+import { DatabaseSync } from 'node:sqlite';
+import { openStore, SCHEMA_VERSION } from './store.js';
+import { numberColumn, stringColumn } from './rows.js';
 
 test('openStore creates .svp/playbook.sqlite and the schema tables', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-store-'));
@@ -26,4 +27,19 @@ test('openStore is idempotent (schema re-apply is safe)', async () => {
   openStore(root).close();
   const again = openStore(root);
   again.close();
+});
+
+test('schema version mismatch refuses with the rebuild recovery message', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-ver-'));
+  openStore(root).close();
+  const db = new DatabaseSync(join(root, '.svp', 'playbook.sqlite'));
+  db.exec('PRAGMA user_version = 1');
+  db.close();
+  assert.throws(() => openStore(root), /run sv-playbook rebuild/);
+  const store = openStore(root, { skipVersionCheck: true });
+  store.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  store.close();
+  const reopened = openStore(root);
+  assert.equal(numberColumn(reopened.db.prepare('PRAGMA user_version').get(), 'user_version'), SCHEMA_VERSION);
+  reopened.close();
 });

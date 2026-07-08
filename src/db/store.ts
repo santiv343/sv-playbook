@@ -1,11 +1,17 @@
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { EVENT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES } from '../tasks/service.js';
+import { numberColumn } from './rows.js';
 
 export interface Store { readonly db: DatabaseSync; readonly dir: string; close(): void; }
 
+export class StoreVersionError extends Error {
+  constructor(message: string) { super(message); this.name = 'StoreVersionError'; }
+}
+
+export const SCHEMA_VERSION = 2;
 export const SVP_DIR = '.svp';
 export const DB_FILE = 'playbook.sqlite';
 
@@ -65,13 +71,35 @@ export function commonRoot(startDir: string): string {
   return dirname(resolve(startDir, out));
 }
 
-export function openStore(repoRoot: string): Store {
-  const dir = join(repoRoot, SVP_DIR);
-  mkdirSync(dir, { recursive: true });
-  const db = new DatabaseSync(join(dir, DB_FILE));
+function applyPragmas(db: DatabaseSync): void {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec('PRAGMA foreign_keys = ON;');
+}
+
+interface OpenStoreOptions {
+  skipVersionCheck?: boolean;
+}
+
+export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
+  const dir = join(repoRoot, SVP_DIR);
+  mkdirSync(dir, { recursive: true });
+  const dbPath = join(dir, DB_FILE);
+  const isNew = !existsSync(dbPath);
+  const db = new DatabaseSync(dbPath);
+  applyPragmas(db);
   db.exec(SCHEMA);
+  if (isNew) {
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  } else if (!options?.skipVersionCheck) {
+    const row = db.prepare('PRAGMA user_version').get();
+    const currentVersion = numberColumn(row, 'user_version');
+    if (currentVersion !== SCHEMA_VERSION) {
+      db.close();
+      throw new StoreVersionError(
+        `store schema v${currentVersion} does not match v${SCHEMA_VERSION}: run sv-playbook rebuild from the main repo with no other sv-playbook processes running`,
+      );
+    }
+  }
   return { db, dir, close: () => { db.close(); } };
 }
