@@ -189,3 +189,12 @@ export function takeoverPacket(
   }
   return recoverPacket(store, packetId);
 }
+
+export function notePacket(store: Store, sessionId: string, packetId: string, text: string): void {
+  currentStatus(store, packetId);
+  const detail = text.trim();
+  if (detail.length === 0) throw new LifecycleError('note text required');
+  refreshHeartbeat(store, sessionId);
+  store.db.prepare('INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)')
+    .run(sessionId, packetId, 'note', detail, now());
+}

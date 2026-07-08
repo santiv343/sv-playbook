@@ -15,6 +15,7 @@ import {
   refreshHeartbeat,
   takeoverPacket,
   recoverPacket,
+  notePacket,
 } from './service.js';
 
 const def = (id: string) => ({
@@ -143,4 +144,14 @@ test('recover reports status, lease and recent history without mutating', async 
   assert.equal(report.status, 'ready');
   assert.equal(report.lease, undefined);
   assert.ok(report.lastTransitions.length >= 2);
+});
+
+test('note records a breadcrumb event visible in recover', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('P3-004'), 'a');
+  const s1 = ensureSession(store, root);
+  notePacket(store, s1, 'P3-004', 'halfway through the RED test');
+  const report = recoverPacket(store, 'P3-004');
+  assert.ok(report.lastNotes.some((n) => n.includes('halfway through')));
+  assert.throws(() => { notePacket(store, s1, 'P3-004', '   '); }, LifecycleError);
 });
