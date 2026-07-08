@@ -18,6 +18,9 @@ export default tseslint.config(
           ],
         },
       ],
+      // Numbers stringify deterministically; forbidding them in templates
+      // adds noise without safety. Everything else stays restricted.
+      '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
     },
   },
   {
