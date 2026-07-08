@@ -33,6 +33,27 @@ test('cli topic documents takeover and brief', async () => {
   }
 });
 
+test('cli topic documents doctor', async () => {
+  const text = await readTopic('cli');
+  assert.ok(text !== undefined);
+  assert.ok(text.includes('sv-playbook doctor'));
+});
+
+test('cli topic documents backup and restore state instead of rebuild', async () => {
+  const text = await readTopic('cli');
+  assert.ok(text !== undefined);
+  assert.ok(text.includes('sv-playbook backup state'));
+  assert.ok(text.includes('sv-playbook restore state'));
+  assert.ok(!text.includes('sv-playbook rebuild'));
+});
+
+test('cli topic documents status json for serve', async () => {
+  const text = await readTopic('cli');
+  assert.ok(text !== undefined);
+  assert.ok(text.includes('sv-playbook status'));
+  assert.ok(text.includes('status --json'));
+});
+
 test('review topic exists with the four checklist sections', async () => {
   const text = await readTopic('review');
   assert.ok(text !== undefined);

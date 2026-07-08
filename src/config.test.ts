@@ -14,6 +14,12 @@ test('loadConfig returns defaults when the file is absent', () => {
     tier: 'TIER-2',
     verifyCommand: 'npm run verify',
     autonomy: 'strict',
+    backup: {
+      enabled: true,
+      retention: 20,
+      maxAgeHours: 6,
+      onEvents: ['done', 'force-takeover', 'restore', 'schema-mismatch'],
+    },
   });
 });
 
@@ -25,6 +31,12 @@ test('loadConfig reads a valid config file', () => {
     tier: 'TIER-1',
     verifyCommand: 'npm run check',
     autonomy: 'high',
+    backup: {
+      enabled: false,
+      retention: 3,
+      maxAgeHours: 12,
+      onEvents: ['done'],
+    },
   }));
   const config = loadConfig(dir);
   assert.deepEqual(config, {
@@ -33,6 +45,12 @@ test('loadConfig reads a valid config file', () => {
     tier: 'TIER-1',
     verifyCommand: 'npm run check',
     autonomy: 'high',
+    backup: {
+      enabled: false,
+      retention: 3,
+      maxAgeHours: 12,
+      onEvents: ['done'],
+    },
   });
 });
 
@@ -58,4 +76,12 @@ test('loadConfig throws ConfigError for malformed JSON', () => {
   const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
   writeFileSync(join(dir, 'playbook.config.json'), '{ invalid json }');
   assert.throws(() => loadConfig(dir), { name: 'ConfigError', message: /malformed JSON/ });
+});
+
+test('loadConfig throws ConfigError for invalid backup event', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(dir, 'playbook.config.json'), JSON.stringify({
+    backup: { onEvents: ['surprise'] },
+  }));
+  assert.throws(() => loadConfig(dir), { name: 'ConfigError', message: /backup.onEvents/ });
 });

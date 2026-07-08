@@ -1,0 +1,163 @@
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { basename, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { DB_FILE, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
+import { openStore } from './store.js';
+import { BACKUP_PREFIX, BACKUPS_DIR, BACKUP_REASON, BACKUP_RETENTION_DEFAULT } from './backup.constants.js';
+import type { BackupOptions, BackupReport, RestoreReport } from './backup.types.js';
+import { LEASE_TTL_MS } from '../tasks/service.constants.js';
+import { stringColumn } from './rows.js';
+
+const now = (): string => new Date().toISOString();
+
+function backupsDir(repoRoot: string): string {
+  return join(repoRoot, SVP_DIR, BACKUPS_DIR);
+}
+
+function dbPath(repoRoot: string): string {
+  return join(repoRoot, SVP_DIR, DB_FILE);
+}
+
+function stamp(value: string): string {
+  return value.replace(/[:\-T.Z]/g, '').slice(0, 14);
+}
+
+function sha256(path: string): string {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function gitValue(repoRoot: string, args: string[]): string {
+  try {
+    return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
+function freshLeaseCount(repoRoot: string): number {
+  const store = openStore(repoRoot);
+  try {
+    const rows = store.db.prepare('SELECT heartbeat_at FROM leases').all();
+    let count = 0;
+    for (const row of rows) {
+      const heartbeatAt = stringColumn(row, 'heartbeat_at');
+      if (Date.now() - Date.parse(heartbeatAt) <= LEASE_TTL_MS) count++;
+    }
+    return count;
+  } finally {
+    store.close();
+  }
+}
+
+function checkpoint(repoRoot: string): void {
+  const db = new DatabaseSync(dbPath(repoRoot));
+  try {
+    db.exec('PRAGMA wal_checkpoint(FULL);');
+  } finally {
+    db.close();
+  }
+}
+
+function trimBackups(repoRoot: string, retention: number): void {
+  const dir = backupsDir(repoRoot);
+  const entries = readdirSync(dir)
+    .filter((name) => name.endsWith('.sqlite'))
+    .map((name) => ({ name, mtime: statSync(join(dir, name)).mtimeMs }))
+    .sort((a, b) => b.mtime - a.mtime);
+  for (let index = retention; index < entries.length; index++) {
+    const entry = entries[index];
+    if (entry === undefined) continue;
+    const sqlitePath = join(dir, entry.name);
+    rmSync(sqlitePath);
+    const metadataPath = sqlitePath.replace(/\.sqlite$/, '.json');
+    if (existsSync(metadataPath)) rmSync(metadataPath);
+  }
+}
+
+export function latestStateBackupAgeHours(repoRoot: string): number | undefined {
+  const dir = backupsDir(repoRoot);
+  if (!existsSync(dir)) return undefined;
+  const newest = readdirSync(dir)
+    .filter((name) => name.endsWith('.sqlite'))
+    .map((name) => statSync(join(dir, name)).mtimeMs)
+    .sort((a, b) => b - a)
+    .at(0);
+  if (newest === undefined) return undefined;
+  return (Date.now() - newest) / (60 * 60 * 1000);
+}
+
+function writeMetadata(repoRoot: string, report: BackupReport, reason: string): void {
+  const metadata = {
+    dbFile: basename(report.sqlitePath),
+    reason,
+    schemaVersion: SCHEMA_VERSION,
+    createdAt: report.createdAt,
+    sourceBranch: gitValue(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD']),
+    sourceSha: gitValue(repoRoot, ['rev-parse', 'HEAD']),
+    sizeBytes: report.sizeBytes,
+    sha256: report.sha256,
+  };
+  writeFileSync(report.metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+}
+
+function rawPreRestoreBackup(repoRoot: string, retention?: number): BackupReport {
+  mkdirSync(backupsDir(repoRoot), { recursive: true });
+  const createdAt = now();
+  const sqlitePath = join(backupsDir(repoRoot), `${BACKUP_PREFIX}-${stamp(createdAt)}-pre-restore.sqlite`);
+  const metadataPath = sqlitePath.replace(/\.sqlite$/, '.json');
+  copyFileSync(dbPath(repoRoot), sqlitePath);
+  const report: BackupReport = {
+    sqlitePath,
+    metadataPath,
+    createdAt,
+    sha256: sha256(sqlitePath),
+    sizeBytes: statSync(sqlitePath).size,
+  };
+  writeMetadata(repoRoot, report, BACKUP_REASON.PRE_RESTORE);
+  trimBackups(repoRoot, retention ?? BACKUP_RETENTION_DEFAULT);
+  return report;
+}
+
+export function createStateBackup(repoRoot: string, options: BackupOptions): BackupReport {
+  const freshLeases = freshLeaseCount(repoRoot);
+  if (freshLeases > 0 && options.allowFreshLeases !== true) {
+    throw new Error(`backup refused: ${freshLeases} live lease(s)`);
+  }
+  mkdirSync(backupsDir(repoRoot), { recursive: true });
+  openStore(repoRoot).close();
+  checkpoint(repoRoot);
+  const createdAt = now();
+  const sqlitePath = join(backupsDir(repoRoot), `${BACKUP_PREFIX}-${stamp(createdAt)}.sqlite`);
+  const metadataPath = sqlitePath.replace(/\.sqlite$/, '.json');
+  copyFileSync(dbPath(repoRoot), sqlitePath);
+  const report: BackupReport = {
+    sqlitePath,
+    metadataPath,
+    createdAt,
+    sha256: sha256(sqlitePath),
+    sizeBytes: statSync(sqlitePath).size,
+  };
+  writeMetadata(repoRoot, report, options.reason);
+  trimBackups(repoRoot, options.retention ?? BACKUP_RETENTION_DEFAULT);
+  return report;
+}
+
+export function restoreStateBackup(repoRoot: string, backupPath: string, force: boolean, retention?: number): RestoreReport {
+  if (!existsSync(backupPath)) throw new Error(`backup file not found: ${backupPath}`);
+  let preRestoreBackup: BackupReport;
+  try {
+    preRestoreBackup = createStateBackup(repoRoot, {
+      reason: BACKUP_REASON.PRE_RESTORE,
+      allowFreshLeases: force,
+      ...(retention === undefined ? {} : { retention }),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('backup refused:')) throw error;
+    preRestoreBackup = rawPreRestoreBackup(repoRoot, retention);
+  }
+  const target = dbPath(repoRoot);
+  copyFileSync(backupPath, target);
+  return { restoredFrom: backupPath, preRestoreBackup };
+}

@@ -1,12 +1,10 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { openStore } from '../db/store.js';
-import { SVP_DIR, DB_FILE } from '../db/store.constants.js';
 import type { Store } from '../db/store.types.js';
 import { numberColumn, stringColumn } from '../db/rows.js';
-import { generatePacketDocument, parsePacketDocument } from '../packets/document.js';
+import { generatePacketDocument } from '../packets/document.js';
 import type { PacketDefinition } from '../packets/document.types.js';
 import { LifecycleError } from './service.errors.js';
 import {
@@ -25,7 +23,7 @@ import {
   SESSION_FILE_NAME,
   STATUS,
 } from './service.constants.js';
-import type { LeaseInfo, PacketStatus, RebuildCounts, RecoveryReport } from './service.types.js';
+import type { LeaseInfo, PacketStatus, RecoveryReport } from './service.types.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -275,52 +273,6 @@ export function notePacket(store: Store, sessionId: string, packetId: string, te
   refreshHeartbeat(store, sessionId);
   store.db.prepare(INSERT_EVENT_SQL)
     .run(sessionId, packetId, EVENT_NOTE, detail, now());
-}
-
-function parseStatus(text: string): { status: string; cleanText: string } {
-  const closedMatch = text.match(/\nclosed: (\S+) (\S+)\s*$/);
-  if (closedMatch !== null && closedMatch[1] !== undefined) {
-    const cleanText = closedMatch.index !== undefined ? text.slice(0, closedMatch.index) : text;
-    return { status: closedMatch[1], cleanText };
-  }
-  return { status: STATUS.DRAFT, cleanText: text };
-}
-
-function rebuildOne(store: Store, file: string, dir: string, counts: RebuildCounts): void {
-  const fullPath = join(dir, file);
-  const text = readFileSync(fullPath, 'utf8');
-  const { status, cleanText } = parseStatus(text);
-  const { definition } = parsePacketDocument(cleanText);
-  store.db.prepare(INSERT_PACKET_SQL).run(definition.id, definition.title, fullPath, status, JSON.stringify(definition.writeSet), now(), now());
-  recordTransition(store, definition.id, 'none', status);
-  store.db.prepare(INSERT_EVENT_SQL).run(null, definition.id, EVENT_NOTE, 'rebuilt from files', now());
-  counts.total++;
-  if (status === STATUS.DONE) counts.done++;
-  else if (status === STATUS.DROPPED) counts.dropped++;
-  else counts.draft++;
-}
-
-export function rebuildFromFiles(repoRoot: string): RebuildCounts {
-  const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
-  if (existsSync(dbPath)) rmSync(dbPath);
-  const store = openStore(repoRoot);
-  const dir = join(repoRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
-  const files = readdirSync(dir).filter((f) => f.endsWith('.md'));
-  const counts: RebuildCounts = { total: 0, done: 0, dropped: 0, draft: 0 };
-  for (const file of files) rebuildOne(store, file, dir, counts);
-  store.close();
-  return counts;
-}
-
-export function refuseRebuild(store: Store): string | undefined {
-  const rows = store.db.prepare('SELECT heartbeat_at FROM leases').all();
-  let freshLeases = 0;
-  for (const row of rows) {
-    const heartbeatAt = stringColumn(row, 'heartbeat_at');
-    if (Date.now() - Date.parse(heartbeatAt) <= LEASE_TTL_MS) freshLeases++;
-  }
-  if (freshLeases === 0) return undefined;
-  return `rebuild refused: ${freshLeases} live lease(s) - workers may be running. Pass --force to override.`;
 }
 
 export function briefPacket(store: Store, _repoRoot: string, packetId: string): string {

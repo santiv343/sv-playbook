@@ -26,15 +26,29 @@ function parseCatalog(text: string): Array<{ name: string; summary: string }> {
   }, []);
 }
 
-test('describe prints a JSON catalog containing docs and task', async () => {
+test('describe prints a JSON catalog containing docs, task, doctor, backup, restore, and status', async () => {
   const io = fakeIo();
   const code = await main(['describe'], io);
   assert.equal(code, EXIT.OK, io.errLines.join('\n'));
   const catalog = parseCatalog(io.outLines.join('\n'));
   const docs = catalog.find((e) => e.name === 'docs');
   const task = catalog.find((e) => e.name === 'task');
+  const doctor = catalog.find((e) => e.name === 'doctor');
+  const backup = catalog.find((e) => e.name === 'backup');
+  const restore = catalog.find((e) => e.name === 'restore');
+  const status = catalog.find((e) => e.name === 'status');
+  const rebuild = catalog.find((e) => e.name === 'rebuild');
   assert.ok(docs, 'missing docs entry');
   assert.ok(task, 'missing task entry');
+  assert.ok(doctor, 'missing doctor entry');
+  assert.ok(backup, 'missing backup entry');
+  assert.ok(restore, 'missing restore entry');
+  assert.ok(status, 'missing status entry');
+  assert.equal(rebuild, undefined, 'rebuild should not be registered');
   assert.ok(typeof docs.summary === 'string' && docs.summary.length > 0, 'docs summary empty');
   assert.ok(typeof task.summary === 'string' && task.summary.length > 0, 'task summary empty');
+  assert.ok(typeof doctor.summary === 'string' && doctor.summary.length > 0, 'doctor summary empty');
+  assert.ok(typeof backup.summary === 'string' && backup.summary.length > 0, 'backup summary empty');
+  assert.ok(typeof restore.summary === 'string' && restore.summary.length > 0, 'restore summary empty');
+  assert.ok(typeof status.summary === 'string' && status.summary.length > 0, 'status summary empty');
 });

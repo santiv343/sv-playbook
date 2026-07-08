@@ -1,5 +1,14 @@
+import type { BackupEvent } from './db/backup.types.js';
+
 export type Tier = 'TIER-1' | 'TIER-2' | 'TIER-3';
 export type Autonomy = 'strict' | 'standard' | 'high';
+
+export interface BackupConfig {
+  enabled: boolean;
+  retention: number;
+  maxAgeHours: number;
+  onEvents: BackupEvent[];
+}
 
 export interface PlaybookConfig {
   productName: string;
@@ -7,4 +16,5 @@ export interface PlaybookConfig {
   tier: Tier;
   verifyCommand: string;
   autonomy: Autonomy;
+  backup: BackupConfig;
 }

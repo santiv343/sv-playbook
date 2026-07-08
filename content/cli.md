@@ -76,26 +76,102 @@ commands. Each entry has `name` and `summary` fields. Takes no arguments.
 Why: the JSON output feeds the MCP wrapper and harness skills so they
 can discover available commands programmatically.
 
-### `sv-playbook rebuild`
+### `sv-playbook doctor`
 
-When: after any store disaster or schema-version refusal. Run it from the
-main repo with no other `sv-playbook` processes running.
+When: at setup, after a confusing CLI/store error, or before dispatching
+workers on a repo you have not touched recently. Use `--json` when another
+tool, including `serve`, needs the same checks.
 
-Why: the SQLite DB is disposable. The durable truth is
-`docs/packets/*.md` plus their `closed:` stamps. Rebuild deletes and
-recreates `.svp/playbook.sqlite`, then restores packet state from those
-files.
+Why: it gives agents and humans one non-destructive health readout for the
+local environment: Node version, git root, SQLite store schema, packet
+directory, and fresh/stale leases.
+
+Argument shape:
+
+```sh
+sv-playbook doctor [--json]
+```
+
+### `sv-playbook status`
+
+When: whenever a human, orchestrator, or `serve` needs the current board
+without reading SQLite directly.
+
+Why: it is the stable read model for board state: packet counts, packet rows,
+leases, last events, and backup age. `serve` should render this contract
+instead of inventing its own DB queries.
+
+Use `sv-playbook status --json` as the machine-readable contract for `serve`
+and automation.
+
+Argument shape:
+
+```sh
+sv-playbook status [--json]
+```
+
+### `sv-playbook backup state`
+
+When: before risky operations, before handing off important local state, or
+whenever `doctor` reports that the last backup is too old. Takes `--force` to
+allow backing up while fresh leases exist.
+
+Why: SQLite is the operational source of truth. Backup checkpoints/copies
+`.svp/playbook.sqlite` into `.svp/backups/` and writes sidecar metadata with
+the source branch, source SHA, schema version, size, and hash.
+
+Argument shape:
+
+```sh
+sv-playbook backup state [--force]
+```
+
+### `sv-playbook restore state`
+
+When: local operational state must be recovered from a known SQLite snapshot.
+Takes `--force` to allow restore while fresh leases exist.
+
+Why: restore replaces `.svp/playbook.sqlite` from a backup file after first
+creating a pre-restore backup of the current store.
+
+After restore, always run `sv-playbook doctor` and `sv-playbook status` before
+dispatching workers. Stale leases or active packets without leases are process
+state to resolve explicitly, not files to edit by hand.
+
+Argument shape:
+
+```sh
+sv-playbook restore state --file <path> [--force]
+```
 
 #### Store safety
 
 When: if the store schema version does not match the CLI's expected schema,
 every command refuses with
-`store schema v<found> does not match v<expected>: run sv-playbook rebuild from the main repo with no other sv-playbook processes running`.
+`store schema v<found> does not match v<expected>: restore a compatible state backup or run a migration before mutating state`.
 Rotating backups land in `.svp/backups/` and keep the last 10 copies
 silently.
 
 Why: shared clients never mutate an incompatible store in place. Recovery is
-an explicit rebuild, while silent backups limit recent local data loss.
+explicit, while silent backups limit recent local data loss.
+
+#### Persistence boundary
+
+SQLite under `.svp/playbook.sqlite` is the source of truth for live
+work-management state: statuses, transitions, leases, sessions, events,
+notes, and evidence records. It is local and gitignored because SQLite is a
+binary database and cannot be merged safely on `main`.
+
+Markdown is for semantic, human-reviewable documents: principles, role
+charters, specs, plans, and long-form packet context. Agents must not create a
+second durable state system in markdown or JSON to mirror SQLite.
+
+Durable state backup is a snapshot problem, not a merge problem. The default
+backup target is local and must not add noise to `main`. A dedicated backup
+branch or remote target may be configured later when the user has permission
+and wants off-machine durability, but it is an adapter, not a core
+requirement. Until that command exists, `.svp/backups/` are local safety
+copies only.
 
 Further commands (`init`, `adopt`, `grill`, `check`, `agent`,
 `upgrade`) are added by later plans; each adds its section

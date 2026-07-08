@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULTS } from './config.constants.js';
 import { ConfigError } from './config.errors.js';
-import type { Autonomy, PlaybookConfig, Tier } from './config.types.js';
+import type { Autonomy, BackupConfig, PlaybookConfig, Tier } from './config.types.js';
+import { BACKUP_EVENT } from './db/backup.constants.js';
+import type { BackupEvent } from './db/backup.types.js';
 
 function isTier(value: unknown): value is Tier {
   return value === 'TIER-1' || value === 'TIER-2' || value === 'TIER-3';
@@ -10,6 +12,10 @@ function isTier(value: unknown): value is Tier {
 
 function isAutonomy(value: unknown): value is Autonomy {
   return value === 'strict' || value === 'standard' || value === 'high';
+}
+
+function isBackupEvent(value: unknown): value is BackupEvent {
+  return Object.values(BACKUP_EVENT).some((event) => event === value);
 }
 
 function requireValid<T>(value: unknown, guard: (v: unknown) => v is T, fallback: T, field: string): T {
@@ -24,8 +30,39 @@ function stringOr(value: unknown, fallback: string, field: string): string {
   return value;
 }
 
+function booleanOr(value: unknown, fallback: boolean, fieldName: string): boolean {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'boolean') throw new ConfigError(`${fieldName} must be a boolean`);
+  return value;
+}
+
+function positiveIntegerOr(value: unknown, fallback: number, fieldName: string): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new ConfigError(`${fieldName} must be a positive integer`);
+  }
+  return value;
+}
+
+function backupEventsOr(value: unknown, fallback: BackupEvent[], fieldName: string): BackupEvent[] {
+  if (value === undefined) return [...fallback];
+  if (!Array.isArray(value) || !value.every(isBackupEvent)) {
+    throw new ConfigError(`${fieldName} must be an array of backup events`);
+  }
+  return [...value];
+}
+
 function field(raw: object, key: string): unknown {
   return Object.entries(raw).find(([k]) => k === key)?.[1];
+}
+
+function objectField(raw: object, key: string): object | undefined {
+  const value = field(raw, key);
+  if (value === undefined) return undefined;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new ConfigError(`${key} must be an object`);
+  }
+  return value;
 }
 
 function readConfigFile(repoRoot: string): unknown {
@@ -53,11 +90,23 @@ export function loadConfig(repoRoot: string): PlaybookConfig {
     throw new ConfigError('playbook.config.json: expected an object');
   }
 
+  const backup = objectField(raw, 'backup');
   return {
     productName: stringOr(field(raw, 'productName'), DEFAULTS.productName, 'productName'),
     chatLanguage: stringOr(field(raw, 'chatLanguage'), DEFAULTS.chatLanguage, 'chatLanguage'),
     tier: requireValid(field(raw, 'tier'), isTier, DEFAULTS.tier, 'tier'),
     verifyCommand: stringOr(field(raw, 'verifyCommand'), DEFAULTS.verifyCommand, 'verifyCommand'),
     autonomy: requireValid(field(raw, 'autonomy'), isAutonomy, DEFAULTS.autonomy, 'autonomy'),
+    backup: loadBackupConfig(backup),
+  };
+}
+
+function loadBackupConfig(raw: object | undefined): BackupConfig {
+  if (raw === undefined) return { ...DEFAULTS.backup, onEvents: [...DEFAULTS.backup.onEvents] };
+  return {
+    enabled: booleanOr(field(raw, 'enabled'), DEFAULTS.backup.enabled, 'backup.enabled'),
+    retention: positiveIntegerOr(field(raw, 'retention'), DEFAULTS.backup.retention, 'backup.retention'),
+    maxAgeHours: positiveIntegerOr(field(raw, 'maxAgeHours'), DEFAULTS.backup.maxAgeHours, 'backup.maxAgeHours'),
+    onEvents: backupEventsOr(field(raw, 'onEvents'), DEFAULTS.backup.onEvents, 'backup.onEvents'),
   };
 }
