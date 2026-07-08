@@ -22,3 +22,5 @@ Anything outside content/cli.md; changing existing sections beyond appending.
 
 ## Evidence required at close
 verify-root, final-sha.
+
+closed: done 2026-07-08T15:33:13.898Z
