@@ -226,6 +226,8 @@ sv-playbook upgrade           # diff pinned playbook version vs current; emit ad
 
 `init` generates AGENTS.md from the contract + project config, then emits mirrors (CLAUDE.md, .cursorrules, etc. — list configurable). Editing the source and regenerating is the only supported flow; `check` fails on mirror drift.
 
+`init` also emits **recommended harness permission profiles** where the harness supports them (e.g. `.claude/settings.json` allowlists): deny writes outside the worktree, deny destructive git operations, allow the project verify commands. Defense in depth — the harness sandbox is the outer wall; the playbook's gates are the inner one.
+
 ## 13. Humans, models, escalation
 
 **Mandatory human review (short, explicit list):** the brief, every ADR, every PR diff against its declared write-set, test quality (does the RED test prove anything real?), closure evidence. Everything else is delegated to gates. Backlog reordering always requires a recorded human decision.
