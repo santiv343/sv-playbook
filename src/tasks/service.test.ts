@@ -4,6 +4,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../db/store.js';
+import { stringColumn } from '../db/rows.js';
 import {
   createPacket,
   ensureSession,
@@ -197,6 +198,24 @@ test('moving to ready is refused when the write_set conflicts with an in-flight 
   movePacket(store, undefined, 'A-001', 'ready');
   createPacket(store, root, { ...def('A-002'), writeSet: ['src/x/inner/**'] }, 'a');
   assert.throws(() => movePacket(store, undefined, 'A-002', 'ready'), /write_set conflict/);
+});
+
+test('moving to review captures head evidence as events', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-ev-'));
+  const { execFileSync } = await import('node:child_process');
+  execFileSync('git', ['init'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
+  const store = openStore(root);
+  createPacket(store, root, def('E-001'), 'a');
+  const s1 = ensureSession(store, root);
+  movePacket(store, undefined, 'E-001', 'ready');
+  startPacket(store, s1, root, 'E-001');
+  movePacket(store, s1, 'E-001', 'review');
+  const events = store.db.prepare("SELECT detail FROM events WHERE command = 'evidence'").all();
+  assert.equal(events.length, 2);
+  const detail = stringColumn(events[0], 'detail');
+  assert.ok(detail.startsWith('head-sha '));
+  assert.match(detail, /^head-sha [0-9a-f]{40}$/);
 });
 
 test('raw SQL cannot insert an invalid packet status', async () => {
