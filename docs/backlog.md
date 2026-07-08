@@ -32,4 +32,5 @@ scope) · `graduated` (moved to a plan; keep the row for traceability).
 | IDEA-020 | Taste inference from existing repo code and recent agent-conversation history | Spec §6c backlog note (Command Code parity) | unvalidated |
 | IDEA-021 | Custom memory implementation behind the files-first port | Spec §14/D12: explicitly out until files + adapters demonstrably fall short | unvalidated |
 | IDEA-022 | `freeze` / `revive` commands automating the tombstone checklist | Spec §5 procedure exists; automation once used manually a few times | unvalidated |
+| IDEA-024 | `orchestrator` role charter (the active residue of a PM): watches the board, detects stale leases, triggers takeover/escalation, enforces WIP limits, reports to the human | Needed the day 2+ implementers run in parallel (Aurora adoption); today it would be a role with no work | unvalidated (near-certain graduation at parallel execution) |
 | IDEA-023 | Duplicate-string lint (e.g. sonarjs no-duplicate-string) in the TS stack preset | PR #3 review: 32 status literals and repeated event/path strings reached production before a human caught them | unvalidated (strong candidate) |
