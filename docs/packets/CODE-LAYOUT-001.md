@@ -31,3 +31,5 @@ Anything outside the write_set; ANY behavior change (this is a pure move+rename 
 
 ## Evidence required at close
 red-test-output, verify-root, final-sha.
+
+closed: done 2026-07-08T19:52:39.155Z
