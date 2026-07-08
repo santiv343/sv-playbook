@@ -76,6 +76,27 @@ commands. Each entry has `name` and `summary` fields. Takes no arguments.
 Why: the JSON output feeds the MCP wrapper and harness skills so they
 can discover available commands programmatically.
 
+### `sv-playbook rebuild`
+
+When: after any store disaster or schema-version refusal. Run it from the
+main repo with no other `sv-playbook` processes running.
+
+Why: the SQLite DB is disposable. The durable truth is
+`docs/packets/*.md` plus their `closed:` stamps. Rebuild deletes and
+recreates `.svp/playbook.sqlite`, then restores packet state from those
+files.
+
+#### Store safety
+
+When: if the store schema version does not match the CLI's expected schema,
+every command refuses with
+`store schema v<found> does not match v<expected>: run sv-playbook rebuild from the main repo with no other sv-playbook processes running`.
+Rotating backups land in `.svp/backups/` and keep the last 10 copies
+silently.
+
+Why: shared clients never mutate an incompatible store in place. Recovery is
+an explicit rebuild, while silent backups limit recent local data loss.
+
 Further commands (`init`, `adopt`, `grill`, `check`, `agent`,
 `upgrade`) are added by later plans; each adds its section
 here in the same format. This guide documents only implemented commands.
