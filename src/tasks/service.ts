@@ -43,10 +43,10 @@ const DELETE_LEASE_SQL = 'DELETE FROM leases WHERE packet_id = ?';
 
 const ALLOWED: ReadonlyMap<string, readonly PacketStatus[]> = new Map([
   [PACKET_STATUS_DRAFT, ['ready', 'dropped']],
-  ['ready', ['active', 'dropped']],
+  ['ready', ['active', 'dropped', 'draft']],
   ['active', ['review', 'blocked']],
   ['blocked', ['ready', 'dropped']],
-  ['review', ['active', 'done']],
+  ['review', ['active', 'done', 'ready']],
 ]);
 
 const now = (): string => new Date().toISOString();
@@ -141,8 +141,8 @@ function assertLeaseForActive(store: Store, sessionId: string | undefined, packe
   if (lease.sessionId !== sessionId) throw new LifecycleError(`lease held by another session ${lease.sessionId}`);
 }
 
-function isTerminal(to: PacketStatus): boolean {
-  return to === 'done' || to === 'dropped';
+function shouldReleaseLease(from: string, to: string): boolean {
+  return to === 'done' || to === 'dropped' || (from === 'review' && to === 'ready');
 }
 
 export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): string {
@@ -152,7 +152,7 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   const allowed = ALLOWED.get(from) ?? [];
   if (!allowed.includes(to)) throw new LifecycleError(`illegal transition ${from} -> ${to}`);
   if (from === 'active') assertLeaseForActive(store, sessionId, packetId);
-  if (isTerminal(to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
+  if (shouldReleaseLease(from, to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
   recordTransition(store, packetId, from, to, sessionId);
   return from;
 }

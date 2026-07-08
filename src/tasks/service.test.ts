@@ -166,6 +166,23 @@ test('brief has the fixed structure and embeds the packet document', async () =>
   }
 });
 
+test('ready demotes to draft and review rejection releases the packet', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('F1-001'), 'a');
+  movePacket(store, undefined, 'F1-001', 'ready');
+  movePacket(store, undefined, 'F1-001', 'draft');
+  assert.equal(listPackets(store)[0]?.status, 'draft');
+  movePacket(store, undefined, 'F1-001', 'ready');
+  const s1 = ensureSession(store, root);
+  startPacket(store, s1, root, 'F1-001');
+  movePacket(store, s1, 'F1-001', 'review');
+  movePacket(store, undefined, 'F1-001', 'ready');
+  assert.equal(leaseOf(store, 'F1-001'), undefined);
+  const wt2 = await mkdtemp(join(tmpdir(), 'svp-wt2-'));
+  const s2 = ensureSession(store, wt2);
+  startPacket(store, s2, wt2, 'F1-001');
+});
+
 test('raw SQL cannot insert an invalid packet status', async () => {
   const { store } = await setup();
   assert.throws(() => {
