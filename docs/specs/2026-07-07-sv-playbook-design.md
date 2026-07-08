@@ -256,6 +256,8 @@ sv-playbook upgrade           # diff pinned playbook version vs current; emit ad
 
 ## 13. Humans, models, escalation
 
+**Roles (one charter per board column, served as `docs roles/<role>`):** `product` (phase 0 wizard + change bridge — before `draft`), `planner` (`draft`→`ready`), `implementer` (`active`), `reviewer` (`review`). Each charter defines mission, minimal reads, exact procedure (deterministic half with literal commands + judgment half), outputs and stop conditions — so ANY capable agent can perform the role by reading one document. `task brief --role <role> <id>` assembles the role-appropriate brief (v1.x; implementer brief ships first). The human is the merge authority and final decision-maker in every role's output.
+
 **Mandatory human review (short, explicit list):** the brief, every ADR, every PR diff against its declared write-set, test quality (does the RED test prove anything real?), closure evidence. Everything else is delegated to gates. Backlog reordering always requires a recorded human decision.
 
 **Model × role matrix (per-project, in config):** cheap models = implementers of narrow packets under hard gates; wizard, planning, and review require capable models. Fed by learnings (which packet types failed with which model tier).
