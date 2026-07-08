@@ -165,3 +165,11 @@ test('brief has the fixed structure and embeds the packet document', async () =>
     assert.ok(brief.includes(marker), `missing ${marker}`);
   }
 });
+
+test('raw SQL cannot insert an invalid packet status', async () => {
+  const { store } = await setup();
+  assert.throws(() => {
+    store.db.prepare('INSERT INTO packets (id, title, path, status, created_at, updated_at) VALUES (?,?,?,?,?,?)')
+      .run('P3-006', 'Packet P3-006', 'docs/packets/P3-006.md', 'invalid', new Date().toISOString(), new Date().toISOString());
+  });
+});

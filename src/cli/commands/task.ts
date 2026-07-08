@@ -11,6 +11,8 @@ import {
   listPackets,
   movePacket,
   notePacket,
+  DEFAULT_EVIDENCE,
+  PACKET_STATUSES,
   recoverPacket,
   startPacket,
   takeoverPacket,
@@ -38,7 +40,7 @@ function stringValues(value: string | boolean | string[] | undefined): string[] 
 }
 
 function isPacketStatus(value: string): value is PacketStatus {
-  return ['draft', 'ready', 'active', 'review', 'done', 'blocked', 'dropped'].includes(value);
+  return PACKET_STATUSES.some((status) => status === value);
 }
 
 function withStore<T>(fn: (store: Store, repoRoot: string) => T): T {
@@ -76,7 +78,7 @@ function handleCreate(args: string[]): number {
     requirements: stringValues(parsed.values.req),
     evidenceRequired: stringValues(parsed.values.evidence),
   };
-  if (def.evidenceRequired.length === 0) def.evidenceRequired.push('final-sha');
+  if (def.evidenceRequired.length === 0) def.evidenceRequired.push(...DEFAULT_EVIDENCE);
   const body = readFileSync(stringValue(parsed.values['body-file'], 'body-file'), 'utf8');
   return withStore((store, repoRoot) => {
     createPacket(store, repoRoot, def, body);

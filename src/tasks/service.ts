@@ -6,6 +6,14 @@ import { numberColumn, stringColumn } from '../db/rows.js';
 import { generatePacketDocument, type PacketDefinition } from '../packets/document.js';
 
 export type PacketStatus = 'draft' | 'ready' | 'active' | 'review' | 'done' | 'blocked' | 'dropped';
+export const PACKET_STATUSES: readonly PacketStatus[] = ['draft', 'ready', 'active', 'review', 'done', 'blocked', 'dropped'];
+export const EVENT_TRANSITION = 'transition';
+export const EVENT_NOTE = 'note';
+export const EVENT_TAKEOVER = 'takeover';
+export const SESSION_FILE_NAME = '.svp-session';
+export const PACKETS_DOCS_DIR = 'docs';
+export const PACKETS_DIR = 'packets';
+export const DEFAULT_EVIDENCE: readonly string[] = ['final-sha'];
 
 export class LifecycleError extends Error {
   constructor(message: string, readonly hint?: string) { super(message); }
@@ -44,13 +52,13 @@ function recordTransition(store: Store, packetId: string, from: string, to: stri
     .run(packetId, from, to, sessionId ?? null, now());
   store.db.prepare('UPDATE packets SET status = ?, updated_at = ? WHERE id = ?').run(to, now(), packetId);
   store.db.prepare('INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)')
-    .run(sessionId ?? null, packetId, 'transition', `${from}->${to}`, now());
+    .run(sessionId ?? null, packetId, EVENT_TRANSITION, `${from}->${to}`, now());
 }
 
 export function createPacket(store: Store, repoRoot: string, def: PacketDefinition, body: string): void {
   const exists = store.db.prepare('SELECT 1 FROM packets WHERE id = ?').get(def.id);
   if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`);
-  const dir = join(repoRoot, 'docs', 'packets');
+  const dir = join(repoRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${def.id}.md`);
   writeFileSync(path, generatePacketDocument(def, body), 'utf8');
@@ -71,7 +79,7 @@ export function listPackets(store: Store): Array<{ id: string; title: string; st
 }
 
 export function ensureSession(store: Store, worktree: string): string {
-  const file = join(worktree, '.svp-session');
+  const file = join(worktree, SESSION_FILE_NAME);
   if (existsSync(file)) {
     const id = readFileSync(file, 'utf8').trim();
     const known = store.db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(id);
@@ -147,8 +155,8 @@ export function recoverPacket(store: Store, packetId: string): RecoveryReport {
     "SELECT at, from_status, to_status, COALESCE(session_id, '-') AS session_id FROM transitions WHERE packet_id = ? ORDER BY seq DESC LIMIT 5",
   ).all(packetId);
   const noteRows = store.db.prepare(
-    "SELECT at, detail FROM events WHERE packet_id = ? AND command = 'note' ORDER BY seq DESC LIMIT 5",
-  ).all(packetId);
+    'SELECT at, detail FROM events WHERE packet_id = ? AND command = ? ORDER BY seq DESC LIMIT 5',
+  ).all(packetId, EVENT_NOTE);
   return {
     packetId,
     status,
@@ -181,7 +189,7 @@ export function takeoverPacket(
     store.db.prepare('INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES (?,?,?,?,?)')
       .run(packetId, sessionId, worktree, now(), now());
     store.db.prepare('INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)')
-      .run(sessionId, packetId, 'takeover', `from ${lease.sessionId} force=${force}`, now());
+      .run(sessionId, packetId, EVENT_TAKEOVER, `from ${lease.sessionId} force=${force}`, now());
     store.db.exec('COMMIT');
   } catch (error) {
     store.db.exec('ROLLBACK');
@@ -196,7 +204,7 @@ export function notePacket(store: Store, sessionId: string, packetId: string, te
   if (detail.length === 0) throw new LifecycleError('note text required');
   refreshHeartbeat(store, sessionId);
   store.db.prepare('INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)')
-    .run(sessionId, packetId, 'note', detail, now());
+    .run(sessionId, packetId, EVENT_NOTE, detail, now());
 }
 
 export function briefPacket(store: Store, _repoRoot: string, packetId: string): string {
@@ -218,7 +226,7 @@ export function briefPacket(store: Store, _repoRoot: string, packetId: string): 
 state: ${status}
 lease: ${leaseLine}
 
-## Definition (docs/packets/${id}.md)
+## Definition (${PACKETS_DOCS_DIR}/${PACKETS_DIR}/${id}.md)
 ${document}
 
 ## Process
