@@ -20,7 +20,7 @@ Exit 0 when no FAIL lines (WARNs allowed), 1 otherwise. Echo format: `doctor: <n
 ## RED test (write first, in src/cli/commands/doctor.test.ts)
 Test name: "doctor reports ok checks and exits 0 in a healthy repo".
 Body: inTempRepo pattern from task.test.ts (git init); run main(['doctor'], fakeIo); assert exit 0 and io.outLines joined contains 'node' and 'doctor:'.
-Expected failure cause (literal string in the output): "Unknown command: doctor"
+Expected failure cause (literal string in the output): "doctor reports ok checks and exits 0 in a healthy repo"
 
 ## Reuse
 src/cli/commands/describe.ts (factory+registry pattern), src/db/store.ts (openStore, StoreVersionError), src/tasks/service.ts (leaseOf), content/cli.md (add section, When/Why format).
