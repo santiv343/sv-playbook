@@ -68,6 +68,14 @@ Refusal matrix for `task start`:
 | Packet is `ready` and unleased | Acquire lease and move to `active` | |
 | Packet does not exist | Refuse with `unknown packet: <id>` | |
 
+### `sv-playbook describe`
+
+When: produce a machine-readable JSON catalog of all registered CLI
+commands. Each entry has `name` and `summary` fields. Takes no arguments.
+
+Why: the JSON output feeds the MCP wrapper and harness skills so they
+can discover available commands programmatically.
+
 Further commands (`init`, `adopt`, `grill`, `check`, `agent`,
-`describe`, `upgrade`) are added by later plans; each adds its section
+`upgrade`) are added by later plans; each adds its section
 here in the same format. This guide documents only implemented commands.
