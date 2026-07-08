@@ -10,7 +10,7 @@ rotation yields comparative rework/cost telemetry.
 | opencode | 1.17.15 | `opencode serve --port <P>` once, then `POST /session` + `POST /session/{id}/prompt_async` | seconds (warm server) | `POST /session/{id}/abort` | `GET /session/{id}/message` |
 | kimi | 0.22.3 | `kimi -p "<prompt>"` | 9s | own PID | `kimi server` (REST+WS) exists — same warm-server pattern as opencode, unprobed |
 | claude | 2.1.204 | `claude -p "<prompt>"` | 13s | own PID | `--output-format stream-json` |
-| codex | 0.142.5 | `codex exec '<prompt>'` | 15s | own PID | stdout stream |
+| codex | 0.142.5 | `'' \| codex exec --sandbox danger-full-access '<prompt>'` — stdin MUST be closed (empty pipe) and cwd MUST be a trusted git repo (or add `--skip-git-repo-check`) | 15s | own PID | stdout stream |
 | commandcode | 0.41.1 | `commandcode -p '<prompt>' --skip-onboarding` | 46s | own PID | stdout stream |
 
 ## Windows spawn rules (learned the hard way)
