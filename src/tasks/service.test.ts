@@ -16,6 +16,7 @@ import {
   takeoverPacket,
   recoverPacket,
   notePacket,
+  briefPacket,
 } from './service.js';
 
 const def = (id: string) => ({
@@ -154,4 +155,13 @@ test('note records a breadcrumb event visible in recover', async () => {
   const report = recoverPacket(store, 'P3-004');
   assert.ok(report.lastNotes.some((n) => n.includes('halfway through')));
   assert.throws(() => { notePacket(store, s1, 'P3-004', '   '); }, LifecycleError);
+});
+
+test('brief has the fixed structure and embeds the packet document', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('P3-005'), 'Implement the thing.\n');
+  const brief = briefPacket(store, root, 'P3-005');
+  for (const marker of ['# Brief: P3-005', '## Status', '## Definition', '## Process', 'Implement the thing.']) {
+    assert.ok(brief.includes(marker), `missing ${marker}`);
+  }
 });

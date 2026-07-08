@@ -198,3 +198,33 @@ export function notePacket(store: Store, sessionId: string, packetId: string, te
   store.db.prepare('INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)')
     .run(sessionId, packetId, 'note', detail, now());
 }
+
+export function briefPacket(store: Store, _repoRoot: string, packetId: string): string {
+  const row = store.db.prepare('SELECT id, title, path, status FROM packets WHERE id = ?').get(packetId);
+  if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
+  const id = stringColumn(row, 'id');
+  const title = stringColumn(row, 'title');
+  const path = stringColumn(row, 'path');
+  const status = stringColumn(row, 'status');
+  if (!existsSync(path)) throw new LifecycleError(`packet file missing: ${path}`);
+  const document = readFileSync(path, 'utf8');
+  const lease = leaseOf(store, packetId);
+  const leaseLine = lease === undefined
+    ? '<none>'
+    : `held by ${lease.sessionId} (${lease.stale ? 'stale' : 'fresh'})`;
+  return `# Brief: ${id} — ${title}
+
+## Status
+state: ${status}
+lease: ${leaseLine}
+
+## Definition (docs/packets/${id}.md)
+${document}
+
+## Process
+- Contract and workflow: run \`npx sv-playbook docs cli\` before acting.
+- All state changes go through \`sv-playbook task move\` — never edit status by hand.
+- Leave breadcrumbs with \`sv-playbook task note ${id} "<text>"\` at each step.
+- Stop conditions and evidence duties are defined in the packet above.
+`;
+}
