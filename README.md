@@ -25,6 +25,10 @@ Design spec: [`docs/specs/2026-07-07-sv-playbook-design.md`](docs/specs/2026-07-
 npx sv-playbook docs            # list process topics
 npx sv-playbook docs principles # read the principles
 npx sv-playbook docs cli        # when/why for each command
+npx sv-playbook task create --id P2-101 --title "Do work" --write "src/**" --body-file body.md
+npx sv-playbook task list --json
+npx sv-playbook task start P2-101
+npx sv-playbook task move P2-101 review
 ```
 
 ## Development
