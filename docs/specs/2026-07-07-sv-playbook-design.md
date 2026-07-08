@@ -170,14 +170,14 @@ File schema (frontmatter + body):
 ```yaml
 id: PACKET-031
 title: ...
-status: ready            # copy of last durable transition; DB is live truth
-priority: 2
-depends_on: [PACKET-029]
+depends_on: [PACKET-029]  # definitional: part of WHAT the task is
 write_set: ["src/feature-x/**", "tests/feature-x/**"]
 requirements: [REQ-014]  # traceability
 tier_gates: inherit
 evidence_required: [red-test-output, verify-root, final-sha]
 ```
+
+Mutable coordination fields (status, priority, sprint) live ONLY in the DB — never in frontmatter. The file holds identity and definition; the DB holds everything that changes while working. At close, the durable outcome (final SHA, evidence) is stamped into the file. This removes commit noise and merge conflicts entirely from routine state changes.
 
 Body: context, exact task, RED test to write, reuse pointers (context routing), stop conditions, evidence section (filled at close).
 
