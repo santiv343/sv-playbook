@@ -59,6 +59,13 @@ function recordTransition(store: Store, packetId: string, from: string, to: stri
     .run(sessionId ?? null, packetId, EVENT_TRANSITION, `${from}->${to}`, now());
 }
 
+export function overlaps(a: string, b: string): boolean {
+  const prefixA = a.replace(/\/\*\*$|\/\*$/, '');
+  const prefixB = b.replace(/\/\*\*$|\/\*$/, '');
+  if (prefixA === prefixB) return true;
+  return prefixA.startsWith(prefixB + '/') || prefixB.startsWith(prefixA + '/');
+}
+
 export function createPacket(store: Store, repoRoot: string, def: PacketDefinition, body: string): void {
   const exists = store.db.prepare('SELECT 1 FROM packets WHERE id = ?').get(def.id);
   if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`);
@@ -66,8 +73,8 @@ export function createPacket(store: Store, repoRoot: string, def: PacketDefiniti
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${def.id}.md`);
   writeFileSync(path, generatePacketDocument(def, body), 'utf8');
-  store.db.prepare('INSERT INTO packets (id, title, path, status, created_at, updated_at) VALUES (?,?,?,?,?,?)')
-    .run(def.id, def.title, path, PACKET_STATUS_DRAFT, now(), now());
+  store.db.prepare('INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
+    .run(def.id, def.title, path, PACKET_STATUS_DRAFT, JSON.stringify(def.writeSet), now(), now());
   recordTransition(store, def.id, 'none', PACKET_STATUS_DRAFT);
 }
 
@@ -145,12 +152,51 @@ function shouldReleaseLease(from: string, to: string): boolean {
   return to === 'done' || to === 'dropped' || (from === 'review' && to === 'ready');
 }
 
+function parseGlobs(raw: string): string[] {
+  const parsed: unknown = JSON.parse(raw);
+  if (!Array.isArray(parsed)) return [];
+  const result: string[] = [];
+  for (const item of parsed) {
+    if (typeof item === 'string') result.push(item);
+  }
+  return result;
+}
+
+function ourGlobs(store: Store, packetId: string): string[] {
+  const row = store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get(packetId);
+  if (row === undefined) return [];
+  return parseGlobs(stringColumn(row, 'write_set'));
+}
+
+function conflictsWith(ours: string[], row: Record<string, unknown>): boolean {
+  const raw = parseGlobs(stringColumn(row, 'write_set'));
+  for (const a of ours) {
+    for (const b of raw) {
+      if (overlaps(a, b)) return true;
+    }
+  }
+  return false;
+}
+
+function checkWriteSetConflict(store: Store, packetId: string): void {
+  const ours = ourGlobs(store, packetId);
+  if (ours.length === 0) return;
+  const rows = store.db.prepare('SELECT id, write_set FROM packets WHERE (status = ? OR status = ?) AND id != ?')
+    .all('ready', 'active', packetId);
+  for (const row of rows) {
+    if (conflictsWith(ours, row)) {
+      throw new LifecycleError(`write_set conflict with ${stringColumn(row, 'id')}`);
+    }
+  }
+}
+
 export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): string {
   if (sessionId !== undefined) refreshHeartbeat(store, sessionId);
   const from = currentStatus(store, packetId);
   if (to === 'active') throw new LifecycleError('use task start to activate a packet');
   const allowed = ALLOWED.get(from) ?? [];
   if (!allowed.includes(to)) throw new LifecycleError(`illegal transition ${from} -> ${to}`);
+  if (to === 'ready') checkWriteSetConflict(store, packetId);
   if (from === 'active') assertLeaseForActive(store, sessionId, packetId);
   if (shouldReleaseLease(from, to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
   recordTransition(store, packetId, from, to, sessionId);

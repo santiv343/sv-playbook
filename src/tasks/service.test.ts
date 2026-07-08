@@ -12,6 +12,7 @@ import {
   listPackets,
   LifecycleError,
   leaseOf,
+  overlaps,
   refreshHeartbeat,
   takeoverPacket,
   recoverPacket,
@@ -181,6 +182,21 @@ test('ready demotes to draft and review rejection releases the packet', async ()
   const wt2 = await mkdtemp(join(tmpdir(), 'svp-wt2-'));
   const s2 = ensureSession(store, wt2);
   startPacket(store, s2, wt2, 'F1-001');
+});
+
+test('overlaps detects overlapping globs', () => {
+  assert.equal(overlaps('src/**', 'src/cli/**'), true);
+  assert.equal(overlaps('src/a/**', 'src/b/**'), false);
+  assert.equal(overlaps('eslint.config.js', 'eslint.config.js'), true);
+  assert.equal(overlaps('src/**', 'docs/**'), false);
+});
+
+test('moving to ready is refused when the write_set conflicts with an in-flight packet', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, { ...def('A-001'), writeSet: ['src/x/**'] }, 'a');
+  movePacket(store, undefined, 'A-001', 'ready');
+  createPacket(store, root, { ...def('A-002'), writeSet: ['src/x/inner/**'] }, 'a');
+  assert.throws(() => movePacket(store, undefined, 'A-002', 'ready'), /write_set conflict/);
 });
 
 test('raw SQL cannot insert an invalid packet status', async () => {
