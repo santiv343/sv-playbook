@@ -20,6 +20,14 @@ error, schema mismatch, or stale-dist problem is ALWAYS: CLI task move
 PACKET_ID blocked, report the literal error, stop. Destroying shared state
 once cost the whole board history. There is no exception.
 
+CHECKPOINT RULE (protects your work from your own death): after each
+meaningful unit of progress - a test written, a module extracted, a step
+completed - run: git add -A && git commit -m "wip: <what you just did>".
+WIP commits are cheap and expected; they are squash-reviewed at the end.
+A worker that dies (quota, crash, kill) loses only minutes, never the
+mission. (Origin: a quota death at 90% of a large refactor cost the whole
+worktree, 2026-07-08.)
+
 DEVIATION RULE (applies to every step): anything you do that these steps
 or the brief did not literally specify — temp files, workaround commands,
 extra re-runs, editing something to unblock yourself — is a DEVIATION.

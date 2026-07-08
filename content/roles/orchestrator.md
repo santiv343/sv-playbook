@@ -28,6 +28,14 @@ dispatch/adapters`. 5. `task list` output.
 | 9 | JUDGMENT | Choose harness/model when the matrix is silent; document the reasoned choice | Reasoned choice documented | ESCALATE to human |
 | 10 | JUDGMENT | Decide retry vs escalation to human | Documented decision | ESCALATE to human |
 
+## Worker-death salvage (before any cleanup)
+When taking over or cleaning up after a dead worker, NEVER discard the
+worktree silently: first run git add -A && git commit -m "salvage: <worker>
+died at <point>" in it and push the branch (git push -u origin <branch>).
+The salvage commit is evidence AND reusable material - the next worker (or
+reviewer) decides continue-vs-restart with the work in hand, not gone.
+Discarding uncommitted work without a salvage commit is a violation.
+
 ## Output (fixed structure, always)
 1. Board snapshot (current column counts).
 2. Dispatches sent: packet id, harness, model, session id, status.
