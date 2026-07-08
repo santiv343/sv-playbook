@@ -10,7 +10,7 @@ rotation yields comparative rework/cost telemetry.
 | opencode | 1.17.15 | `opencode serve --port <P>` once, then `POST /session` + `POST /session/{id}/prompt_async` | seconds (warm server) | `POST /session/{id}/abort` | `GET /session/{id}/message` |
 | kimi | 0.22.3 | `kimi -p "<prompt>"` | 9s | own PID | `kimi server` (REST+WS) exists — same warm-server pattern as opencode, unprobed. CAUTION: hit its usage limit (403) mid-mission 2026-07-08 — excellent worker, quota ceiling |
 | claude | 2.1.204 | `claude -p "<prompt>" --model <MODEL>` — the model flag is MANDATORY: without it the user's default applies (was Fable, the most expensive; a worker inherited it 2026-07-08) | 13s | own PID | `--output-format stream-json` |
-| codex | 0.142.5 | `'' \| codex exec --sandbox danger-full-access '<prompt>'` — stdin MUST be closed (empty pipe) and cwd MUST be a trusted git repo (or add `--skip-git-repo-check`) | 15s | own PID | stdout stream |
+| codex | 0.142.5 | `'' \| codex exec --sandbox danger-full-access '<prompt>'` — stdin MUST be closed (empty pipe); cwd MUST be a trusted git repo (or add `--skip-git-repo-check`); commit messages passed through its nested shell LOSE their text after the type prefix (two PRs landed as bare `feat:`) — workers should commit with `git commit -F <file>` when the message matters | 15s | own PID | stdout stream |
 | commandcode | 0.41.1 | `commandcode -p '<prompt>' --skip-onboarding` | 46s | own PID | stdout stream |
 
 ## Windows spawn rules (learned the hard way)
