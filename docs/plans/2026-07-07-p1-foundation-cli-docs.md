@@ -562,7 +562,7 @@ test('cli topic documents the docs command and exit codes', async () => {
   const text = await readTopic('cli');
   assert.ok(text !== undefined);
   assert.ok(text.includes('sv-playbook docs'));
-  assert.ok(text.includes('exit code'));
+  assert.ok(text.toLowerCase().includes('exit code'));
 });
 ```
 

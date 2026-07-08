@@ -151,7 +151,7 @@ ops/                    # deploy, secrets handling, rollback runbook
 
 **In the sv-playbook npm package:** all process docs (wizard, contract, workflow, adoption, change bridge, tiers), templates, stack presets. Consulted via `npx sv-playbook docs <topic>` — zero process files copied into projects, versioned automatically by the package.
 
-**Documentation budget rule:** every project doc must be on the canonical list above or cited by an active packet; `check` fails on orphans. Generated views are never committed.
+**Documentation budget rule:** every project doc must be on the canonical list above or cited by an active packet; `check` fails on orphans. Generated views are never committed. **A committed document must have a human reader**: agent-only content lives in the package or is generated ephemerally (`task brief` output is never committed) — if no human will ever read it, it does not belong in the repo.
 
 ## 8. State architecture — two planes
 
