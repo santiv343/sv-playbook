@@ -13,7 +13,8 @@ Rebuild live-lease guard (IDEA-034; origin: an EPERM corruption happened because
 ## RED test (write first, appended to src/tasks/service.test.ts or a new rebuild-focused block there)
 Test name: "rebuild is refused while a fresh lease exists".
 Body: temp git repo root (execFileSync git init + empty commit as in the evidence test); create packet, ready, start (fresh lease). Call the exported rebuild-refusal check (structure the refusal logic as an exported pure function refuseRebuild(store): string | undefined returning the message or undefined) and assert it returns a string matching /live lease/. Move the packet to review then done (lease gone) and assert it returns undefined.
-Expected failure cause (literal string in the output): "rebuild is refused while a fresh lease exists"
+Expected failure cause (literal string in the output): "has no exported member"
+(TypeScript halts compilation on the missing export BEFORE the named test can run - the TS2305 message IS the natural RED, exactly like the Cannot-find-module pattern in the config packet.)
 
 ## Reuse
 src/cli/commands/rebuild.ts, src/tasks/service.ts (leaseOf), src/db/store.ts (openStore options).
