@@ -4,6 +4,11 @@ Run on EVERY pull request, in full, by the human or reviewer agent. Items
 here cannot be validated mechanically — that is why they exist. Anything
 that becomes mechanizable graduates to a lint/gate and leaves this list.
 
+## Hard rules — any hit is an INSTANT REQUEST CHANGES, no weighing
+- [ ] Single source (PRINCIPLE-011), concept-wide: no fact defined twice — no duplicated type unions, scattered domain literals, parallel lists, half-applied constants, copy-pasted config, restated rules. If two places must change together, it is one hit.
+- [ ] Any suppression, gate weakening, or baseline added.
+- [ ] Any claim without literal command output.
+
 ## Code judgment
 - [ ] Names say what things are; an outsider understands each public name at sight.
 - [ ] Dispatch/branching uses lookup tables once past ~3 branches.
