@@ -145,7 +145,7 @@ function isTerminal(to: PacketStatus): boolean {
   return to === 'done' || to === 'dropped';
 }
 
-export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): void {
+export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): string {
   if (sessionId !== undefined) refreshHeartbeat(store, sessionId);
   const from = currentStatus(store, packetId);
   if (to === 'active') throw new LifecycleError('use task start to activate a packet');
@@ -154,6 +154,7 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   if (from === 'active') assertLeaseForActive(store, sessionId, packetId);
   if (isTerminal(to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
   recordTransition(store, packetId, from, to, sessionId);
+  return from;
 }
 
 export function recoverPacket(store: Store, packetId: string): RecoveryReport {

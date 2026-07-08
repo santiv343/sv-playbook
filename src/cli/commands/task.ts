@@ -7,6 +7,7 @@ import {
   createPacket,
   briefPacket,
   ensureSession,
+  leaseOf,
   LifecycleError,
   listPackets,
   movePacket,
@@ -53,7 +54,7 @@ function withStore<T>(fn: (store: Store, repoRoot: string) => T): T {
   }
 }
 
-function handleCreate(args: string[]): number {
+function handleCreate(args: string[], io: Io): number {
   const parsed = parseArgs({
     args,
     allowPositionals: true,
@@ -82,6 +83,7 @@ function handleCreate(args: string[]): number {
   const body = readFileSync(stringValue(parsed.values['body-file'], 'body-file'), 'utf8');
   return withStore((store, repoRoot) => {
     createPacket(store, repoRoot, def, body);
+    io.out(`created ${def.id} (draft)`);
     return EXIT.OK;
   });
 }
@@ -101,24 +103,31 @@ function handleList(args: string[], io: Io): number {
   });
 }
 
-function handleStart(args: string[]): number {
+function handleStart(args: string[], io: Io): number {
   const [packetId] = args;
   if (args.length !== 1 || packetId === undefined) throw new UsageError('start requires <ID>');
   return withStore((store) => {
     const worktree = process.cwd();
     const sessionId = ensureSession(store, worktree);
+    const existing = leaseOf(store, packetId);
     startPacket(store, sessionId, worktree, packetId);
+    if (existing !== undefined && existing.sessionId === sessionId) {
+      io.out(`started ${packetId}: already held by this session`);
+    } else {
+      io.out(`started ${packetId}: ready -> active, lease acquired`);
+    }
     return EXIT.OK;
   });
 }
 
-function handleMove(args: string[]): number {
+function handleMove(args: string[], io: Io): number {
   const [packetId, status] = args;
   if (packetId === undefined || status === undefined || args.length !== 2) throw new UsageError('move requires <ID> <status>');
   if (!isPacketStatus(status)) throw new UsageError(`unknown status: ${status}`);
   return withStore((store) => {
     const sessionId = ensureSession(store, process.cwd());
-    movePacket(store, sessionId, packetId, status);
+    const from = movePacket(store, sessionId, packetId, status);
+    io.out(`moved ${packetId}: ${from} -> ${status}`);
     return EXIT.OK;
   });
 }
@@ -164,17 +173,19 @@ function handleTakeover(args: string[], io: Io): number {
     const worktree = process.cwd();
     const sessionId = ensureSession(store, worktree);
     const report = takeoverPacket(store, sessionId, worktree, packetId, parsed.values.force === true);
+    io.out(`takeover ${packetId}: lease transferred`);
     renderReport(report, io);
     return EXIT.OK;
   });
 }
 
-function handleNote(args: string[]): number {
+function handleNote(args: string[], io: Io): number {
   const [packetId, ...parts] = args;
   if (packetId === undefined || parts.length === 0) throw new UsageError('note requires <ID> <text...>');
   return withStore((store) => {
     const sessionId = ensureSession(store, process.cwd());
     notePacket(store, sessionId, packetId, parts.join(' '));
+    io.out(`noted ${packetId}`);
     return EXIT.OK;
   });
 }
@@ -191,7 +202,7 @@ function handleBrief(args: string[], io: Io): number {
 const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   ['create', {
     usage: 'sv-playbook task create --id <ID> --title <T> [--write <glob>]... [--depends <ID>]... [--req <REQ>]... [--evidence <E>]... --body-file <path>',
-    run: (rest) => handleCreate(rest),
+    run: (rest, io) => handleCreate(rest, io),
   }],
   ['list', {
     usage: 'sv-playbook task list [--json]',
@@ -199,11 +210,11 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   }],
   ['start', {
     usage: 'sv-playbook task start <ID>',
-    run: (rest) => handleStart(rest),
+    run: (rest, io) => handleStart(rest, io),
   }],
   ['move', {
     usage: 'sv-playbook task move <ID> <status>',
-    run: (rest) => handleMove(rest),
+    run: (rest, io) => handleMove(rest, io),
   }],
   ['show', {
     usage: 'sv-playbook task show <ID> [--json]',
@@ -219,7 +230,7 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   }],
   ['note', {
     usage: 'sv-playbook task note <ID> <text...>',
-    run: (rest) => handleNote(rest),
+    run: (rest, io) => handleNote(rest, io),
   }],
   ['brief', {
     usage: 'sv-playbook task brief <ID>',

@@ -68,6 +68,21 @@ test('takeover without lease exits 1 with hint; brief prints the packet', async 
   });
 });
 
+test('mutating subcommands echo their result', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'Do it.\n');
+    const io = fakeIo();
+    await taskCommand.run(['create', '--id', 'ECHO-001', '--title', 'X', '--write', 'src/**', '--body-file', 'body.md'], io);
+    await taskCommand.run(['move', 'ECHO-001', 'ready'], io);
+    await taskCommand.run(['start', 'ECHO-001'], io);
+    await taskCommand.run(['start', 'ECHO-001'], io);
+    const out = io.outLines.join('\n');
+    assert.ok(out.includes('created'), out);
+    assert.ok(out.includes('ready -> active'), out);
+    assert.ok(out.includes('already held'), out);
+  });
+});
+
 test('note then show surfaces the breadcrumb', async () => {
   await inTempRepo(async () => {
     await writeFile('body.md', 'x');
