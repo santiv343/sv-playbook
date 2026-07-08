@@ -32,7 +32,7 @@ Every CLI gate cites the ID of the written rule it enforces. A rule with no exec
 - NG1. Not a general project-management SaaS. Single-user, local-first, one repo per project.
 - NG2. Not an agent runtime or orchestrator. It does not spawn, schedule, or supervise agent processes; harnesses do that. It coordinates through state.
 - NG3. Not an LLM product. The CLI contains no model calls (the sv-forge lesson).
-- NG4. No hard kill of agents. Control is cooperative (pause flags + lease revocation at gate points); hard kill is per-harness territory.
+- NG4. No hard kill of agents in v1. Control is cooperative (pause flags + lease revocation at gate points). Sessions may declare their process ID at `start`; a best-effort local `agent stop --hard` (process-tree kill) is a v2 escalation — cooperative control remains primary because PID capture is local-only and harness-dependent.
 - NG5. v1 does not include: the `serve` web viewer, the MCP wrapper, multi-machine sync, or a custom memory implementation.
 
 ## 4. Principles
@@ -108,6 +108,19 @@ A **brief change (pivot)** freezes new packet emission until dossier v2 passes t
 
 Tier lives in `playbook.config.json`; gates read it. TIER-1 is not "low quality" — same clean-code bar, less ceremony.
 
+## 6b. Project rulebook
+
+Being project-agnostic requires a standard way to express each project's own rules — the playbook defines the *format and enforcement contract*; the project fills in the content. The wizard's architecture section produces `docs/rules/`:
+
+- `ARCH-xxx` — architecture constraints (layering, dependency direction, module boundaries).
+- `PRODUCT-xxx` — product invariants (domain rules an agent must never violate, e.g. Aurora's "no industry-specific code in core").
+
+Every rule is tagged `[gate]` or `[criterion]`. For `[gate]` rules, the stack preset supplies the enforcement mapping (lint rules, dependency-cruiser config, architecture tests); `check` verifies that every `[gate]` rule has a wired enforcement and fails on orphans in either direction. Agents load the rulebook as mandatory context (context routing); gates make the load-bearing subset unskippable.
+
+## 6c. Taste profile
+
+Inspired by Command Code's taste model, made agent-agnostic as a convention (no learning engine): `docs/taste.md` holds style-level preferences with confidence scores (e.g. "explicit return types on exported functions: 0.7"), human-readable and hand-editable. The contract requires agents to read it as context. It updates through a review-close step: what the human corrected or rejected in review becomes a proposed taste adjustment (agent proposes, human approves). `init` can import a taste profile from a previous project — best practices travel with the user, not the repo. Taste captures *patterns, not intentions*: architectural decisions belong in ADRs and the rulebook, never in taste.
+
 ## 7. What lives where
 
 **In the consuming project (only what belongs to that project):**
@@ -119,6 +132,8 @@ AGENTS.md               # generated, short: project rules + pointer to `npx sv-p
 STATUS.md               # two sections: generated (from DB/git — cannot be stale)
                         # + narrative (handoff notes, grill-validated)
 docs/dossier/           # brief, requirements, architecture, risks, roadmap (~6 files)
+docs/rules/             # project rulebook: ARCH-xxx / PRODUCT-xxx (§6b)
+docs/taste.md           # style preferences with confidence scores (§6c)
 docs/decisions/         # this project's ADRs
 docs/packets/           # active packets; closed ones move to packets/archive/
 docs/learnings/         # inbox of lessons
@@ -241,7 +256,9 @@ Thirteen walkthroughs (who does what, minute by minute, which gate validates) we
   - The CLI: everything in §11, SQLite execution plane, leases, durable stamping, mirrors, `describe --json`.
   - First stack preset: TypeScript + pnpm.
 - **v2 (gated on v1 real-world use):**
-  - `serve`: local web viewer — live board (which agent, which packet, which step), sprint/roadmap/docs views, metrics. **Read-only rendering; its control buttons call the CLI** — one write path, always. Fresh market scan first (beads, vibe-kanban et al. — wrap before build).
+  - `serve`: local web viewer — live board (which agent, which packet, which step), sprint/roadmap/docs views, metrics dashboards. **Read-only rendering; its control buttons call the CLI** — one write path, always. Fresh market scan first (beads, vibe-kanban et al. — wrap before build).
+  - Telemetry dashboards. v1's event log already captures the deterministic efficiency signals for free: verify cycles per packet, retries, escalations, takeovers, time per state — rework metrics need no self-reporting. Sessions declare harness + model at `start`; token/cost data is best-effort (harness hooks such as OTel where available, agent self-report otherwise) and marked as such. Answers: which models are most used, which produce least rework, per-packet cost.
+  - `agent stop --hard`: best-effort local process-tree kill for sessions that declared a PID (see NG4).
   - MCP wrapper autogenerated from `describe --json` (a transport, not a product).
 
 ## 18. Accepted risks
@@ -278,3 +295,6 @@ Thirteen walkthroughs (who does what, minute by minute, which gate validates) we
 | D12 | Memory = committed files; tools are adapters | Agent-agnostic, versioned, resilient (engram failed twice this session, nothing lost) | Memory-API port with custom implementation |
 | D13 | serve is v2, read-only rendering, buttons call the CLI | One write path; anti-Jira-rebuild | Mutating web UI |
 | D14 | MCP = autogenerated wrapper over `describe --json`, v2 | Transport, not product; zero marginal maintenance | Hand-built MCP server (less agnostic than shell, sv-forge pattern) |
+| D15 | Project rulebook (ARCH-/PRODUCT- rules) with per-stack enforcement mapping | Project-agnostic requires a standard rule format; Aurora's arch enforcement (lint plugin + arch tests) generalized | Rules as AGENTS.md prose (gets violated) |
+| D16 | Taste profile as convention (docs/taste.md, confidence-scored, review-fed) | Portable best practices across projects, agent-agnostic; inspired by Command Code | Building a learning engine (sv-forge pattern); no taste (style relitigated per project) |
+| D17 | Efficiency metrics from deterministic events; token/model data best-effort | Rework metrics (verify cycles, retries, escalations) need no self-reporting; token capture is harness-dependent | Requiring token telemetry (breaks agent-agnosticism) |
