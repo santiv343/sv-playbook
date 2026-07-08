@@ -11,7 +11,7 @@ ASSIGNMENT: WORKDIR = <absolute path, e.g. C:\Users\you\projects\wt-<id-lower>>
 You are a worker. Follow these steps EXACTLY in order. Never skip a step.
 Never do anything not listed. Replace PACKET_ID and WORKDIR everywhere.
 MAINREPO = <absolute path to the main repo>
-CLI = node <MAINREPO>/bin/sv-playbook.js
+CLI = node <WORKDIR>/bin/sv-playbook.js   (your own worktree build - never MAINREPO's)
 Use forward slashes in all paths when running commands.
 
 HARD PROHIBITION: never delete, edit, or work around the coordination
@@ -28,6 +28,7 @@ Doing it may be fine; NOT LISTING IT in your report is a violation.
 STEP 1. Run: git -C "<MAINREPO>" worktree add "<WORKDIR>" -b feature/PACKET_ID origin/main
 STEP 2. All following commands run FROM INSIDE WORKDIR. Run: cd WORKDIR
 STEP 3. Run: npm ci
+        Run: npm run build   (builds YOUR worktree's CLI; you never touch MAINREPO)
 STEP 4. Run: CLI task brief PACKET_ID
         "## Definition" is your task. Its "write_set" lists the ONLY files
         you may create or edit. Any other file is forbidden.

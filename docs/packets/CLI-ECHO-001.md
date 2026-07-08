@@ -30,3 +30,5 @@ Anything outside the write_set; changing any behavior other than adding echoes a
 
 ## Evidence required at close
 red-test-output, verify-root, final-sha.
+
+closed: done 2026-07-08T13:11:20.812Z

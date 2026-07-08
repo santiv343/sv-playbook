@@ -23,3 +23,5 @@ Anything requiring files outside the write_set; any gate failure you cannot fix 
 
 ## Evidence required at close
 red-test-output, verify-root, final-sha.
+
+closed: done 2026-07-08T13:11:20.812Z

@@ -26,3 +26,5 @@ Anything outside the write_set; touching leases/sessions recovery (explicitly ou
 
 ## Evidence required at close
 red-test-output, verify-root, final-sha.
+
+closed: done 2026-07-08T09:09:41.838Z

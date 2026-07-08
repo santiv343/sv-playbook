@@ -28,3 +28,5 @@ Anything outside the write_set; touching the state machine beyond the two named 
 
 ## Evidence required at close
 red-test-output, verify-root, final-sha.
+
+closed: done 2026-07-08T13:11:20.812Z
