@@ -199,7 +199,7 @@ States: `draft → ready → active → review → done`, lateral exits `blocked
 
 | Packet situation | `task start` | Correct verb |
 |---|---|---|
-| `ready`, no lease | ✅ creates lease + worktree | — |
+| `ready`, no lease | ✅ creates lease (worktree created by the harness; CLI records its path) | — |
 | Live lease, OTHER session | ❌ "held by session X" | `takeover --force` (explicit, typically human) |
 | Stale lease (TTL expired) | ❌ "stale lease" + hint | `takeover` (allowed without force) |
 | Live lease, SAME session | ✅ idempotent success | — (safe retry for flaky agents) |
@@ -212,7 +212,7 @@ States: `draft → ready → active → review → done`, lateral exits `blocked
 **Concurrency invariants:**
 - One active lease per packet (DB uniqueness; SQLite serializes writes — simultaneous `start` has one winner).
 - `task start`/`move active` fails on write-set overlap with another active packet — collisions rejected before work starts.
-- Session identity: `start`/`takeover` emit a session ID stored in a gitignored file in the worktree. The worktree IS the identity (coherent with one packet = one worktree).
+- Session identity: `start`/`takeover` emit a session ID stored in a gitignored file in the worktree. The worktree IS the identity (coherent with one packet = one worktree). The CLI does not create the worktree itself — the harness/orchestrator creates it and `task start` records the current working tree as the lease's worktree.
 - Heartbeat: every CLI call refreshes the lease. Generous TTL to tolerate long silent operations (builds).
 - **The zombie hole, honestly:** the CLI gates transitions, but a live rogue process writes files directly. Defenses: takeover of a non-stale lease requires `--force` or pause-first protocol; the zombie's next CLI call fails and the contract mandates stop; and the ultimate invariant — **merge requires a live lease + green gates** — bounds every coordination failure's blast radius to wasted work on one branch. Never corruption of the mainline.
 - Work only exists committed. Implementers commit incrementally on the feature branch (WIP, squashed later). Power cut ⇒ resume point is the branch, not anyone's memory.

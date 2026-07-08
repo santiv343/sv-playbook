@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
-import { commonRoot, openStore } from '../../db/store.js';
+import { commonRoot, openStore, worktreeRoot } from '../../db/store.js';
 import { createStateBackup, latestStateBackupAgeHours } from '../../db/backup.js';
 import { BACKUP_EVENT, BACKUP_REASON } from '../../db/backup.constants.js';
 import type { Store } from '../../db/store.types.js';
@@ -102,8 +102,9 @@ function handleCreate(args: string[], io: Io): number {
   };
   if (def.evidenceRequired.length === 0) def.evidenceRequired.push(...DEFAULT_EVIDENCE);
   const body = readFileSync(stringValue(parsed.values['body-file'], 'body-file'), 'utf8');
-  return withStore((store, repoRoot) => {
-    createPacket(store, repoRoot, def, body);
+  const docRoot = worktreeRoot(process.cwd());
+  return withStore((store) => {
+    createPacket(store, docRoot, def, body);
     io.out(`created ${def.id} (draft)`);
     return EXIT.OK;
   });
@@ -227,8 +228,8 @@ function handleNote(args: string[], io: Io): number {
 function handleBrief(args: string[], io: Io): number {
   const [packetId] = args;
   if (args.length !== 1 || packetId === undefined) throw new UsageError('brief requires <ID>');
-  return withStore((store, repoRoot) => {
-    io.out(briefPacket(store, repoRoot, packetId));
+  return withStore((store) => {
+    io.out(briefPacket(store, packetId));
     return EXIT.OK;
   });
 }

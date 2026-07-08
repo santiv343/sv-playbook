@@ -15,6 +15,10 @@ export function commonRoot(startDir: string): string {
   return dirname(resolve(startDir, out));
 }
 
+export function worktreeRoot(startDir: string): string {
+  return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: startDir, encoding: 'utf8' }).trim();
+}
+
 function applyPragmas(db: DatabaseSync): void {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA busy_timeout = 5000;');
