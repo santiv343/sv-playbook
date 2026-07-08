@@ -1,4 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from '../db/store.js';
@@ -11,6 +12,7 @@ export const PACKET_STATUSES: readonly PacketStatus[] = [PACKET_STATUS_DRAFT, 'r
 export const EVENT_TRANSITION = 'transition';
 export const EVENT_NOTE = 'note';
 export const EVENT_TAKEOVER = 'takeover';
+export const EVENT_EVIDENCE = 'evidence';
 export const SESSION_FILE_NAME = '.svp-session';
 export const PACKETS_DOCS_DIR = 'docs';
 export const PACKETS_DIR = 'packets';
@@ -190,6 +192,22 @@ function checkWriteSetConflict(store: Store, packetId: string): void {
   }
 }
 
+function captureEvidence(store: Store, packetId: string, from: string, to: string): void {
+  if (from !== 'active' || to !== 'review') return;
+  const lease = leaseOf(store, packetId);
+  if (lease === undefined) return;
+  try {
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: lease.worktree, encoding: 'utf8' }).trim();
+    const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: lease.worktree, encoding: 'utf8' }).trim();
+    store.db.prepare(INSERT_EVENT_SQL).run(null, packetId, EVENT_EVIDENCE, `head-sha ${sha}`, now());
+    store.db.prepare(INSERT_EVENT_SQL).run(null, packetId, EVENT_EVIDENCE, `branch ${branch}`, now());
+    process.stdout.write(`evidence captured: ${sha} on ${branch}\n`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.split('\n')[0] ?? err.message : String(err);
+    store.db.prepare(INSERT_EVENT_SQL).run(null, packetId, EVENT_EVIDENCE, `head-sha unavailable: ${msg}`, now());
+  }
+}
+
 export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): string {
   if (sessionId !== undefined) refreshHeartbeat(store, sessionId);
   const from = currentStatus(store, packetId);
@@ -199,6 +217,7 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   if (to === 'ready') checkWriteSetConflict(store, packetId);
   if (from === 'active') assertLeaseForActive(store, sessionId, packetId);
   if (shouldReleaseLease(from, to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
+  captureEvidence(store, packetId, from, to);
   recordTransition(store, packetId, from, to, sessionId);
   return from;
 }

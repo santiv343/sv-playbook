@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES } from '../tasks/service.js';
+import { EVENT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES } from '../tasks/service.js';
 
 export interface Store { readonly db: DatabaseSync; readonly dir: string; close(): void; }
 
@@ -12,7 +12,7 @@ export const DB_FILE = 'playbook.sqlite';
 const sqlString = (value: string): string => `'${value.replaceAll("'", "''")}'`;
 const sqlInList = (values: readonly string[]): string => values.map(sqlString).join(', ');
 const TRANSITION_STATUSES = ['none', ...PACKET_STATUSES];
-const EVENT_COMMANDS = [EVENT_TRANSITION, EVENT_NOTE, EVENT_TAKEOVER];
+const EVENT_COMMANDS = [EVENT_TRANSITION, EVENT_NOTE, EVENT_TAKEOVER, EVENT_EVIDENCE];
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS packets (
