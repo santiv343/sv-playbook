@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { EXIT, type Command, type Io } from '../command.js';
 import { commonRoot, openStore, type Store } from '../../db/store.js';
+import { rebuildFromFiles } from '../../tasks/service.js';
 import { PacketFormatError, type PacketDefinition } from '../../packets/document.js';
 import {
   createPacket,
@@ -46,7 +47,7 @@ function isPacketStatus(value: string): value is PacketStatus {
 
 function withStore<T>(fn: (store: Store, repoRoot: string) => T): T {
   const repoRoot = commonRoot(process.cwd());
-  const store = openStore(repoRoot);
+  const store = openStore(repoRoot, rebuildFromFiles);
   try {
     return fn(store, repoRoot);
   } finally {
