@@ -232,7 +232,7 @@ Packet close may emit a learning to `learnings/inbox`. Periodically (and at proj
 
 ## 16. Use cases
 
-Thirteen walkthroughs (who does what, minute by minute, which gate validates) are documented in the design companion: new project, adoption, packet loop, add feature, drop/reprioritize, bug (implementation vs spec), pivot, tier promotion, cold-start session, cheap-model escalation, product closure, freeze/tombstone, playbook upgrade.
+Thirteen walkthroughs (who does what, minute by minute, which gate validates) were validated during design and will be ported into `docs/use-cases/` as part of v1: new project, adoption, packet loop, add feature, drop/reprioritize, bug (implementation vs spec), pivot, tier promotion, cold-start session, cheap-model escalation, product closure, freeze/tombstone, playbook upgrade.
 
 ## 17. Versioning & roadmap
 
