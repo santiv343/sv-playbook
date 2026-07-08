@@ -7,23 +7,23 @@ requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]
 ---
 
-﻿## Task
-Self-healing schema (PRINCIPLE-010: no dead ends; D26). In src/db/store.ts:
-1. Export const SCHEMA_VERSION = 2 (version 1 = pre-write_set schema).
-2. openStore: after opening, read PRAGMA user_version. If it equals SCHEMA_VERSION, proceed. If it is LOWER (including 0 for pre-versioning DBs): close the DB, copy the file to .svp/backups/playbook-corrupt-<ISO-compact-timestamp>.sqlite (mkdir backups), delete the live file, open fresh (schema applies), set PRAGMA user_version = SCHEMA_VERSION, then call rebuildFromFiles(repoRoot, store) from src/tasks/service.ts and echo via console.error exactly: `store auto-rebuilt (schema v<old> -> v<new>)`. If HIGHER: throw with message `store is from a newer sv-playbook; upgrade the package` (that one IS a stop, with a named exit).
-3. New DBs get user_version = SCHEMA_VERSION on creation.
-Circular import caution: openStore cannot import service.ts (service imports store). Solution: openStore accepts an optional second parameter rebuild?: (repoRoot: string) => void, and the CLI wiring passes it; when absent (unit tests of store alone), auto-heal recreates the schema but skips file rebuild.
+## Task
+Versioned schema with refuse-and-recover (PRINCIPLE-010; D26 revised after the 2026-07-08 EPERM mid-heal corruption: clients NEVER heal the shared DB). In src/db/store.ts:
+1. Export const SCHEMA_VERSION = 2 (version 1 = pre-write_set schema) and export class StoreVersionError extends Error.
+2. openStore: after opening, read PRAGMA user_version. If it equals SCHEMA_VERSION, proceed. If it DIFFERS (lower, including 0, or higher): close the DB immediately and throw StoreVersionError with message `store schema v<found> does not match v<expected>: run sv-playbook rebuild from the main repo with no other sv-playbook processes running`. openStore NEVER deletes, backs up, or modifies an existing DB file - self-healing a SHARED resource from a client caused a mid-flight corruption; `rebuild` is the single explicit recovery actor.
+3. New (empty) DBs get user_version = SCHEMA_VERSION on creation.
+4. The rebuild command must bypass the check by design (it deletes and recreates the DB): openStore accepts an optional options parameter { skipVersionCheck?: boolean }; only src/cli/commands/rebuild.ts passes true, and rebuild sets user_version = SCHEMA_VERSION on the fresh DB.
 
 ## RED test (write first, appended to src/db/store.test.ts)
-Test name: "schema version mismatch triggers backup and self-heal".
-Body: temp root; openStore, close. Open the sqlite file directly (DatabaseSync) and exec PRAGMA user_version = 1, close. openStore again with a spy rebuild callback; assert the callback was called once, a file exists under .svp/backups/, and PRAGMA user_version on the new store equals SCHEMA_VERSION.
-Expected failure cause (literal string in the output): "schema version mismatch triggers backup and self-heal"
+Test name: "schema version mismatch refuses with the rebuild recovery message".
+Body: temp root; openStore, close. Open the sqlite file directly (DatabaseSync) and exec PRAGMA user_version = 1, close. assert.throws(() => openStore(root), /run sv-playbook rebuild/). Then assert openStore(root, { skipVersionCheck: true }) succeeds and can set user_version to SCHEMA_VERSION.
+Expected failure cause (literal string in the output): "schema version mismatch refuses with the rebuild recovery message"
 
 ## Reuse
-src/db/store.ts (openStore, SCHEMA), node:fs (copyFileSync, mkdirSync, rmSync), STORE-REBUILD-001's rebuildFromFiles for the CLI wiring.
+src/db/store.ts (openStore, SCHEMA), src/cli/commands/rebuild.ts (wire skipVersionCheck + set the version).
 
 ## Stop conditions
-Anything outside the write_set; migrating data in place (ALTER) - self-heal is always backup+rebuild, never surgery.
+Anything outside the write_set; ANY mutation of an existing DB file from openStore (delete/backup/copy/ALTER are all forbidden there).
 
 ## Evidence required at close
 red-test-output, verify-root, final-sha.
