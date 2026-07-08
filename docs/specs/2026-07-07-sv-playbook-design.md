@@ -8,7 +8,7 @@
 
 ## 1. Thesis
 
-sv-playbook is an end-to-end methodology for building software with AI agents — from raw idea to finished product — packaged so that any agent, on any harness, driving any model, can execute it with consistent quality.
+In one sentence: **a Jira where the team working the board is agentic** — the classic software team (PO, planner, devs, reviewer) adapted to AI agents, with the human as founder and final authority. Formally: sv-playbook is an end-to-end methodology for building software with AI agents — from raw idea to finished product — packaged so that any agent, on any harness, driving any model, can execute it with consistent quality.
 
 It rests on one empirical finding from the Aurora project: **everything that worked was mechanized; everything that failed was prose.** Agents (especially cheap models) violate written rules but cannot violate an exit code. Therefore the playbook is two layers with a hard boundary:
 
@@ -256,6 +256,8 @@ sv-playbook upgrade           # diff pinned playbook version vs current; emit ad
 
 ## 13. Humans, models, escalation
 
+**Roles (one charter per board column, served as `docs roles/<role>`):** `product` (phase 0 wizard + change bridge — before `draft`), `planner` (`draft`→`ready`), `implementer` (`active`), `reviewer` (`review`). Each charter obeys the format contract (`docs roles/format`): every step is EXEC (exact command + expected output + on-mismatch action, zero interpretation) or JUDGMENT (explicitly marked; low-capability sessions emit ESCALATE instead of attempting it), plus fixed output structure and stop conditions — so ANY capable agent can perform the role by reading one document. `task brief --role <role> <id>` assembles the role-appropriate brief (v1.x; implementer brief ships first). The human is the merge authority and final decision-maker in every role's output.
+
 **Mandatory human review (short, explicit list):** the brief, every ADR, every PR diff against its declared write-set, test quality (does the RED test prove anything real?), closure evidence. Everything else is delegated to gates. Backlog reordering always requires a recorded human decision.
 
 **Model × role matrix (per-project, in config):** cheap models = implementers of narrow packets under hard gates; wizard, planning, and review require capable models. Fed by learnings (which packet types failed with which model tier).
@@ -291,6 +293,7 @@ Thirteen walkthroughs (who does what, minute by minute, which gate validates) we
   - The constitution: wizard, contract, workflow, adoption, change bridge, tiers, templates, principles with verbose IDs.
   - The CLI: everything in §11, SQLite execution plane, leases, durable stamping, instruction files, `describe --json`.
   - First stack preset: TypeScript + pnpm.
+- **Validation queue (D22 — runs BEFORE any further feature plan, right after P4):** the three cheapest tests that can invalidate the thesis: (a) S3 — a cheap model implements a small packet under the contract; (b) two implementers in parallel on disjoint write-sets (first real exercise of leases and the zombie bounds); (c) S5 — sv-playbook adopts itself. Solidity assessment 2026-07-08: gates empirically held across 3 PRs (zero mechanized-rule violations; 100% of violations were in prose-only rules); unproven: cheap-model thesis, real concurrency, wizard/adopt front door, non-TS projects, human review load at scale.
 - **v2 (gated on v1 real-world use):**
   - `serve`: local web viewer — live board (which agent, which packet, which step), sprint/roadmap/docs views, metrics dashboards. **Read-only rendering; its control buttons call the CLI** — one write path, always. Fresh market scan first (beads, vibe-kanban et al. — wrap before build).
   - Telemetry dashboards. v1's event log already captures the deterministic efficiency signals for free: verify cycles per packet, retries, escalations, takeovers, time per state — rework metrics need no self-reporting. Sessions declare harness + model at `start`; token/cost data is best-effort (harness hooks such as OTel where available, agent self-report otherwise) and marked as such. Answers: which models are most used, which produce least rework, per-packet cost.
@@ -337,4 +340,5 @@ Thirteen walkthroughs (who does what, minute by minute, which gate validates) we
 | D18 | All verification under `check <target>`; CLI-wide plain-word naming rule | Self-evident names for outsiders; "grill" collided with the grill-me skill | Separate grill/check verbs (confusing boundary) |
 | D19 | Configurable autonomy levels (strict/standard/high) with mandatory DEVIATION records | P1 blockers showed trivially-safe fixes blocking capable agents; evidence duty stays identical at every level | Fixed maximal strictness (wastes capable models); trust-based autonomy (hallucination risk) |
 | D20 | `check plan`: a plan's embedded code is typechecked/linted before implementation starts | P1 blockers #1/#2 were plan/tool-config contradictions — mechanically catchable (PRINCIPLE-001 applied to plans) | Trusting planner review alone |
+| D22 | Thesis-validation queue (cheap model, parallel run, self-adoption) runs before further feature work | Each test is cheap and can invalidate load-bearing decisions; better now than under Aurora | Building features on an untested core |
 | D21 | CLI is the sole author of structured content: validate-at-write, DB + generated markdown as dual projections; .sqlite never committed | One write path ends SoT ambiguity; agents get queryable context, humans get diffable files; binary DBs are unmergeable in git | Committing SQLite (unmergeable, opaque); agents hand-writing docs (format drift, post-hoc validation) |
