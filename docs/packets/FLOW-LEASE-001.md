@@ -25,3 +25,5 @@ Anything outside the write_set; touching takeover semantics.
 
 ## Evidence required at close
 red-test-output, verify-root, final-sha.
+
+closed: done 2026-07-08T20:00:55.127Z
