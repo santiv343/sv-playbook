@@ -1,5 +1,6 @@
 import { commands } from './registry.js';
-import { EXIT, type Io } from './command.js';
+import { EXIT } from './command.constants.js';
+import type { Io } from './command.types.js';
 
 const defaultIo: Io = {
   out: (l) => void process.stdout.write(`${l}\n`),
@@ -10,7 +11,7 @@ function usage(io: Io): void {
   io.err('Usage: sv-playbook <command> [args]');
   io.err('');
   io.err('Commands:');
-  for (const c of commands) io.err(`  ${c.name.padEnd(12)} ${c.summary}`);
+  for (const c of commands()) io.err(`  ${c.name.padEnd(12)} ${c.summary}`);
 }
 
 export async function main(argv: string[], io: Io = defaultIo): Promise<number> {
@@ -19,7 +20,7 @@ export async function main(argv: string[], io: Io = defaultIo): Promise<number> 
     usage(io);
     return EXIT.USAGE;
   }
-  const command = commands.find((c) => c.name === name);
+  const command = commands().find((c) => c.name === name);
   if (command === undefined) {
     io.err(`Unknown command: ${name}`);
     usage(io);

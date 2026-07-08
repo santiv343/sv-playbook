@@ -5,7 +5,8 @@ import { existsSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { openStore, SCHEMA_VERSION } from './store.js';
+import { openStore } from './store.js';
+import { SCHEMA_VERSION } from './store.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
 
 test('openStore creates .svp/playbook.sqlite and the schema tables', async () => {

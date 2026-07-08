@@ -1,25 +1,26 @@
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { EXIT, type Command, type Io } from '../command.js';
-import { commonRoot, openStore, type Store } from '../../db/store.js';
-import { PacketFormatError, type PacketDefinition } from '../../packets/document.js';
+import { EXIT } from '../command.constants.js';
+import type { Command, Io } from '../command.types.js';
+import { commonRoot, openStore } from '../../db/store.js';
+import type { Store } from '../../db/store.types.js';
+import { PacketFormatError } from '../../packets/document.errors.js';
+import type { PacketDefinition } from '../../packets/document.types.js';
 import {
   createPacket,
   briefPacket,
   ensureSession,
   leaseOf,
-  LifecycleError,
   listPackets,
   movePacket,
   notePacket,
-  DEFAULT_EVIDENCE,
-  PACKET_STATUSES,
   recoverPacket,
   startPacket,
   takeoverPacket,
-  type PacketStatus,
-  type RecoveryReport,
 } from '../../tasks/service.js';
+import { DEFAULT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, PACKET_STATUSES } from '../../tasks/service.constants.js';
+import { LifecycleError } from '../../tasks/service.errors.js';
+import type { PacketStatus, RecoveryReport } from '../../tasks/service.types.js';
 
 interface Subcommand {
   usage: string;
@@ -224,11 +225,11 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
     usage: 'sv-playbook task recover <ID> [--json]',
     run: handleShow,
   }],
-  ['takeover', {
+  [EVENT_TAKEOVER, {
     usage: 'sv-playbook task takeover <ID> [--force]',
     run: handleTakeover,
   }],
-  ['note', {
+  [EVENT_NOTE, {
     usage: 'sv-playbook task note <ID> <text...>',
     run: (rest, io) => handleNote(rest, io),
   }],
@@ -257,10 +258,11 @@ function handleTaskError(error: unknown, io: Io): number {
   throw error;
 }
 
-export const taskCommand: Command = {
-  name: 'task',
-  summary: 'Create, list, start, move, inspect, and recover execution packets',
-  run(args, io) {
+export function taskCommand(): Command {
+  return {
+    name: 'task',
+    summary: 'Create, list, start, move, inspect, and recover execution packets',
+    run(args, io) {
     try {
       const [sub, ...rest] = args;
       const command = sub === undefined ? undefined : SUBCOMMANDS.get(sub);
@@ -269,5 +271,6 @@ export const taskCommand: Command = {
     } catch (error) {
       return Promise.resolve(handleTaskError(error, io));
     }
-  },
-};
+    },
+  };
+}

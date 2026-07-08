@@ -1,6 +1,10 @@
 import sonarjs from 'eslint-plugin-sonarjs';
 import tseslint from 'typescript-eslint';
 
+const domainLiterals = ['draft', 'ready', 'active', 'review', 'done', 'blocked', 'dropped', 'transition', 'note', 'takeover', 'evidence'];
+const singleSourceMessage = "single source: use the constant from the module's .constants.ts";
+const testFiles = '**/*.test.ts';
+
 export default tseslint.config(
   { ignores: ['dist/', 'node_modules/'] },
   ...tseslint.configs.strictTypeChecked,
@@ -42,10 +46,23 @@ export default tseslint.config(
         'error',
         { object: 'process', property: 'chdir', message: 'pass directories as parameters instead' },
       ],
+      'no-restricted-syntax': [
+        'error',
+        ...domainLiterals.map((value) => ({
+          selector: `Literal[value='${value}']`,
+          message: singleSourceMessage,
+        })),
+      ],
     },
   },
   {
-    files: ['**/*.test.ts'],
+    files: ['**/*.constants.ts', '**/*.types.ts', testFiles],
+    rules: {
+      'no-restricted-syntax': 'off',
+    },
+  },
+  {
+    files: [testFiles],
     rules: {
       'sonarjs/no-duplicate-string': 'off',
       'max-lines-per-function': 'off',
@@ -55,5 +72,8 @@ export default tseslint.config(
   {
     files: ['**/*.js'],
     extends: [tseslint.configs.disableTypeChecked],
+    rules: {
+      'no-restricted-syntax': 'off',
+    },
   },
 );

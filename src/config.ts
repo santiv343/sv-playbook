@@ -1,31 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-export class ConfigError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ConfigError';
-  }
-}
-
-export type Tier = 'TIER-1' | 'TIER-2' | 'TIER-3';
-export type Autonomy = 'strict' | 'standard' | 'high';
-
-export interface PlaybookConfig {
-  productName: string;
-  chatLanguage: string;
-  tier: Tier;
-  verifyCommand: string;
-  autonomy: Autonomy;
-}
-
-const DEFAULTS: PlaybookConfig = {
-  productName: 'unnamed',
-  chatLanguage: 'en',
-  tier: 'TIER-2',
-  verifyCommand: 'npm run verify',
-  autonomy: 'strict',
-};
+import { DEFAULTS } from './config.constants.js';
+import { ConfigError } from './config.errors.js';
+import type { Autonomy, PlaybookConfig, Tier } from './config.types.js';
 
 function isTier(value: unknown): value is Tier {
   return value === 'TIER-1' || value === 'TIER-2' || value === 'TIER-3';

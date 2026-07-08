@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { main } from '../main.js';
-import type { Io } from '../command.js';
-import { EXIT } from '../command.js';
+import { EXIT } from '../command.constants.js';
+import type { Io } from '../command.types.js';
 
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = [];
