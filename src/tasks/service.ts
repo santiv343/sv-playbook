@@ -6,7 +6,8 @@ import { numberColumn, stringColumn } from '../db/rows.js';
 import { generatePacketDocument, type PacketDefinition } from '../packets/document.js';
 
 export type PacketStatus = 'draft' | 'ready' | 'active' | 'review' | 'done' | 'blocked' | 'dropped';
-export const PACKET_STATUSES: readonly PacketStatus[] = ['draft', 'ready', 'active', 'review', 'done', 'blocked', 'dropped'];
+export const PACKET_STATUS_DRAFT: PacketStatus = 'draft';
+export const PACKET_STATUSES: readonly PacketStatus[] = [PACKET_STATUS_DRAFT, 'ready', 'active', 'review', 'done', 'blocked', 'dropped'];
 export const EVENT_TRANSITION = 'transition';
 export const EVENT_NOTE = 'note';
 export const EVENT_TAKEOVER = 'takeover';
@@ -36,9 +37,10 @@ export interface RecoveryReport {
 }
 
 const LEASE_TTL_MS = 30 * 60 * 1000;
+const INSERT_EVENT_SQL = 'INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)';
 
 const ALLOWED: ReadonlyMap<string, readonly PacketStatus[]> = new Map([
-  ['draft', ['ready', 'dropped']],
+  [PACKET_STATUS_DRAFT, ['ready', 'dropped']],
   ['ready', ['active', 'dropped']],
   ['active', ['review', 'blocked']],
   ['blocked', ['ready', 'dropped']],
@@ -51,7 +53,7 @@ function recordTransition(store: Store, packetId: string, from: string, to: stri
   store.db.prepare('INSERT INTO transitions (packet_id, from_status, to_status, session_id, at) VALUES (?,?,?,?,?)')
     .run(packetId, from, to, sessionId ?? null, now());
   store.db.prepare('UPDATE packets SET status = ?, updated_at = ? WHERE id = ?').run(to, now(), packetId);
-  store.db.prepare('INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)')
+  store.db.prepare(INSERT_EVENT_SQL)
     .run(sessionId ?? null, packetId, EVENT_TRANSITION, `${from}->${to}`, now());
 }
 
@@ -63,8 +65,8 @@ export function createPacket(store: Store, repoRoot: string, def: PacketDefiniti
   const path = join(dir, `${def.id}.md`);
   writeFileSync(path, generatePacketDocument(def, body), 'utf8');
   store.db.prepare('INSERT INTO packets (id, title, path, status, created_at, updated_at) VALUES (?,?,?,?,?,?)')
-    .run(def.id, def.title, path, 'draft', now(), now());
-  recordTransition(store, def.id, 'none', 'draft');
+    .run(def.id, def.title, path, PACKET_STATUS_DRAFT, now(), now());
+  recordTransition(store, def.id, 'none', PACKET_STATUS_DRAFT);
 }
 
 export function listPackets(store: Store): Array<{ id: string; title: string; status: string; priority: number; updatedAt: string }> {
@@ -188,7 +190,7 @@ export function takeoverPacket(
     store.db.prepare('DELETE FROM leases WHERE packet_id = ?').run(packetId);
     store.db.prepare('INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES (?,?,?,?,?)')
       .run(packetId, sessionId, worktree, now(), now());
-    store.db.prepare('INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)')
+    store.db.prepare(INSERT_EVENT_SQL)
       .run(sessionId, packetId, EVENT_TAKEOVER, `from ${lease.sessionId} force=${force}`, now());
     store.db.exec('COMMIT');
   } catch (error) {
@@ -203,7 +205,7 @@ export function notePacket(store: Store, sessionId: string, packetId: string, te
   const detail = text.trim();
   if (detail.length === 0) throw new LifecycleError('note text required');
   refreshHeartbeat(store, sessionId);
-  store.db.prepare('INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)')
+  store.db.prepare(INSERT_EVENT_SQL)
     .run(sessionId, packetId, EVENT_NOTE, detail, now());
 }
 

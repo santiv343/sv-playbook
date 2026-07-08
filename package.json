@@ -4,9 +4,19 @@
   "description": "End-to-end methodology for agent-driven software development: a markdown constitution plus a verifier CLI.",
   "license": "MIT",
   "type": "module",
-  "bin": { "sv-playbook": "./bin/sv-playbook.js" },
-  "engines": { "node": ">=22.13.0" },
-  "files": ["bin", "dist", "content", "README.md", "LICENSE"],
+  "bin": {
+    "sv-playbook": "./bin/sv-playbook.js"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "content",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -17,6 +27,7 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "eslint": "^9.18.0",
+    "eslint-plugin-sonarjs": "^4.1.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.20.0"
   }
