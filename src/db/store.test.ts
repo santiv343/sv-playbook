@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from './store.js';
+import { stringColumn } from './rows.js';
 
 test('openStore creates .svp/playbook.sqlite and the schema tables', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-store-'));
@@ -13,7 +14,7 @@ test('openStore creates .svp/playbook.sqlite and the schema tables', async () =>
   const tables = store.db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     .all()
-    .map((r) => (r as { name: string }).name);
+    .map((row) => stringColumn(row, 'name'));
   for (const t of ['events', 'leases', 'packets', 'sessions', 'transitions']) {
     assert.ok(tables.includes(t), `missing table ${t}`);
   }

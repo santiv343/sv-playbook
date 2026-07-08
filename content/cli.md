@@ -49,7 +49,7 @@ Refusal matrix for `task start`:
 | Condition | Result | Hint |
 | --------- | ------ | ---- |
 | Packet is not `ready` | Refuse with `wrong state <status>` | For `review`, `done`, or `dropped`: reopening goes through the change bridge |
-| Lease held by another session | Refuse with `held by session <id>` | use takeover (P3) |
+| Lease held by another session | Refuse with `held by session <id>` | use takeover once available; do not delete the lease by hand |
 | Lease held by the same session | Return OK | idempotent retry |
 | Packet is `ready` and unleased | Acquire lease and move to `active` | |
 | Packet does not exist | Refuse with `unknown packet: <id>` | |

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { taskCommand } from './task.js';
 import type { Io } from '../command.js';
+import { stringColumn } from '../../db/rows.js';
 
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = []; const errLines: string[] = [];
@@ -30,8 +31,9 @@ test('create -> list -> start -> move review happy path', async () => {
     assert.equal(await taskCommand.run(['move', 'P2-101', 'review'], io), 0);
     const io2 = fakeIo();
     assert.equal(await taskCommand.run(['list', '--json'], io2), 0);
-    const parsed = JSON.parse(io2.outLines.join('\n')) as Array<{ id: string; status: string }>;
-    assert.equal(parsed[0]?.status, 'review');
+    const parsed: unknown = JSON.parse(io2.outLines.join('\n'));
+    assert.ok(Array.isArray(parsed));
+    assert.equal(stringColumn(parsed[0], 'status'), 'review');
   });
 });
 

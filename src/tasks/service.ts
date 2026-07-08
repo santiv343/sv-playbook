@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from '../db/store.js';
+import { numberColumn, stringColumn } from '../db/rows.js';
 import { generatePacketDocument, type PacketDefinition } from '../packets/document.js';
 
 export type PacketStatus = 'draft' | 'ready' | 'active' | 'review' | 'done' | 'blocked' | 'dropped';
@@ -42,10 +43,13 @@ export function createPacket(store: Store, repoRoot: string, def: PacketDefiniti
 
 export function listPackets(store: Store): Array<{ id: string; title: string; status: string; priority: number; updatedAt: string }> {
   const rows = store.db.prepare('SELECT id, title, status, priority, updated_at FROM packets ORDER BY priority, id').all();
-  return rows.map((r) => {
-    const row = r as { id: string; title: string; status: string; priority: number; updated_at: string };
-    return { id: row.id, title: row.title, status: row.status, priority: row.priority, updatedAt: row.updated_at };
-  });
+  return rows.map((row) => ({
+    id: stringColumn(row, 'id'),
+    title: stringColumn(row, 'title'),
+    status: stringColumn(row, 'status'),
+    priority: numberColumn(row, 'priority'),
+    updatedAt: stringColumn(row, 'updated_at'),
+  }));
 }
 
 export function ensureSession(store: Store, worktree: string): string {
@@ -64,16 +68,21 @@ export function ensureSession(store: Store, worktree: string): string {
 function currentStatus(store: Store, packetId: string): string {
   const row = store.db.prepare('SELECT status FROM packets WHERE id = ?').get(packetId);
   if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
-  return (row as { status: string }).status;
+  return stringColumn(row, 'status');
+}
+
+function leaseOf(store: Store, packetId: string): { sessionId: string } | undefined {
+  const row = store.db.prepare('SELECT session_id FROM leases WHERE packet_id = ?').get(packetId);
+  if (row === undefined) return undefined;
+  return { sessionId: stringColumn(row, 'session_id') };
 }
 
 export function startPacket(store: Store, sessionId: string, worktree: string, packetId: string): void {
   const status = currentStatus(store, packetId);
-  const lease = store.db.prepare('SELECT session_id FROM leases WHERE packet_id = ?').get(packetId) as
-    | { session_id: string } | undefined;
+  const lease = leaseOf(store, packetId);
   if (lease !== undefined) {
-    if (lease.session_id === sessionId) return; // idempotent retry
-    throw new LifecycleError(`held by session ${lease.session_id}`, 'use takeover (arrives in P3)');
+    if (lease.sessionId === sessionId) return; // idempotent retry
+    throw new LifecycleError(`held by session ${lease.sessionId}`, 'use takeover once available; do not delete the lease by hand');
   }
   if (status !== 'ready') {
     const hint = ['review', 'done', 'dropped'].includes(status) ? 'reopening goes through the change bridge' : undefined;
@@ -90,10 +99,9 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   const allowed = ALLOWED.get(from) ?? [];
   if (!allowed.includes(to)) throw new LifecycleError(`illegal transition ${from} -> ${to}`);
   if (from === 'active') {
-    const lease = store.db.prepare('SELECT session_id FROM leases WHERE packet_id = ?').get(packetId) as
-      | { session_id: string } | undefined;
+    const lease = leaseOf(store, packetId);
     if (lease === undefined || sessionId === undefined) throw new LifecycleError('lease required to leave active');
-    if (lease.session_id !== sessionId) throw new LifecycleError(`lease held by another session ${lease.session_id}`);
+    if (lease.sessionId !== sessionId) throw new LifecycleError(`lease held by another session ${lease.sessionId}`);
   }
   if (to === 'done' || to === 'dropped') {
     store.db.prepare('DELETE FROM leases WHERE packet_id = ?').run(packetId);

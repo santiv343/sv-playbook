@@ -7,4 +7,9 @@ export interface Command {
   summary: string;           // one line, shown in usage and (later) describe --json
   run(args: string[], io: Io): Promise<number>;
 }
-export const EXIT = { OK: 0, GATE_FAIL: 1, USAGE: 2, SYSTEM: 3 } as const;
+export const EXIT: Readonly<{ OK: 0; GATE_FAIL: 1; USAGE: 2; SYSTEM: 3 }> = Object.freeze({
+  OK: 0,
+  GATE_FAIL: 1,
+  USAGE: 2,
+  SYSTEM: 3,
+});
