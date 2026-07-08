@@ -5,12 +5,17 @@ import { commonRoot, openStore, type Store } from '../../db/store.js';
 import { PacketFormatError, type PacketDefinition } from '../../packets/document.js';
 import {
   createPacket,
+  briefPacket,
   ensureSession,
   LifecycleError,
   listPackets,
   movePacket,
+  notePacket,
+  recoverPacket,
   startPacket,
+  takeoverPacket,
   type PacketStatus,
+  type RecoveryReport,
 } from '../../tasks/service.js';
 
 const USAGE = [
@@ -19,6 +24,11 @@ const USAGE = [
   '  sv-playbook task list [--json]',
   '  sv-playbook task start <ID>',
   '  sv-playbook task move <ID> <status>',
+  '  sv-playbook task show <ID> [--json]',
+  '  sv-playbook task recover <ID> [--json]',
+  '  sv-playbook task takeover <ID> [--force]',
+  '  sv-playbook task note <ID> <text...>',
+  '  sv-playbook task brief <ID>',
 ].join('\n');
 
 class UsageError extends Error {}
@@ -119,9 +129,74 @@ function handleMove(args: string[]): number {
   });
 }
 
+function renderReport(report: RecoveryReport, io: Io): void {
+  const lease = report.lease === undefined
+    ? 'none'
+    : `${report.lease.sessionId} ${report.lease.stale ? 'stale' : 'fresh'} ${report.lease.worktree}`;
+  io.out(`id: ${report.packetId}`);
+  io.out(`status: ${report.status}`);
+  io.out(`lease: ${lease}`);
+  io.out('transitions:');
+  for (const transition of report.lastTransitions) io.out(`  ${transition}`);
+  io.out('notes:');
+  for (const note of report.lastNotes) io.out(`  ${note}`);
+}
+
+function handleShow(args: string[], io: Io): number {
+  const parsed = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { json: { type: 'boolean' } },
+  });
+  const [packetId] = parsed.positionals;
+  if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('show requires <ID>');
+  return withStore((store) => {
+    const report = recoverPacket(store, packetId);
+    if (parsed.values.json === true) io.out(JSON.stringify(report));
+    else renderReport(report, io);
+    return EXIT.OK;
+  });
+}
+
+function handleTakeover(args: string[], io: Io): number {
+  const parsed = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { force: { type: 'boolean' } },
+  });
+  const [packetId] = parsed.positionals;
+  if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('takeover requires <ID>');
+  return withStore((store) => {
+    const worktree = process.cwd();
+    const sessionId = ensureSession(store, worktree);
+    const report = takeoverPacket(store, sessionId, worktree, packetId, parsed.values.force === true);
+    renderReport(report, io);
+    return EXIT.OK;
+  });
+}
+
+function handleNote(args: string[]): number {
+  const [packetId, ...parts] = args;
+  if (packetId === undefined || parts.length === 0) throw new UsageError('note requires <ID> <text...>');
+  return withStore((store) => {
+    const sessionId = ensureSession(store, process.cwd());
+    notePacket(store, sessionId, packetId, parts.join(' '));
+    return EXIT.OK;
+  });
+}
+
+function handleBrief(args: string[], io: Io): number {
+  const [packetId] = args;
+  if (args.length !== 1 || packetId === undefined) throw new UsageError('brief requires <ID>');
+  return withStore((store, repoRoot) => {
+    io.out(briefPacket(store, repoRoot, packetId));
+    return EXIT.OK;
+  });
+}
+
 export const taskCommand: Command = {
   name: 'task',
-  summary: 'Create, list, start, and move execution packets',
+  summary: 'Create, list, start, move, inspect, and recover execution packets',
   run(args, io) {
     try {
       const [sub, ...rest] = args;
@@ -129,6 +204,11 @@ export const taskCommand: Command = {
       if (sub === 'list') return Promise.resolve(handleList(rest, io));
       if (sub === 'start') return Promise.resolve(handleStart(rest));
       if (sub === 'move') return Promise.resolve(handleMove(rest));
+      if (sub === 'show') return Promise.resolve(handleShow(rest, io));
+      if (sub === 'recover') return Promise.resolve(handleShow(rest, io));
+      if (sub === 'takeover') return Promise.resolve(handleTakeover(rest, io));
+      if (sub === 'note') return Promise.resolve(handleNote(rest));
+      if (sub === 'brief') return Promise.resolve(handleBrief(rest, io));
       throw new UsageError(sub === undefined ? 'missing task subcommand' : `unknown task subcommand: ${sub}`);
     } catch (error) {
       if (error instanceof LifecycleError || error instanceof PacketFormatError) {
