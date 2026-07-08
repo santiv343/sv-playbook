@@ -24,3 +24,5 @@ Anything outside the write_set; touching the rebuild-from-files logic itself.
 
 ## Evidence required at close
 red-test-output, verify-root, final-sha.
+
+closed: done 2026-07-08T20:23:25.611Z
