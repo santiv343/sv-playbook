@@ -28,11 +28,15 @@ export default tseslint.config(
       // taste: split-before-exceed size discipline
       'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': ['error', { max: 60, skipBlankLines: true, skipComments: true }],
+      // taste: no nested ternary (IIFE-in-ternary pattern)
+      'no-nested-ternary': 'error',
       // taste: one responsibility, low branching
-      'complexity': ['error', 12],
+      'complexity': ['error', 10],
       'max-depth': ['error', 3],
       // taste: single-source contractual strings (production code)
-      'sonarjs/no-duplicate-string': ['error', { threshold: 3 }],
+      'sonarjs/no-duplicate-string': ['error', { threshold: 2 }],
+      // taste: cognitive complexity (sonarjs)
+      'sonarjs/cognitive-complexity': ['error', 10],
       // taste: no mutable shared state reached via process globals in production code
       'no-restricted-properties': [
         'error',
