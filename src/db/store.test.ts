@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
-import { existsSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openStore } from './store.js';
-import { ROTATE_DIR, ROTATE_RETENTION, SCHEMA_VERSION } from './store.constants.js';
+import { SCHEMA_VERSION } from './store.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
 
 test('openStore creates .svp/playbook.sqlite and the schema tables', async () => {
@@ -28,41 +28,6 @@ test('openStore is idempotent (schema re-apply is safe)', async () => {
   openStore(root).close();
   const again = openStore(root);
   again.close();
-});
-
-test('open rotates a backup into the rotate subdir and keeps at most the retention count', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'svp-bak-'));
-  openStore(root).close();
-  const rotateDir = join(root, '.svp', 'backups', ROTATE_DIR);
-  let files = readdirSync(rotateDir).filter((f) => f.endsWith('.sqlite'));
-  assert.equal(files.length, 1);
-  const old = Date.now() - 20 * 60 * 1000;
-  for (const f of readdirSync(rotateDir)) {
-    utimesSync(join(rotateDir, f), old / 1000, old / 1000);
-  }
-  for (let i = 0; i < 12; i++) {
-    const f = join(rotateDir, `playbook-${String(20260101000000 + i)}.sqlite`);
-    writeFileSync(f, '');
-    utimesSync(f, old / 1000, old / 1000);
-  }
-  openStore(root).close();
-  files = readdirSync(rotateDir).filter((f) => f.endsWith('.sqlite'));
-  assert.equal(files.length, ROTATE_RETENTION);
-});
-
-test('open rotate-trim never deletes explicit state backups in the backups root', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'svp-bak-x-'));
-  openStore(root).close();
-  const backupsDir = join(root, '.svp', 'backups');
-  const old = Date.now() - 20 * 60 * 1000;
-  for (let i = 0; i < 15; i++) {
-    const f = join(backupsDir, `playbook-${String(20260101000000 + i)}.sqlite`);
-    writeFileSync(f, '');
-    utimesSync(f, old / 1000, old / 1000);
-  }
-  openStore(root).close();
-  const explicit = readdirSync(backupsDir).filter((f) => f.endsWith('.sqlite'));
-  assert.equal(explicit.length, 15);
 });
 
 test('schema version mismatch refuses with the restore recovery message', async () => {

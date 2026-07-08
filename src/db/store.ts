@@ -1,9 +1,9 @@
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { numberColumn } from './rows.js';
-import { DB_FILE, ROTATE_DIR, ROTATE_RETENTION, SCHEMA, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
+import { DB_FILE, SCHEMA, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
 import { StoreVersionError } from './store.errors.js';
 import type { Store } from './store.types.js';
 
@@ -25,46 +25,16 @@ interface OpenStoreOptions {
   skipVersionCheck?: boolean;
 }
 
-function trimRotatedBackups(rotateDir: string): void {
-  const current = readdirSync(rotateDir)
-    .filter((f) => f.endsWith('.sqlite'))
-    .map((f) => ({ name: f, mtime: statSync(join(rotateDir, f)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime);
-  for (let i = ROTATE_RETENTION; i < current.length; i++) {
-    const entry = current[i];
-    if (entry !== undefined) rmSync(join(rotateDir, entry.name));
-  }
-}
-
-function rotateBackups(dir: string, dbPath: string): void {
-  const rotateDir = join(dir, 'backups', ROTATE_DIR);
-  mkdirSync(rotateDir, { recursive: true });
-  if (!existsSync(dbPath)) return;
-  const files = readdirSync(rotateDir)
-    .filter((f) => f.endsWith('.sqlite'))
-    .map((f) => ({ name: f, mtime: statSync(join(rotateDir, f)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime);
-  if (files.length > 0) {
-    const newest = files[0];
-    if (newest !== undefined && Date.now() - newest.mtime < 10 * 60 * 1000) return;
-  }
-  const stamp = new Date().toISOString().replace(/[:\-T.Z]/g, '').slice(0, 14);
-  copyFileSync(dbPath, join(rotateDir, `playbook-${stamp}.sqlite`));
-  trimRotatedBackups(rotateDir);
-}
-
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   const dir = join(repoRoot, SVP_DIR);
   mkdirSync(dir, { recursive: true });
   const dbPath = join(dir, DB_FILE);
   const isNew = !existsSync(dbPath);
-  rotateBackups(dir, dbPath);
   const db = new DatabaseSync(dbPath);
   applyPragmas(db);
   db.exec(SCHEMA);
   if (isNew) {
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-    rotateBackups(dir, dbPath);
   } else if (!options?.skipVersionCheck) {
     const row = db.prepare('PRAGMA user_version').get();
     const currentVersion = numberColumn(row, 'user_version');
