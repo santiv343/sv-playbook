@@ -312,6 +312,17 @@ export function rebuildFromFiles(repoRoot: string): RebuildCounts {
   return counts;
 }
 
+export function refuseRebuild(store: Store): string | undefined {
+  const rows = store.db.prepare('SELECT heartbeat_at FROM leases').all();
+  let freshLeases = 0;
+  for (const row of rows) {
+    const heartbeatAt = stringColumn(row, 'heartbeat_at');
+    if (Date.now() - Date.parse(heartbeatAt) <= LEASE_TTL_MS) freshLeases++;
+  }
+  if (freshLeases === 0) return undefined;
+  return `rebuild refused: ${freshLeases} live lease(s) - workers may be running. Pass --force to override.`;
+}
+
 export function briefPacket(store: Store, _repoRoot: string, packetId: string): string {
   const row = store.db.prepare('SELECT id, title, path, status FROM packets WHERE id = ?').get(packetId);
   if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
