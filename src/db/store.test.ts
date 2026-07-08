@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -27,6 +27,26 @@ test('openStore is idempotent (schema re-apply is safe)', async () => {
   openStore(root).close();
   const again = openStore(root);
   again.close();
+});
+
+test('open rotates a backup and keeps at most ten', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-bak-'));
+  openStore(root).close();
+  const backupDir = join(root, '.svp', 'backups');
+  let files = readdirSync(backupDir).filter((f) => f.endsWith('.sqlite'));
+  assert.equal(files.length, 1);
+  const old = Date.now() - 20 * 60 * 1000;
+  for (const f of readdirSync(backupDir)) {
+    utimesSync(join(backupDir, f), old / 1000, old / 1000);
+  }
+  for (let i = 0; i < 12; i++) {
+    const f = join(backupDir, `playbook-${String(20260101000000 + i)}.sqlite`);
+    writeFileSync(f, '');
+    utimesSync(f, old / 1000, old / 1000);
+  }
+  openStore(root).close();
+  files = readdirSync(backupDir).filter((f) => f.endsWith('.sqlite'));
+  assert.equal(files.length, 10);
 });
 
 test('schema version mismatch refuses with the rebuild recovery message', async () => {
