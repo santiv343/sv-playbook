@@ -120,7 +120,14 @@ Every rule is tagged `[gate]` or `[criterion]`. For `[gate]` rules, the stack pr
 
 ## 6c. Taste profile
 
-Inspired by Command Code's taste model, made agent-agnostic as a convention (no learning engine): `docs/taste.md` holds style-level preferences with confidence scores (e.g. "explicit return types on exported functions: 0.7"), human-readable and hand-editable. The contract requires agents to read it as context. It updates through a review-close step: what the human corrected or rejected in review becomes a proposed taste adjustment (agent proposes, human approves). `init` can import a taste profile from a previous project — best practices travel with the user, not the repo. Taste captures *patterns, not intentions*: architectural decisions belong in ADRs and the rulebook, never in taste.
+Inspired by Command Code's taste model, made agent-agnostic as a convention (no learning engine). Taste is the user's full working preference set — code style AND working style (report format, verbosity, what to ask vs. decide, how to approach problems): everything that is not a deterministic rule but that agents MUST consider whenever they act.
+
+- **Two layers:** a global profile (project-agnostic, travels with the user; imported by `init`) plus a per-project profile for that repo's specifics. Project overrides global.
+- **Format:** human-readable markdown with confidence scores (e.g. "explicit return types on exported functions: 0.7"), always hand-editable by the user.
+- **Capture is fully automatic:** the agent decides during the work — especially from review corrections/rejections — whether a signal is worth incorporating, and updates the file itself. The user edits or vetoes at will.
+- **Graduation pipeline:** a high-confidence taste entry that is mechanically enforceable should be *proposed for promotion* to the rulebook or lint config (taste → `[gate]`). Taste is the nursery for future deterministic rules.
+- **Boundary:** taste captures patterns, not intentions. Architectural decisions belong in ADRs and the rulebook, never in taste.
+- **Backlog (post-v2):** infer taste from an existing repo's code and from recent agent-conversation history in that project, as Command Code does.
 
 ## 7. What lives where
 
