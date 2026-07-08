@@ -8,7 +8,7 @@
 
 ## 1. Thesis
 
-sv-playbook is an end-to-end methodology for building software with AI agents — from raw idea to finished product — packaged so that any agent, on any harness, driving any model, can execute it with consistent quality.
+In one sentence: **a Jira where the team working the board is agentic** — the classic software team (PO, planner, devs, reviewer) adapted to AI agents, with the human as founder and final authority. Formally: sv-playbook is an end-to-end methodology for building software with AI agents — from raw idea to finished product — packaged so that any agent, on any harness, driving any model, can execute it with consistent quality.
 
 It rests on one empirical finding from the Aurora project: **everything that worked was mechanized; everything that failed was prose.** Agents (especially cheap models) violate written rules but cannot violate an exit code. Therefore the playbook is two layers with a hard boundary:
 
