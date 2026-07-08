@@ -93,7 +93,7 @@ A **brief change (pivot)** freezes new packet emission until dossier v2 passes t
 
 ### Adoption (existing project → governed project)
 
-`sv-playbook adopt`: non-destructive scaffold, then the agent runs the adoption procedure: (1) real-state inventory contrasted against code, not docs; (2) retroactive intake — brief and tier for the project as it is TODAY; (3) gap analysis: every playbook rule marked complies / violates / not-applicable, with evidence; (4) prioritized remediation packets (security → gates → debt). Accepted gaps are recorded decisions. `check` runs in baseline mode. Aurora is the first adoption target and the portability test.
+`sv-playbook adopt`: non-destructive scaffold, then the agent runs the adoption procedure: (1) real-state inventory contrasted against code, not docs; (2) retroactive intake — brief and tier for the project as it is TODAY; (3) gap analysis: every playbook rule marked complies / violates / not-applicable, with evidence; (4) **artifact migration** — the project's pre-existing process artifacts (docs, trackers, specs, task systems) are mapped: still-true content moves into the playbook structure (dossier, rules, decisions, packets), the rest is archived with a tombstone; nothing keeps living in two structures; (5) prioritized remediation packets (security → gates → debt). Accepted gaps are recorded decisions. `check` runs in baseline mode. Aurora is the first adoption target and the portability test.
 
 ## 6. Tiers
 
