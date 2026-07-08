@@ -18,18 +18,10 @@ import {
   type RecoveryReport,
 } from '../../tasks/service.js';
 
-const USAGE = [
-  'Usage:',
-  '  sv-playbook task create --id <ID> --title <T> [--write <glob>]... [--depends <ID>]... [--req <REQ>]... [--evidence <E>]... --body-file <path>',
-  '  sv-playbook task list [--json]',
-  '  sv-playbook task start <ID>',
-  '  sv-playbook task move <ID> <status>',
-  '  sv-playbook task show <ID> [--json]',
-  '  sv-playbook task recover <ID> [--json]',
-  '  sv-playbook task takeover <ID> [--force]',
-  '  sv-playbook task note <ID> <text...>',
-  '  sv-playbook task brief <ID>',
-].join('\n');
+interface Subcommand {
+  usage: string;
+  run(rest: string[], io: Io): number;
+}
 
 class UsageError extends Error {}
 
@@ -194,21 +186,58 @@ function handleBrief(args: string[], io: Io): number {
   });
 }
 
+const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
+  ['create', {
+    usage: 'sv-playbook task create --id <ID> --title <T> [--write <glob>]... [--depends <ID>]... [--req <REQ>]... [--evidence <E>]... --body-file <path>',
+    run: (rest) => handleCreate(rest),
+  }],
+  ['list', {
+    usage: 'sv-playbook task list [--json]',
+    run: handleList,
+  }],
+  ['start', {
+    usage: 'sv-playbook task start <ID>',
+    run: (rest) => handleStart(rest),
+  }],
+  ['move', {
+    usage: 'sv-playbook task move <ID> <status>',
+    run: (rest) => handleMove(rest),
+  }],
+  ['show', {
+    usage: 'sv-playbook task show <ID> [--json]',
+    run: handleShow,
+  }],
+  ['recover', {
+    usage: 'sv-playbook task recover <ID> [--json]',
+    run: handleShow,
+  }],
+  ['takeover', {
+    usage: 'sv-playbook task takeover <ID> [--force]',
+    run: handleTakeover,
+  }],
+  ['note', {
+    usage: 'sv-playbook task note <ID> <text...>',
+    run: (rest) => handleNote(rest),
+  }],
+  ['brief', {
+    usage: 'sv-playbook task brief <ID>',
+    run: handleBrief,
+  }],
+]);
+
+const USAGE = [
+  'Usage:',
+  ...Array.from(SUBCOMMANDS.values()).map((subcommand) => `  ${subcommand.usage}`),
+].join('\n');
+
 export const taskCommand: Command = {
   name: 'task',
   summary: 'Create, list, start, move, inspect, and recover execution packets',
   run(args, io) {
     try {
       const [sub, ...rest] = args;
-      if (sub === 'create') return Promise.resolve(handleCreate(rest));
-      if (sub === 'list') return Promise.resolve(handleList(rest, io));
-      if (sub === 'start') return Promise.resolve(handleStart(rest));
-      if (sub === 'move') return Promise.resolve(handleMove(rest));
-      if (sub === 'show') return Promise.resolve(handleShow(rest, io));
-      if (sub === 'recover') return Promise.resolve(handleShow(rest, io));
-      if (sub === 'takeover') return Promise.resolve(handleTakeover(rest, io));
-      if (sub === 'note') return Promise.resolve(handleNote(rest));
-      if (sub === 'brief') return Promise.resolve(handleBrief(rest, io));
+      const command = sub === undefined ? undefined : SUBCOMMANDS.get(sub);
+      if (command !== undefined) return Promise.resolve(command.run(rest, io));
       throw new UsageError(sub === undefined ? 'missing task subcommand' : `unknown task subcommand: ${sub}`);
     } catch (error) {
       if (error instanceof LifecycleError || error instanceof PacketFormatError) {
