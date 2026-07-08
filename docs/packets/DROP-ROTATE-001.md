@@ -27,3 +27,5 @@ After removal: `node --test dist/db/store.test.js` green with no rotate tests; n
 
 ## Evidence
 (filled at close)
+
+closed: done 2026-07-08T23:21:04.223Z
