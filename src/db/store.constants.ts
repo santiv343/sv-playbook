@@ -3,6 +3,8 @@ import { EVENT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_ST
 export const SCHEMA_VERSION = 2;
 export const SVP_DIR = '.svp';
 export const DB_FILE = 'playbook.sqlite';
+export const ROTATE_DIR = 'rotate';
+export const ROTATE_RETENTION = 10;
 
 const sqlString = (value: string): string => `'${value.replaceAll("'", "''")}'`;
 const sqlInList = (values: readonly string[]): string => values.map(sqlString).join(', ');

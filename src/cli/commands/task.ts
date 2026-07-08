@@ -3,7 +3,11 @@ import { parseArgs } from 'node:util';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
+import { createStateBackup, latestStateBackupAgeHours } from '../../db/backup.js';
+import { BACKUP_EVENT, BACKUP_REASON } from '../../db/backup.constants.js';
 import type { Store } from '../../db/store.types.js';
+import type { BackupEvent, BackupReason } from '../../db/backup.types.js';
+import { loadConfig } from '../../config.js';
 import { PacketFormatError } from '../../packets/document.errors.js';
 import type { PacketDefinition } from '../../packets/document.types.js';
 import {
@@ -19,7 +23,7 @@ import {
   startPacket,
   takeoverPacket,
 } from '../../tasks/service.js';
-import { DEFAULT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, PACKET_STATUSES } from '../../tasks/service.constants.js';
+import { DEFAULT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, PACKET_STATUSES, STATUS } from '../../tasks/service.constants.js';
 import { LifecycleError } from '../../tasks/service.errors.js';
 import type { PacketStatus, RecoveryReport } from '../../tasks/service.types.js';
 
@@ -54,6 +58,21 @@ function withStore<T>(fn: (store: Store, repoRoot: string) => T): T {
   } finally {
     store.close();
   }
+}
+
+function backupForEvent(repoRoot: string, event: BackupEvent, reason: BackupReason, allowFreshLeases?: boolean): void {
+  const config = loadConfig(repoRoot);
+  if (!config.backup.enabled) return;
+  const age = latestStateBackupAgeHours(repoRoot);
+  const ageDue = age === undefined || age >= config.backup.maxAgeHours;
+  const eventDue = config.backup.onEvents.includes(event);
+  if (!ageDue && !eventDue) return;
+  const options = {
+    reason,
+    retention: config.backup.retention,
+    ...(allowFreshLeases === undefined ? {} : { allowFreshLeases }),
+  };
+  createStateBackup(repoRoot, options);
 }
 
 function handleCreate(args: string[], io: Io): number {
@@ -126,9 +145,10 @@ function handleMove(args: string[], io: Io): number {
   const [packetId, status] = args;
   if (packetId === undefined || status === undefined || args.length !== 2) throw new UsageError('move requires <ID> <status>');
   if (!isPacketStatus(status)) throw new UsageError(`unknown status: ${status}`);
-  return withStore((store) => {
+  return withStore((store, repoRoot) => {
     const sessionId = ensureSession(store, process.cwd());
     const from = movePacket(store, sessionId, packetId, status);
+    if (status === STATUS.DONE) backupForEvent(repoRoot, BACKUP_EVENT.DONE, BACKUP_REASON.AUTO_DONE);
     io.out(`moved ${packetId}: ${from} -> ${status}`);
     return EXIT.OK;
   });
@@ -171,10 +191,11 @@ function handleTakeover(args: string[], io: Io): number {
   });
   const [packetId] = parsed.positionals;
   if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('takeover requires <ID>');
-  return withStore((store) => {
+  return withStore((store, repoRoot) => {
     const worktree = process.cwd();
     const sessionId = ensureSession(store, worktree);
     const report = takeoverPacket(store, sessionId, worktree, packetId, parsed.values.force === true);
+    if (parsed.values.force === true) backupForEvent(repoRoot, BACKUP_EVENT.FORCE_TAKEOVER, BACKUP_REASON.FORCE_TAKEOVER, true);
     io.out(`takeover ${packetId}: lease transferred`);
     renderReport(report, io);
     return EXIT.OK;

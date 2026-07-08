@@ -17,6 +17,12 @@ gets violated. The playbook is two layers with a hard boundary:
 - **The police** — this CLI. Verifies, scaffolds, and tracks state. It
   verifies; it never decides.
 
+Operational state lives in local SQLite under `.svp/`. That database is the
+source of truth for app/work management state and is intentionally not
+committed to `main`: SQLite is binary and not mergeable. Semantic docs stay in
+markdown. Durable state backup is handled by explicit SQLite snapshots, with
+local backup as the default and remote/git backup only as an optional adapter.
+
 Design spec: [`docs/specs/2026-07-07-sv-playbook-design.md`](docs/specs/2026-07-07-sv-playbook-design.md)
 
 ## Use
@@ -25,6 +31,10 @@ Design spec: [`docs/specs/2026-07-07-sv-playbook-design.md`](docs/specs/2026-07-
 npx sv-playbook docs            # list process topics
 npx sv-playbook docs principles # read the principles
 npx sv-playbook docs cli        # when/why for each command
+npx sv-playbook doctor          # diagnose local repo/store/lease health
+npx sv-playbook status --json   # board state for serve/automation
+npx sv-playbook backup state    # snapshot local SQLite state
+npx sv-playbook restore state --file .svp/backups/playbook-20260708120000.sqlite
 npx sv-playbook task create --id P2-101 --title "Do work" --write "src/**" --body-file body.md
 npx sv-playbook task list --json
 npx sv-playbook task start P2-101

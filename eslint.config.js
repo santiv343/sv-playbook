@@ -6,7 +6,7 @@ const singleSourceMessage = "single source: use the constant from the module's .
 const testFiles = '**/*.test.ts';
 
 export default tseslint.config(
-  { ignores: ['dist/', 'node_modules/'] },
+  { ignores: ['dist/', 'node_modules/', 'scripts/**/*.mjs'] },
   ...tseslint.configs.strictTypeChecked,
   {
     languageOptions: {

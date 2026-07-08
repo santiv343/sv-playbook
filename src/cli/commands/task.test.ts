@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -122,5 +122,20 @@ test('note then show surfaces the breadcrumb', async () => {
     const io2 = fakeIo();
     assert.equal(await taskCommand().run(['show', 'P3-102'], io2), 0);
     assert.ok(io2.outLines.some((l) => l.includes('checkpoint one')));
+  });
+});
+
+test('moving to done creates an automatic state backup', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'x');
+    const io = fakeIo();
+    await taskCommand().run(['create', '--id', 'BK-001', '--title', 'X', '--write', 'src/**', '--body-file', 'body.md'], io);
+    await taskCommand().run(['move', 'BK-001', 'ready'], io);
+    await taskCommand().run(['start', 'BK-001'], io);
+    await taskCommand().run(['move', 'BK-001', 'review'], io);
+    assert.equal(await taskCommand().run(['move', 'BK-001', 'done'], io), 0);
+    const files = await readdir(join(process.cwd(), '.svp', 'backups'));
+    assert.ok(files.some((file) => file.endsWith('.sqlite')));
+    assert.ok(files.some((file) => file.endsWith('.json')));
   });
 });

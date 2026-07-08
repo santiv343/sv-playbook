@@ -14,8 +14,6 @@ import {
   leaseOf,
   releaseLease,
   overlaps,
-  rebuildFromFiles,
-  refuseRebuild,
   refreshHeartbeat,
   takeoverPacket,
   recoverPacket,
@@ -241,7 +239,7 @@ test('moving to review captures head evidence as events', async () => {
   assert.match(detail, /^head-sha [0-9a-f]{40}$/);
 });
 
-test('done stamps the packet file and rebuild restores terminal statuses', async () => {
+test('done stamps the packet file', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rb-'));
   const { execFileSync } = await import('node:child_process');
   execFileSync('git', ['init'], { cwd: root });
@@ -255,28 +253,6 @@ test('done stamps the packet file and rebuild restores terminal statuses', async
   movePacket(store, s1, 'R-001', 'done');
   const text = await readFile(join(root, 'docs', 'packets', 'R-001.md'), 'utf8');
   assert.ok(text.includes('\nclosed: done '), 'packet file missing closed stamp');
-  store.close();
-  const counts = rebuildFromFiles(root);
-  assert.equal(counts.done, 1);
-  const store2 = openStore(root);
-  assert.equal(listPackets(store2)[0]?.status, 'done');
-  store2.close();
-});
-
-test('rebuild is refused while a fresh lease exists', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'svp-rb-guard-'));
-  const { execFileSync } = await import('node:child_process');
-  execFileSync('git', ['init'], { cwd: root });
-  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
-  const store = openStore(root);
-  createPacket(store, root, def('RG-001'), 'body');
-  const s1 = ensureSession(store, root);
-  movePacket(store, undefined, 'RG-001', 'ready');
-  startPacket(store, s1, root, 'RG-001');
-  assert.match(refuseRebuild(store) ?? '', /live lease/);
-  movePacket(store, s1, 'RG-001', 'review');
-  movePacket(store, s1, 'RG-001', 'done');
-  assert.equal(refuseRebuild(store), undefined);
   store.close();
 });
 

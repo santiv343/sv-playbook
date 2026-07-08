@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { numberColumn } from './rows.js';
-import { DB_FILE, SCHEMA, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
+import { DB_FILE, ROTATE_DIR, ROTATE_RETENTION, SCHEMA, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
 import { StoreVersionError } from './store.errors.js';
 import type { Store } from './store.types.js';
 
@@ -25,33 +25,32 @@ interface OpenStoreOptions {
   skipVersionCheck?: boolean;
 }
 
-function trimBackups(backupDir: string): void {
-  const current = readdirSync(backupDir)
+function trimRotatedBackups(rotateDir: string): void {
+  const current = readdirSync(rotateDir)
     .filter((f) => f.endsWith('.sqlite'))
-    .map((f) => ({ name: f, mtime: statSync(join(backupDir, f)).mtimeMs }))
+    .map((f) => ({ name: f, mtime: statSync(join(rotateDir, f)).mtimeMs }))
     .sort((a, b) => b.mtime - a.mtime);
-  if (current.length <= 10) return;
-  for (let i = 10; i < current.length; i++) {
+  for (let i = ROTATE_RETENTION; i < current.length; i++) {
     const entry = current[i];
-    if (entry !== undefined) rmSync(join(backupDir, entry.name));
+    if (entry !== undefined) rmSync(join(rotateDir, entry.name));
   }
 }
 
 function rotateBackups(dir: string, dbPath: string): void {
-  const backupDir = join(dir, 'backups');
-  mkdirSync(backupDir, { recursive: true });
+  const rotateDir = join(dir, 'backups', ROTATE_DIR);
+  mkdirSync(rotateDir, { recursive: true });
   if (!existsSync(dbPath)) return;
-  const files = readdirSync(backupDir)
+  const files = readdirSync(rotateDir)
     .filter((f) => f.endsWith('.sqlite'))
-    .map((f) => ({ name: f, mtime: statSync(join(backupDir, f)).mtimeMs }))
+    .map((f) => ({ name: f, mtime: statSync(join(rotateDir, f)).mtimeMs }))
     .sort((a, b) => b.mtime - a.mtime);
   if (files.length > 0) {
     const newest = files[0];
     if (newest !== undefined && Date.now() - newest.mtime < 10 * 60 * 1000) return;
   }
   const stamp = new Date().toISOString().replace(/[:\-T.Z]/g, '').slice(0, 14);
-  copyFileSync(dbPath, join(backupDir, `playbook-${stamp}.sqlite`));
-  trimBackups(backupDir);
+  copyFileSync(dbPath, join(rotateDir, `playbook-${stamp}.sqlite`));
+  trimRotatedBackups(rotateDir);
 }
 
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
@@ -72,7 +71,7 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
     if (currentVersion !== SCHEMA_VERSION) {
       db.close();
       throw new StoreVersionError(
-        `store schema v${currentVersion} does not match v${SCHEMA_VERSION}: run sv-playbook rebuild from the main repo with no other sv-playbook processes running`,
+        `store schema v${currentVersion} does not match v${SCHEMA_VERSION}: restore a compatible state backup or run a migration before mutating state`,
       );
     }
   }

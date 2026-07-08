@@ -4,7 +4,7 @@
 
 **Goal:** The task tracker's vertical core: `sv-playbook task create|list|start|move` backed by SQLite (`node:sqlite`), with packets as CLI-authored markdown + DB dual projections (spec D21), sessions, leases and the start/takeover refusal matrix (spec §10).
 
-**Architecture:** Three layers, one file each concern: `src/db/store.ts` (SQLite bootstrap, schema, worktree-shared location), `src/packets/document.ts` (canonical packet markdown codec), `src/tasks/service.ts` (lifecycle rules), thin CLI commands on top reusing P1's `Command`/`Io`/`EXIT` from `src/cli/command.ts`. The DB lives under the git COMMON dir root so all worktrees share one coordination plane; it is never committed and always rebuildable from `docs/packets/*.md`.
+**Architecture:** Three layers, one file each concern: `src/db/store.ts` (SQLite bootstrap, schema, worktree-shared location), `src/packets/document.ts` (canonical packet markdown codec), `src/tasks/service.ts` (lifecycle rules), thin CLI commands on top reusing P1's `Command`/`Io`/`EXIT` from `src/cli/command.ts`. The DB lives under the git COMMON dir root so all worktrees share one coordination plane; it is never committed. **(Durability model SUPERSEDED by spec §8/D6, 2026-07-08: SQLite is operational truth, rebuilt only via `backup state`/`restore state`, NOT from packet files.)**
 
 **Tech Stack:** Node >= 22.13 (`node:sqlite` `DatabaseSync`, `node:util` `parseArgs`), TypeScript strict, node:test. Still zero runtime dependencies.
 

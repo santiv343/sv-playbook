@@ -16,9 +16,3 @@ export interface RecoveryReport {
   lastNotes: string[];
 }
 
-export interface RebuildCounts {
-  total: number;
-  done: number;
-  dropped: number;
-  draft: number;
-}

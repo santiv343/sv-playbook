@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openStore } from './store.js';
-import { SCHEMA_VERSION } from './store.constants.js';
+import { ROTATE_DIR, ROTATE_RETENTION, SCHEMA_VERSION } from './store.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
 
 test('openStore creates .svp/playbook.sqlite and the schema tables', async () => {
@@ -30,33 +30,48 @@ test('openStore is idempotent (schema re-apply is safe)', async () => {
   again.close();
 });
 
-test('open rotates a backup and keeps at most ten', async () => {
+test('open rotates a backup into the rotate subdir and keeps at most the retention count', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-bak-'));
   openStore(root).close();
-  const backupDir = join(root, '.svp', 'backups');
-  let files = readdirSync(backupDir).filter((f) => f.endsWith('.sqlite'));
+  const rotateDir = join(root, '.svp', 'backups', ROTATE_DIR);
+  let files = readdirSync(rotateDir).filter((f) => f.endsWith('.sqlite'));
   assert.equal(files.length, 1);
   const old = Date.now() - 20 * 60 * 1000;
-  for (const f of readdirSync(backupDir)) {
-    utimesSync(join(backupDir, f), old / 1000, old / 1000);
+  for (const f of readdirSync(rotateDir)) {
+    utimesSync(join(rotateDir, f), old / 1000, old / 1000);
   }
   for (let i = 0; i < 12; i++) {
-    const f = join(backupDir, `playbook-${String(20260101000000 + i)}.sqlite`);
+    const f = join(rotateDir, `playbook-${String(20260101000000 + i)}.sqlite`);
     writeFileSync(f, '');
     utimesSync(f, old / 1000, old / 1000);
   }
   openStore(root).close();
-  files = readdirSync(backupDir).filter((f) => f.endsWith('.sqlite'));
-  assert.equal(files.length, 10);
+  files = readdirSync(rotateDir).filter((f) => f.endsWith('.sqlite'));
+  assert.equal(files.length, ROTATE_RETENTION);
 });
 
-test('schema version mismatch refuses with the rebuild recovery message', async () => {
+test('open rotate-trim never deletes explicit state backups in the backups root', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-bak-x-'));
+  openStore(root).close();
+  const backupsDir = join(root, '.svp', 'backups');
+  const old = Date.now() - 20 * 60 * 1000;
+  for (let i = 0; i < 15; i++) {
+    const f = join(backupsDir, `playbook-${String(20260101000000 + i)}.sqlite`);
+    writeFileSync(f, '');
+    utimesSync(f, old / 1000, old / 1000);
+  }
+  openStore(root).close();
+  const explicit = readdirSync(backupsDir).filter((f) => f.endsWith('.sqlite'));
+  assert.equal(explicit.length, 15);
+});
+
+test('schema version mismatch refuses with the restore recovery message', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-ver-'));
   openStore(root).close();
   const db = new DatabaseSync(join(root, '.svp', 'playbook.sqlite'));
   db.exec('PRAGMA user_version = 1');
   db.close();
-  assert.throws(() => openStore(root), /run sv-playbook rebuild/);
+  assert.throws(() => openStore(root), /restore a compatible state backup/);
   const store = openStore(root, { skipVersionCheck: true });
   store.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   store.close();
