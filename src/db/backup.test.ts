@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { writeFileSync, existsSync, readFileSync, readdirSync, utimesSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { createStateBackup, restoreStateBackup } from './backup.js';
+import { createStateBackup, restoreStateBackup, getBackupStatus, verifyLatestBackup, needsBackup, recordBackupFailure, recordBackupSuccess, backupFailedCycles } from './backup.js';
 import { openStore } from './store.js';
 import { SVP_DIR, DB_FILE, SCHEMA_VERSION } from './store.constants.js';
 import { BACKUP_REASON } from './backup.constants.js';
@@ -153,4 +153,114 @@ test('backups honor a configured backup.dir outside .svp', async () => {
     !svpFiles.some((name) => name === basename(report.sqlitePath)),
     '.svp/backups should not contain the backup'
   );
+});
+
+test('doctor-facing backup status flags a stale newest backup', async () => {
+  const repoRoot = await createTestRepo();
+
+  createPacket(repoRoot, 'pkt-stale', 'Stale Backup Test');
+
+  const backup = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL });
+  assert.ok(existsSync(backup.sqlitePath));
+
+  const agedTime = Date.now() - (7 * 60 * 60 * 1000);
+  utimesSync(backup.sqlitePath, agedTime / 1000, agedTime / 1000);
+
+  const status = getBackupStatus(repoRoot);
+  assert.ok(status.stale, 'stale flag should be true when backup exceeds maxAgeHours');
+});
+
+test('backup status reports verified true after successful creation', async () => {
+  const repoRoot = await createTestRepo();
+
+  createPacket(repoRoot, 'pkt-verify', 'Verify Test');
+  createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL });
+
+  const status = getBackupStatus(repoRoot);
+  assert.ok(status.verified, 'backup should be verified after creation');
+  assert.ok(!status.failed, 'backup should not be failed after successful creation');
+});
+
+test('backup status reports failed false when no backup exists', async () => {
+  const repoRoot = await createTestRepo();
+  const status = getBackupStatus(repoRoot);
+  assert.ok(!status.failed, 'no backup means not failed');
+  assert.ok(!status.stale, 'no backup means not stale');
+  assert.ok(status.ageHours === undefined);
+});
+
+test('needsBackup returns true when no backup exists', async () => {
+  const repoRoot = await createTestRepo();
+  assert.ok(needsBackup(repoRoot), 'should need backup when none exists');
+});
+
+test('needsBackup returns true when backup exceeds maxAgeHours', async () => {
+  const repoRoot = await createTestRepo();
+
+  createPacket(repoRoot, 'pkt-needs', 'Needs Backup Test');
+  const backup = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL });
+  assert.ok(existsSync(backup.sqlitePath));
+
+  const agedTime = Date.now() - (7 * 60 * 60 * 1000);
+  utimesSync(backup.sqlitePath, agedTime / 1000, agedTime / 1000);
+
+  assert.ok(needsBackup(repoRoot), 'should need backup when stale');
+});
+
+test('needsBackup returns false when backup is fresh', async () => {
+  const repoRoot = await createTestRepo();
+
+  createPacket(repoRoot, 'pkt-fresh', 'Fresh Backup Test');
+  createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL });
+
+  assert.ok(!needsBackup(repoRoot), 'should not need backup when fresh');
+});
+
+test('failed cycle counter increments and resets', async () => {
+  const repoRoot = await createTestRepo();
+
+  assert.equal(backupFailedCycles(repoRoot), 0);
+
+  const count1 = recordBackupFailure(repoRoot);
+  assert.equal(count1, 1);
+  assert.equal(backupFailedCycles(repoRoot), 1);
+
+  const count2 = recordBackupFailure(repoRoot);
+  assert.equal(count2, 2);
+
+  const count3 = recordBackupFailure(repoRoot);
+  assert.equal(count3, 3);
+  assert.equal(backupFailedCycles(repoRoot), 3);
+
+  recordBackupSuccess(repoRoot);
+  assert.equal(backupFailedCycles(repoRoot), 0);
+});
+
+test('retention respects verified floor and does not drop below it', async () => {
+  const repoRoot = await createTestRepo();
+
+  createPacket(repoRoot, 'pkt-floor', 'Floor Test');
+
+  for (let i = 0; i < 5; i++) {
+    createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL, retention: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+  }
+
+  const dir = join(repoRoot, '.svp', 'backups');
+  const backups = readdirSync(dir).filter((name) => name.endsWith('.sqlite'));
+  assert.ok(backups.length <= 2 + 3, 'should not exceed retention + floor');
+});
+
+test('verifyLatestBackup marks the newest backup as verified', async () => {
+  const repoRoot = await createTestRepo();
+
+  createPacket(repoRoot, 'pkt-vlb', 'VerifyLatest Test');
+  const backup = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL });
+  assert.ok(existsSync(backup.sqlitePath));
+
+  const statusBefore = getBackupStatus(repoRoot);
+  assert.ok(statusBefore.verified, 'should already be verified from creation');
+
+  const reverified = verifyLatestBackup(repoRoot);
+  assert.ok(reverified, 're-verification should succeed');
 });
