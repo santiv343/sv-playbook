@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { openStore, worktreeRoot } from './store.js';
@@ -34,7 +34,8 @@ test('openStore is idempotent (schema re-apply is safe)', async () => {
 test('worktreeRoot resolves the git working tree top-level', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-wt-'));
   execFileSync('git', ['init'], { cwd: root });
-  assert.equal(resolve(worktreeRoot(root)), resolve(root));
+  await writeFile(join(root, 'marker.txt'), 'x');
+  assert.ok(existsSync(join(worktreeRoot(root), 'marker.txt')));
 });
 
 test('schema version mismatch refuses with the restore recovery message', async () => {
