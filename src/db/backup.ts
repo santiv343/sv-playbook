@@ -1,7 +1,7 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync, readFileSync, rmSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { basename, join } from 'node:path';
+import { basename, join, dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DB_FILE, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
 import { openStore } from './store.js';
@@ -9,6 +9,7 @@ import { BACKUP_PREFIX, BACKUPS_DIR, BACKUP_REASON, BACKUP_RETENTION_DEFAULT } f
 import type { BackupOptions, BackupReport, RestoreReport } from './backup.types.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import { stringColumn } from './rows.js';
+import { RestoreError } from './backup.errors.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -48,15 +49,6 @@ function freshLeaseCount(repoRoot: string): number {
     return count;
   } finally {
     store.close();
-  }
-}
-
-function checkpoint(repoRoot: string): void {
-  const db = new DatabaseSync(dbPath(repoRoot));
-  try {
-    db.exec('PRAGMA wal_checkpoint(FULL);');
-  } finally {
-    db.close();
   }
 }
 
@@ -102,12 +94,26 @@ function writeMetadata(repoRoot: string, report: BackupReport, reason: string): 
   writeFileSync(report.metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
 }
 
+function vacuumInto(sourcePath: string, destPath: string): void {
+  const db = new DatabaseSync(sourcePath);
+  try {
+    const escaped = destPath.replace(/'/g, "''");
+    db.exec(`VACUUM INTO '${escaped}'`);
+  } finally {
+    db.close();
+  }
+}
+
 function rawPreRestoreBackup(repoRoot: string, retention?: number): BackupReport {
   mkdirSync(backupsDir(repoRoot), { recursive: true });
   const createdAt = now();
   const sqlitePath = join(backupsDir(repoRoot), `${BACKUP_PREFIX}-${stamp(createdAt)}-pre-restore.sqlite`);
   const metadataPath = sqlitePath.replace(/\.sqlite$/, '.json');
-  copyFileSync(dbPath(repoRoot), sqlitePath);
+  try {
+    vacuumInto(dbPath(repoRoot), sqlitePath);
+  } catch {
+    copyFileSync(dbPath(repoRoot), sqlitePath);
+  }
   const report: BackupReport = {
     sqlitePath,
     metadataPath,
@@ -126,12 +132,10 @@ export function createStateBackup(repoRoot: string, options: BackupOptions): Bac
     throw new Error(`backup refused: ${freshLeases} live lease(s)`);
   }
   mkdirSync(backupsDir(repoRoot), { recursive: true });
-  openStore(repoRoot).close();
-  checkpoint(repoRoot);
   const createdAt = now();
   const sqlitePath = join(backupsDir(repoRoot), `${BACKUP_PREFIX}-${stamp(createdAt)}.sqlite`);
   const metadataPath = sqlitePath.replace(/\.sqlite$/, '.json');
-  copyFileSync(dbPath(repoRoot), sqlitePath);
+  vacuumInto(dbPath(repoRoot), sqlitePath);
   const report: BackupReport = {
     sqlitePath,
     metadataPath,
@@ -144,8 +148,38 @@ export function createStateBackup(repoRoot: string, options: BackupOptions): Bac
   return report;
 }
 
+function validateBackup(backupPath: string): void {
+  let db: DatabaseSync;
+  try {
+    db = new DatabaseSync(backupPath);
+  } catch (error) {
+    throw new RestoreError(`backup integrity_check failed: file is not a valid SQLite database (${error instanceof Error ? error.message : String(error)}); restore a known-good backup instead`);
+  }
+  try {
+    const integrityRow = db.prepare('PRAGMA integrity_check').get() as { integrity_check: string } | undefined;
+    if (!integrityRow || integrityRow.integrity_check !== 'ok') {
+      throw new RestoreError(`backup integrity_check failed: ${integrityRow?.integrity_check ?? 'no result'}; restore a known-good backup instead`);
+    }
+    const versionRow = db.prepare('PRAGMA user_version').get() as { user_version: number } | undefined;
+    if (!versionRow || versionRow.user_version !== SCHEMA_VERSION) {
+      throw new RestoreError(`backup schema version ${versionRow?.user_version ?? 'unknown'} does not match expected ${SCHEMA_VERSION}; restore a compatible backup or migrate first`);
+    }
+  } finally {
+    db.close();
+  }
+  const metadataPath = backupPath.replace(/\.sqlite$/, '.json');
+  if (existsSync(metadataPath)) {
+    const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
+    const actualSha256 = sha256(backupPath);
+    if (metadata.sha256 !== actualSha256) {
+      throw new RestoreError(`backup sha256 mismatch (metadata: ${metadata.sha256}, actual: ${actualSha256}); the backup file has been tampered with or corrupted`);
+    }
+  }
+}
+
 export function restoreStateBackup(repoRoot: string, backupPath: string, force: boolean, retention?: number): RestoreReport {
   if (!existsSync(backupPath)) throw new Error(`backup file not found: ${backupPath}`);
+  
   let preRestoreBackup: BackupReport;
   try {
     preRestoreBackup = createStateBackup(repoRoot, {
@@ -157,7 +191,13 @@ export function restoreStateBackup(repoRoot: string, backupPath: string, force: 
     if (error instanceof Error && error.message.startsWith('backup refused:')) throw error;
     preRestoreBackup = rawPreRestoreBackup(repoRoot, retention);
   }
+  
+  validateBackup(backupPath);
+  
   const target = dbPath(repoRoot);
-  copyFileSync(backupPath, target);
+  const tempPath = join(dirname(target), `.${basename(target)}.tmp`);
+  copyFileSync(backupPath, tempPath);
+  renameSync(tempPath, target);
+  
   return { restoredFrom: backupPath, preRestoreBackup };
 }
