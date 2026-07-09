@@ -1,7 +1,7 @@
 ---
 id: TASK-IMPORT-001
 title: task import: migra docs/packets/*.md existentes a la DB (body+deps) — gradua IDEA-002
-depends_on: ["TASK-CORE-SCHEMA-001"]
+depends_on: ["TASK-CORE-DB-001"]
 write_set: ["src/cli/commands/import.ts","src/cli/commands/import.test.ts","src/cli/registry.ts","src/tasks/service.ts","src/tasks/service.test.ts"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]
