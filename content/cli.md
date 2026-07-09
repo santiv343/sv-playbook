@@ -149,11 +149,12 @@ sv-playbook restore state --file <path> [--force]
 When: if the store schema version does not match the CLI's expected schema,
 every command refuses with
 `store schema v<found> does not match v<expected>: restore a compatible state backup or run a migration before mutating state`.
-Rotating backups land in `.svp/backups/` and keep the last 10 copies
-silently.
+`backup state` creates an explicit SQLite snapshot with metadata (schema
+version, branch, SHA, size, checksum); `restore state` validates before swap.
+The backup directory is configurable and can live outside `.svp/` for durability.
 
 Why: shared clients never mutate an incompatible store in place. Recovery is
-explicit, while silent backups limit recent local data loss.
+always explicit and auditable.
 
 #### Persistence boundary
 
@@ -173,6 +174,6 @@ and wants off-machine durability, but it is an adapter, not a core
 requirement. Until that command exists, `.svp/backups/` are local safety
 copies only.
 
-Further commands (`init`, `adopt`, `grill`, `check`, `agent`,
+Further commands (`init`, `adopt`, `check`, `agent`,
 `upgrade`) are added by later plans; each adds its section
 here in the same format. This guide documents only implemented commands.
