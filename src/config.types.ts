@@ -11,6 +11,12 @@ export interface BackupConfig {
   dir?: string;
 }
 
+export interface BaselineConfig {
+  commit?: string;
+  timestamp?: string;
+  fingerprints?: string[];
+}
+
 export interface PlaybookConfig {
   productName: string;
   chatLanguage: string;
@@ -18,4 +24,5 @@ export interface PlaybookConfig {
   verifyCommand: string;
   autonomy: Autonomy;
   backup: BackupConfig;
+  baseline?: BaselineConfig;
 }
