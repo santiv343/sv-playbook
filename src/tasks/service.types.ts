@@ -17,3 +17,8 @@ export interface RecoveryReport {
   lastNotes: string[];
 }
 
+export interface ImportResult {
+  imported: number;
+  updated: number;
+}
+

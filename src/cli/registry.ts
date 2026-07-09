@@ -7,7 +7,8 @@ import { backupCommand, restoreCommand } from './commands/backup.js';
 import { statusCommand } from './commands/status.js';
 import { handoffCommand } from './commands/handoff.js';
 import { rebuildCommand } from './commands/rebuild.js';
+import { importCommand } from './commands/import.js';
 
 export function commands(): readonly Command[] {
-  return [docsCommand(), taskCommand(), describeCommand(), doctorCommand(), backupCommand(), restoreCommand(), statusCommand(), handoffCommand(), rebuildCommand()];
+  return [docsCommand(), taskCommand(), describeCommand(), doctorCommand(), backupCommand(), restoreCommand(), statusCommand(), handoffCommand(), rebuildCommand(), importCommand()];
 }

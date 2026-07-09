@@ -75,7 +75,7 @@ test('packets store has a body column and a packet_deps table at the bumped sche
   const deps = store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='packet_deps'").all();
   assert.equal(deps.length, 1, 'packet_deps table must exist');
   const ver = numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version');
-  assert.equal(ver, 3, 'schema version must be bumped to 3');
+  assert.equal(ver, 4, 'schema version must be bumped to 4');
   store.close();
 });
 
