@@ -26,7 +26,7 @@ function parseCatalog(text: string): Array<{ name: string; summary: string }> {
   }, []);
 }
 
-test('describe prints a JSON catalog containing docs, task, doctor, backup, restore, and status', async () => {
+test('describe prints a JSON catalog containing docs, task, doctor, backup, restore, status, and rebuild', async () => {
   const io = fakeIo();
   const code = await main(['describe'], io);
   assert.equal(code, EXIT.OK, io.errLines.join('\n'));
@@ -44,11 +44,12 @@ test('describe prints a JSON catalog containing docs, task, doctor, backup, rest
   assert.ok(backup, 'missing backup entry');
   assert.ok(restore, 'missing restore entry');
   assert.ok(status, 'missing status entry');
-  assert.equal(rebuild, undefined, 'rebuild should not be registered');
+  assert.ok(rebuild, 'missing rebuild entry');
   assert.ok(typeof docs.summary === 'string' && docs.summary.length > 0, 'docs summary empty');
   assert.ok(typeof task.summary === 'string' && task.summary.length > 0, 'task summary empty');
   assert.ok(typeof doctor.summary === 'string' && doctor.summary.length > 0, 'doctor summary empty');
   assert.ok(typeof backup.summary === 'string' && backup.summary.length > 0, 'backup summary empty');
   assert.ok(typeof restore.summary === 'string' && restore.summary.length > 0, 'restore summary empty');
   assert.ok(typeof status.summary === 'string' && status.summary.length > 0, 'status summary empty');
+  assert.ok(typeof rebuild.summary === 'string' && rebuild.summary.length > 0, 'rebuild summary empty');
 });

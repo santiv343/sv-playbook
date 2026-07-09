@@ -44,11 +44,22 @@ test('schema version mismatch refuses with the restore recovery message', async 
   const db = new DatabaseSync(join(root, '.svp', 'playbook.sqlite'));
   db.exec('PRAGMA user_version = 1');
   db.close();
-  assert.throws(() => openStore(root), /restore a compatible state backup/);
+  assert.throws(() => openStore(root), /store unusable.*restore state.*rebuild/s);
   const store = openStore(root, { skipVersionCheck: true });
   store.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   store.close();
   const reopened = openStore(root);
   assert.equal(numberColumn(reopened.db.prepare('PRAGMA user_version').get(), 'user_version'), SCHEMA_VERSION);
   reopened.close();
+});
+
+test('a version mismatch refuses with a named non-destructive recovery and never deletes .svp', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-rec-'));
+  openStore(root).close();
+  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA user_version = 99');
+  db.close();
+  assert.throws(() => openStore(root), /restore state.*rebuild/s);
+  assert.ok(existsSync(dbPath), '.svp/playbook.sqlite must still exist after mismatch');
 });

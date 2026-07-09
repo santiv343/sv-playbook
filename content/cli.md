@@ -160,6 +160,23 @@ Argument shape:
 sv-playbook restore state --file <path> [--force]
 ```
 
+### `sv-playbook rebuild [--force]`
+
+When: all other recovery paths have failed and the store is unrecoverable.
+This is the LAST-RESORT floor (backups via `restore state` are primary). Takes
+`--force` to proceed when live leases exist.
+
+Why: reconstructs the operational database from committed git packet exports
+under `docs/packets/*.md`. Reads packet definitions from frontmatter and
+derives terminal status from each file's `closed: done|dropped` line. All
+other packets are set to `draft`. Refuses if live leases exist unless
+`--force`. Takes a pre-rebuild backup of the current store before touching it.
+Never deletes `.svp` — the backup preserves the broken store for forensics.
+
+After rebuild, always run `sv-playbook doctor` and `sv-playbook status` before
+dispatching workers. The board state is a floor reconstruction; leases, notes,
+and transition history are lost.
+
 #### Store safety
 
 When: if the store schema version does not match the CLI's expected schema,
