@@ -264,3 +264,15 @@ test('verifyLatestBackup marks the newest backup as verified', async () => {
   const reverified = verifyLatestBackup(repoRoot);
   assert.ok(reverified, 're-verification should succeed');
 });
+
+test('two backups within the same second get distinct filenames and both succeed', async () => {
+  const repoRoot = await createTestRepo();
+  createPacket(repoRoot, 'pkt-collision', 'Collision Test');
+
+  const backup1 = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL });
+  const backup2 = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL });
+
+  assert.ok(existsSync(backup1.sqlitePath));
+  assert.ok(existsSync(backup2.sqlitePath));
+  assert.notEqual(backup2.sqlitePath, backup1.sqlitePath);
+});

@@ -12,7 +12,11 @@ import { RestoreError } from './backup.errors.js';
 import { loadConfig } from '../config.js';
 
 const now = (): string => new Date().toISOString();
-const stamp = (v: string): string => v.replace(/[:\-T.Z]/g, '').slice(0, 14);
+const stamp = (v: string): string => {
+  const base = v.replace(/[:\-T.Z]/g, '').slice(0, 17);
+  const suffix = Math.random().toString(36).slice(2, 6);
+  return `${base}-${suffix}`;
+};
 
 function resolveBackupsDir(repoRoot: string): string {
   const config = loadConfig(repoRoot);
@@ -229,9 +233,13 @@ export function createStateBackup(repoRoot: string, options: BackupOptions, reso
   const dir = resolvedDir ?? resolveBackupsDir(repoRoot);
   mkdirSync(dir, { recursive: true });
   const createdAt = now();
-  const sqlitePath = join(dir, `${BACKUP_PREFIX}-${stamp(createdAt)}.sqlite`);
+  const stampVal = stamp(createdAt);
+  const sqlitePath = join(dir, `${BACKUP_PREFIX}-${stampVal}.sqlite`);
   const metadataPath = sqlitePath.replace(/\.sqlite$/, '.json');
-  vacuumInto(dbPath(repoRoot), sqlitePath);
+  const tempPath = join(dir, `.${BACKUP_PREFIX}-${stampVal}.sqlite.tmp`);
+  vacuumInto(dbPath(repoRoot), tempPath);
+  if (existsSync(sqlitePath)) rmSync(sqlitePath);
+  renameSync(tempPath, sqlitePath);
   const report: BackupReport = {
     sqlitePath,
     metadataPath,
