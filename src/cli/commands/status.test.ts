@@ -40,8 +40,10 @@ test('status prints board counts and packet rows', async () => {
     const io = fakeIo();
     assert.equal(await main(['status'], io), EXIT.OK, io.errLines.join('\n'));
     const output = io.outLines.join('\n');
-    assert.ok(output.includes('ready: 1'));
-    assert.ok(output.includes('ST-001'));
+    assert.ok(output.includes('1 ready'), 'counts header should include "1 ready"');
+    assert.ok(output.includes('ST-001'), 'output should include ST-001');
+    assert.ok(output.includes('ID'), 'output should have column header "ID"');
+    assert.ok(output.includes('STATUS'), 'output should have column header "STATUS"');
   });
 });
 
