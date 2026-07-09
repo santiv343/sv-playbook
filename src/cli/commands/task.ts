@@ -162,6 +162,7 @@ function renderReport(report: RecoveryReport, io: Io): void {
   io.out(`id: ${report.packetId}`);
   io.out(`status: ${report.status}`);
   io.out(`lease: ${lease}`);
+  io.out(`depends_on: ${report.dependsOn.length > 0 ? report.dependsOn.join(', ') : 'none'}`);
   io.out('transitions:');
   for (const transition of report.lastTransitions) io.out(`  ${transition}`);
   io.out('notes:');
