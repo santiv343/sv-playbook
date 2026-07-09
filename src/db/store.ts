@@ -1,10 +1,14 @@
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
-import { numberColumn } from './rows.js';
+import { numberColumn, stringColumn } from './rows.js';
 import { DB_FILE, SCHEMA, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
 import { StoreVersionError } from './store.errors.js';
+import { createStateBackup } from './backup.js';
+import { BACKUP_REASON } from './backup.constants.js';
+import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import type { Store } from './store.types.js';
 
 export function commonRoot(startDir: string): string {
@@ -50,4 +54,49 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
     }
   }
   return { db, dir, close: () => { db.close(); } };
+}
+
+interface MigrateStoreOptions {
+  currentSessionId?: string;
+}
+
+export function migrateStore(repoRoot: string, options?: MigrateStoreOptions): void {
+  const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
+  const backup = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL, allowFreshLeases: true });
+
+  const expectedSha = backup.sha256;
+  const actualSha = createHash('sha256').update(readFileSync(backup.sqlitePath)).digest('hex');
+  if (actualSha !== expectedSha) {
+    throw new Error('migration aborted: pre-migration backup verification failed (sha256 mismatch)');
+  }
+  const vacDb = new DatabaseSync(backup.sqlitePath);
+  const integrityRow = vacDb.prepare('PRAGMA integrity_check').get();
+  const integrityCheck = stringColumn(integrityRow, 'integrity_check');
+  vacDb.close();
+  if (integrityCheck !== 'ok') {
+    throw new Error('migration aborted: pre-migration backup verification failed (integrity check)');
+  }
+
+  const liveDb = new DatabaseSync(dbPath);
+  const leaseRows = liveDb.prepare('SELECT session_id, heartbeat_at FROM leases').all();
+  liveDb.close();
+  const currentSessionId = options?.currentSessionId;
+  let foreignCount = 0;
+  for (const row of leaseRows) {
+    const sid = stringColumn(row, 'session_id');
+    if (currentSessionId !== undefined && sid === currentSessionId) continue;
+    const hb = stringColumn(row, 'heartbeat_at');
+    if (Date.now() - Date.parse(hb) <= LEASE_TTL_MS) {
+      foreignCount++;
+    }
+  }
+  if (foreignCount > 0) {
+    throw new Error(
+      `migration blocked: ${foreignCount} other worktree/session(s) are live on the shared store — pause them or isolate state per worktree before migrating`,
+    );
+  }
+
+  const db = new DatabaseSync(dbPath);
+  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  db.close();
 }
