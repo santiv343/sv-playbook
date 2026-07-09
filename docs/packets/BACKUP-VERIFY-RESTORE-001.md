@@ -2,7 +2,7 @@
 id: BACKUP-VERIFY-RESTORE-001
 title: backups reales: VACUUM INTO snapshot + verify-before-swap atomic restore (no filesystem workaround)
 depends_on: []
-write_set: ["src/db/**","src/cli/commands/backup.ts"]
+write_set: ["src/db/backup.ts","src/db/backup.test.ts","src/db/backup.errors.ts","src/cli/commands/backup.ts"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]
 ---
