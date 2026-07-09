@@ -300,7 +300,7 @@ flowchart TB
 ```
 
 - **Mechanized (GitHub branch protection):** direct pushes to `main` rejected, PR required, `verify` status checks required on ubuntu + windows, linear history, `enforce_admins` on.
-- **Process-enforced (`*`):** the *independent review approval* is **not** mechanically required — a single-token repo can't force an independent approval (the author can't self-approve, and `required_approving_review_count=1` would deadlock a solo repo). Today a separate reviewer agent gives the verdict and the orchestrator merges. `PLANNED`: mechanize this with a second identity/bot token or CODEOWNERS so review becomes a true `[gate]`.
+- **Process-enforced (`*`):** the *independent review approval* is **not** mechanically required — a single-token repo can't force an independent approval (the author can't self-approve, and `required_approving_review_count=1` would deadlock a solo repo). Today a separate reviewer agent gives the verdict and then **the reviewer merges** and closes the packet (M1–M3); the orchestrator only relays, never merges. `PLANNED`: mechanize the approval with a second identity/bot token or CODEOWNERS so review becomes a true `[gate]`.
 
 ---
 
@@ -308,8 +308,11 @@ flowchart TB
 
 SQLite is the operational source of truth, and it is **not** rebuildable from files (an earlier "rebuild from files" model was retracted — it created a second durable state plane and violated single-source). Durability is therefore a **backup** problem, solved with real snapshots, deliberately **not** through git.
 
+> **Current state (honest):** today `backup state` does a `copyFileSync` of the live DB and `restore state` overwrites the live DB **without any verification** — a corrupt backup can silently clobber good data. The diagram below is the **TARGET** being built by `BACKUP-VERIFY-RESTORE-001` and `BACKUP-DEST-001`; it is the destination, not today's code.
+
 ```mermaid
 flowchart LR
+    subgraph TARGET["TARGET model — IN PROGRESS (BACKUP-VERIFY-RESTORE-001 · BACKUP-DEST-001)"]
     db[(.svp/playbook.sqlite<br/>live truth)]
     db -->|backup state| snap[["consistent snapshot<br/>(VACUUM INTO) + metadata:<br/>schema, branch, SHA, size, sha256"]]
     snap --> dest[/"backup dir — configurable,<br/>can live OUTSIDE .svp/"/]
@@ -317,12 +320,13 @@ flowchart LR
     check -->|ok| atomic[atomic rename over live DB]
     check -->|bad| refuse[refuse — live DB untouched]
     auto[["auto-backup on:<br/>done · force-takeover · stale age"]] -.-> snap
+    end
 ```
 
-- **Real snapshots, no workaround:** backups are taken with SQLite's own consistent-snapshot path (`VACUUM INTO`), not a raw file copy of a live DB. `IN PROGRESS` — see packets `BACKUP-VERIFY-RESTORE-001`, `BACKUP-DEST-001`.
-- **Verified restore:** a restore validates the candidate (`integrity_check`, schema version, checksum) and swaps atomically; a bad backup is refused, never written over good data.
-- **Off-`.svp/` destination:** the backup directory is configurable, so backups survive losing the throwaway `.svp/` dir.
-- **Shared / off-machine durability is `PLANNED` for v2** — as an adapter over the backup destination (a real remote target), **never** a git branch.
+- **Real snapshots (`IN PROGRESS`):** the target takes backups via SQLite's own consistent-snapshot path (`VACUUM INTO`), replacing today's raw `copyFileSync` of a live DB.
+- **Verified restore (`IN PROGRESS`):** the target validates the candidate (`integrity_check`, schema version, checksum) and swaps atomically, refusing a bad backup. Today's restore does none of this.
+- **Off-`.svp/` destination (`IN PROGRESS`):** a configurable backup directory so backups survive losing the throwaway `.svp/`. Today backups land only in `.svp/backups/`.
+- **Shared / off-machine durability is `PLANNED` for v2** — an adapter over the backup destination (a real remote target), **never** a git branch.
 
 ---
 
