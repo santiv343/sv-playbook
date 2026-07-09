@@ -110,6 +110,22 @@ Argument shape:
 sv-playbook status [--json]
 ```
 
+### `sv-playbook handoff [--role <role>] [--force]`
+
+When: before ending a session, before handing off to another model/agent, or
+when the orchestrator needs to generate a continuation prompt.
+
+Why: it produces a deterministic cold-start prompt from live state so the
+incoming agent can pick up without a hand-written handoff. Uses the same board
+data as `status`. Default role: `orchestrator`.
+
+Sections: (1) role pointer to AGENTS.md + charters, (2) board snapshot (counts
++ attention packets), (3) in-flight PRs (via `gh`, graceful degrade),
+(4) next-action heuristic.
+
+Pre-flight: warns to stderr if active/blocked packets have stale notes (last
+transition after last note). Use `--force` to skip.
+
 ### `sv-playbook backup state`
 
 When: before risky operations, before handing off important local state, or
