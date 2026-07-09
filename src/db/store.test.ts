@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
-import { openStore, worktreeRoot } from './store.js';
+import { openStore, migrateStore, worktreeRoot } from './store.js';
 import { SCHEMA_VERSION } from './store.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
 
@@ -62,4 +62,27 @@ test('a version mismatch refuses with a named non-destructive recovery and never
   db.close();
   assert.throws(() => openStore(root), /restore state.*rebuild/s);
   assert.ok(existsSync(dbPath), '.svp/playbook.sqlite must still exist after mismatch');
+});
+
+test('schema migration refuses while a foreign live lease exists', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-mig-'));
+  execFileSync('git', ['init'], { cwd: root });
+
+  openStore(root).close();
+  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA user_version = 1');
+  db.exec("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('p1', 'test', '/tmp/test', 'ready', '[]', '2025-01-01T00:00:00.000Z', '2025-01-01T00:00:00.000Z')");
+  db.exec("INSERT INTO sessions (id, worktree, started_at) VALUES ('my-session', '/tmp/mine', '2025-01-01T00:00:00.000Z')");
+  db.exec("INSERT INTO sessions (id, worktree, started_at) VALUES ('foreign-session', '/tmp/foreign', '2025-01-01T00:00:00.000Z')");
+  db.exec("INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES ('p1', 'foreign-session', '/tmp/foreign', datetime('now'), datetime('now'))");
+  db.close();
+
+  assert.throws(
+    () => { migrateStore(root, { currentSessionId: 'my-session' }); },
+    /migration blocked:/,
+  );
+  const after = new DatabaseSync(dbPath);
+  assert.equal(numberColumn(after.prepare('PRAGMA user_version').get(), 'user_version'), 1);
+  after.close();
 });
