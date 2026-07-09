@@ -64,6 +64,21 @@ test('a version mismatch refuses with a named non-destructive recovery and never
   assert.ok(existsSync(dbPath), '.svp/playbook.sqlite must still exist after mismatch');
 });
 
+test('packets store has a body column and a packet_deps table at the bumped schema version', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-body-'));
+  const store = openStore(root);
+  const cols = store.db
+    .prepare('PRAGMA table_info(packets)')
+    .all()
+    .map((row) => stringColumn(row, 'name'));
+  assert.ok(cols.includes('body'), 'packets table must have a body column');
+  const deps = store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='packet_deps'").all();
+  assert.equal(deps.length, 1, 'packet_deps table must exist');
+  const ver = numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version');
+  assert.equal(ver, 3, 'schema version must be bumped to 3');
+  store.close();
+});
+
 test('schema migration refuses while a foreign live lease exists', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-mig-'));
   execFileSync('git', ['init'], { cwd: root });
