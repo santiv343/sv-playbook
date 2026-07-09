@@ -4,13 +4,14 @@ import type { GapCheckResult, GapReport, GapStatus } from './gap.types.js';
 function checkArtifact(
   inventory: InventoryReport,
   key: string,
-  reason: string,
+  missingReason: string,
+  presentReason: string,
 ): GapCheckResult {
   const present = inventory.playbookArtifacts[key];
   if (present === undefined || !present) {
-    return { requirement: key, status: 'missing', reason };
+    return { requirement: key, status: 'missing', reason: missingReason };
   }
-  return { requirement: key, status: 'present', reason };
+  return { requirement: key, status: 'present', reason: presentReason };
 }
 
 export function analyzeGaps(inventory: InventoryReport): GapReport {
@@ -19,11 +20,13 @@ export function analyzeGaps(inventory: InventoryReport): GapReport {
       inventory,
       'playbook.config.json',
       'playbook.config.json is missing — declare a tier',
+      "playbook.config.json found (tier declaration not verified by inventory)",
     ),
     checkArtifact(
       inventory,
       'AGENTS.md',
       'AGENTS.md is missing — cold-start required',
+      'AGENTS.md cold-start exists',
     ),
     {
       requirement: 'verify command',
@@ -43,7 +46,7 @@ export function analyzeGaps(inventory: InventoryReport): GapReport {
       requirement: 'CI workflow',
       status: inventory.ci.workflows.length > 0 ? 'present' : 'missing',
       reason: inventory.ci.workflows.length > 0
-        ? `Found CI workflows: ${inventory.ci.workflows.join(', ')}`
+        ? `CI workflows found (verify step not confirmed by inventory): ${inventory.ci.workflows.join(', ')}`
         : 'No CI workflow that runs verify found',
     },
     {
