@@ -43,13 +43,13 @@ STEP 4. Run: CLI task brief PACKET_ID
 STEP 5. Run: CLI task start PACKET_ID
         If the output contains "error": copy it into your report and stop.
 STEP 6. Create the test named in the brief's "RED test" section, exactly
-        as described. Run: npm test
+        as described. Run: npm run test:quiet
         REQUIRED: it FAILS and the failure text contains the brief's
         "Expected failure cause" string. If not: CLI task move PACKET_ID
         blocked, report both outputs, stop. Do NOT manufacture the string.
 STEP 7. Run: CLI task note PACKET_ID "red test failing as expected"
 STEP 8. Write the SMALLEST code that makes the test pass, only inside the
-        write_set. Run: npm test. If it fails: fix, retry. After 3 failed
+        write_set. Run: npm run test:quiet. If it fails: fix, retry. After 3 failed
         attempts: CLI task move PACKET_ID blocked, report, stop.
 STEP 9. Run: npm run verify. Same retry rule as STEP 8.
 STEP 10. Run: git status --porcelain
