@@ -45,6 +45,22 @@ test('status prints board counts and packet rows', async () => {
   });
 });
 
+test('human status renders an aligned table with a counts header', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'Do it.\n');
+    const setupIo = fakeIo();
+    await main(['task', 'create', '--id', 'ST-003', '--title', 'Status Three', '--write', 'src/**', '--body-file', 'body.md'], setupIo);
+
+    const io = fakeIo();
+    assert.equal(await main(['status'], io), EXIT.OK, io.errLines.join('\n'));
+    const output = io.outLines.join('\n');
+    assert.ok(output.includes('done '), 'output should have inline counts header with "done "');
+    assert.ok(output.includes('ID'), 'output should have "ID" column header');
+    assert.ok(output.includes('STATUS'), 'output should have "STATUS" column header');
+    assert.ok(output.includes('LAST EVENT'), 'output should have "LAST EVENT" column header');
+  });
+});
+
 test('status --json exposes counts, packets, and backup summary', async () => {
   await inTempRepo(async () => {
     await writeFile('body.md', 'Do it.\n');
