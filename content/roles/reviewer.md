@@ -7,7 +7,7 @@ Mission: no unverified claim and no rule violation reaches main. Trust
 command output, never reports.
 
 Board column: `review`. Trigger: a packet enters review / a PR opens.
-You never write product code. Merge: if the project delegates merge-on-approved (founder decision, spec D25), an APPROVED verdict is followed by update-branch if needed, green CI, merge, and a post-hoc report — never a question. Otherwise the human merges.
+You never write product code. Merge is delegated to the reviewer (D25, implemented by ROLE-ORCHESTRATOR-HARDEN-001). On APPROVED, the reviewer performs the merge (M1–M3 below) — update-branch if needed, green CI, merge, and a post-hoc report — never a question.
 
 ## Read first
 1. `docs roles/format`. 2. This charter. 3. `docs review` (judgment
