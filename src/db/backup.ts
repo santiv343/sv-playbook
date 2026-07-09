@@ -8,7 +8,7 @@ import { openStore } from './store.js';
 import { BACKUP_PREFIX, BACKUPS_DIR, BACKUP_REASON, BACKUP_RETENTION_DEFAULT } from './backup.constants.js';
 import type { BackupOptions, BackupReport, RestoreReport } from './backup.types.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
-import { stringColumn } from './rows.js';
+import { stringColumn, numberColumn } from './rows.js';
 import { RestoreError } from './backup.errors.js';
 
 const now = (): string => new Date().toISOString();
@@ -148,6 +148,50 @@ export function createStateBackup(repoRoot: string, options: BackupOptions): Bac
   return report;
 }
 
+function checkDbIntegrity(db: DatabaseSync): void {
+  let integrityRow: unknown;
+  let versionRow: unknown;
+  try {
+    integrityRow = db.prepare('PRAGMA integrity_check').get();
+    versionRow = db.prepare('PRAGMA user_version').get();
+  } catch (error) {
+    throw new RestoreError(`backup integrity_check failed: ${error instanceof Error ? error.message : String(error)}; restore a known-good backup instead`);
+  }
+  const integrityCheck = stringColumn(integrityRow, 'integrity_check');
+  if (integrityCheck !== 'ok') {
+    throw new RestoreError(`backup integrity_check failed: ${integrityCheck}; restore a known-good backup instead`);
+  }
+  const userVersion = numberColumn(versionRow, 'user_version');
+  if (userVersion !== SCHEMA_VERSION) {
+    throw new RestoreError(`backup schema version ${userVersion} does not match expected ${SCHEMA_VERSION}; restore a compatible backup or migrate first`);
+  }
+}
+
+interface BackupMetadata {
+  sha256: string;
+}
+
+function isBackupMetadata(value: unknown): value is BackupMetadata {
+  if (typeof value !== 'object' || value === null) return false;
+  for (const [key, val] of Object.entries(value)) {
+    if (key === 'sha256') return typeof val === 'string';
+  }
+  return false;
+}
+
+function validateMetadata(backupPath: string): void {
+  const metadataPath = backupPath.replace(/\.sqlite$/, '.json');
+  if (!existsSync(metadataPath)) return;
+  const parsed: unknown = JSON.parse(readFileSync(metadataPath, 'utf8'));
+  if (!isBackupMetadata(parsed)) {
+    throw new RestoreError('backup metadata is missing sha256 field');
+  }
+  const actualSha256 = sha256(backupPath);
+  if (parsed.sha256 !== actualSha256) {
+    throw new RestoreError(`backup sha256 mismatch (metadata: ${parsed.sha256}, actual: ${actualSha256}); the backup file has been tampered with or corrupted`);
+  }
+}
+
 function validateBackup(backupPath: string): void {
   let db: DatabaseSync;
   try {
@@ -156,25 +200,14 @@ function validateBackup(backupPath: string): void {
     throw new RestoreError(`backup integrity_check failed: file is not a valid SQLite database (${error instanceof Error ? error.message : String(error)}); restore a known-good backup instead`);
   }
   try {
-    const integrityRow = db.prepare('PRAGMA integrity_check').get() as { integrity_check: string } | undefined;
-    if (!integrityRow || integrityRow.integrity_check !== 'ok') {
-      throw new RestoreError(`backup integrity_check failed: ${integrityRow?.integrity_check ?? 'no result'}; restore a known-good backup instead`);
-    }
-    const versionRow = db.prepare('PRAGMA user_version').get() as { user_version: number } | undefined;
-    if (!versionRow || versionRow.user_version !== SCHEMA_VERSION) {
-      throw new RestoreError(`backup schema version ${versionRow?.user_version ?? 'unknown'} does not match expected ${SCHEMA_VERSION}; restore a compatible backup or migrate first`);
-    }
+    checkDbIntegrity(db);
+  } catch (error) {
+    if (error instanceof RestoreError) throw error;
+    throw new RestoreError(`backup integrity_check failed: ${error instanceof Error ? error.message : String(error)}; restore a known-good backup instead`);
   } finally {
     db.close();
   }
-  const metadataPath = backupPath.replace(/\.sqlite$/, '.json');
-  if (existsSync(metadataPath)) {
-    const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
-    const actualSha256 = sha256(backupPath);
-    if (metadata.sha256 !== actualSha256) {
-      throw new RestoreError(`backup sha256 mismatch (metadata: ${metadata.sha256}, actual: ${actualSha256}); the backup file has been tampered with or corrupted`);
-    }
-  }
+  validateMetadata(backupPath);
 }
 
 export function restoreStateBackup(repoRoot: string, backupPath: string, force: boolean, retention?: number): RestoreReport {
@@ -197,7 +230,17 @@ export function restoreStateBackup(repoRoot: string, backupPath: string, force: 
   const target = dbPath(repoRoot);
   const tempPath = join(dirname(target), `.${basename(target)}.tmp`);
   copyFileSync(backupPath, tempPath);
-  renameSync(tempPath, target);
-  
+  // Windows does not allow renaming over an open file; fall back to copy+delete.
+  try {
+    renameSync(tempPath, target);
+  } catch (error) {
+    if (process.platform === 'win32') {
+      copyFileSync(tempPath, target);
+      rmSync(tempPath);
+    } else {
+      throw error;
+    }
+  }
+
   return { restoredFrom: backupPath, preRestoreBackup };
 }
