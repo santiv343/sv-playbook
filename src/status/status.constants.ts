@@ -18,10 +18,14 @@ export const DISPLAY_ORDER: readonly string[] = [
 
 export const DIVIDER_BEFORE: ReadonlySet<string> = new Set(['done', 'dropped']);
 
-export const TABLE_COLUMNS = ['ID', 'STATUS', 'LEASE', 'LAST EVENT', 'TITLE'] as const;
+export const COL_ID = 'ID';
+export const COL_STATUS = 'STATUS';
+export const COL_LEASE = 'LEASE';
+export const COL_LAST_EVENT = 'LAST EVENT';
+export const COL_TITLE = 'TITLE';
+
+export const TABLE_COLUMNS = [COL_ID, COL_STATUS, COL_LEASE, COL_LAST_EVENT, COL_TITLE] as const;
 
 export const TITLE_WIDTH = 50;
-
-export const COLUMN_PAD = 2;
 
 export { PACKET_STATUSES };

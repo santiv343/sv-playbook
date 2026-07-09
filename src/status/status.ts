@@ -3,7 +3,11 @@ import { stringColumn } from '../db/rows.js';
 import { latestStateBackupAgeHours } from '../db/backup.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import {
-  COLUMN_PAD,
+  COL_ID,
+  COL_LAST_EVENT,
+  COL_LEASE,
+  COL_STATUS,
+  COL_TITLE,
   DISPLAY_ORDER,
   DIVIDER_BEFORE,
   PACKET_STATUSES,
@@ -102,33 +106,33 @@ export function formatStatusTable(packets: StatusPacket[]): string[] {
   const widths = new Map<string, number>(TABLE_COLUMNS.map((c) => [c, c.length]));
 
   for (const p of sorted) {
-    widths.set('ID', Math.max(widths.get('ID')!, p.id.length));
-    widths.set('STATUS', Math.max(widths.get('STATUS')!, p.status.length));
-    widths.set('LEASE', Math.max(widths.get('LEASE')!, leaseLabel(p).length));
-    widths.set('LAST EVENT', Math.max(widths.get('LAST EVENT')!, eventLabel(p).length));
+    widths.set(COL_ID, Math.max(widths.get(COL_ID) ?? 0, p.id.length));
+    widths.set(COL_STATUS, Math.max(widths.get(COL_STATUS) ?? 0, p.status.length));
+    widths.set(COL_LEASE, Math.max(widths.get(COL_LEASE) ?? 0, leaseLabel(p).length));
+    widths.set(COL_LAST_EVENT, Math.max(widths.get(COL_LAST_EVENT) ?? 0, eventLabel(p).length));
   }
-  widths.set('TITLE', Math.min(Math.max(widths.get('TITLE')!, 1), TITLE_WIDTH));
+  widths.set(COL_TITLE, Math.min(Math.max(widths.get(COL_TITLE) ?? 0, 1), TITLE_WIDTH));
 
-  function w(col: string): number {
-    return widths.get(col)!;
+  function colWidth(col: string): number {
+    return widths.get(col) ?? 0;
   }
 
-  const header = TABLE_COLUMNS.map((c) => c.padEnd(w(c))).join(' | ');
+  const header = TABLE_COLUMNS.map((c) => c.padEnd(colWidth(c))).join(' | ');
   const lines: string[] = [header];
 
   let dividerEmitted = false;
   for (const p of sorted) {
     if (!dividerEmitted && DIVIDER_BEFORE.has(p.status)) {
       dividerEmitted = true;
-      const sep = TABLE_COLUMNS.map((c) => '-'.repeat(w(c))).join('-|-');
+      const sep = TABLE_COLUMNS.map((c) => '-'.repeat(colWidth(c))).join('-|-');
       lines.push(sep);
     }
     const cols: string[] = [
-      p.id.padEnd(w('ID')),
-      p.status.padEnd(w('STATUS')),
-      leaseLabel(p).padEnd(w('LEASE')),
-      eventLabel(p).padEnd(w('LAST EVENT')),
-      truncate(p.title, w('TITLE')).padEnd(w('TITLE')),
+      p.id.padEnd(colWidth(COL_ID)),
+      p.status.padEnd(colWidth(COL_STATUS)),
+      leaseLabel(p).padEnd(colWidth(COL_LEASE)),
+      eventLabel(p).padEnd(colWidth(COL_LAST_EVENT)),
+      truncate(p.title, colWidth(COL_TITLE)).padEnd(colWidth(COL_TITLE)),
     ];
     lines.push(cols.join(' | '));
   }
