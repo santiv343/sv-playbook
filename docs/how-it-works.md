@@ -196,7 +196,7 @@ flowchart TB
     PO([Human / Product Owner<br/>intent + architecture + approval])
     PO --> product[product<br/>shapes the idea into requirements]
     product --> planner[planner<br/>authors packets: write_set, RED, stop conditions]
-    planner --> orch{{orchestrator<br/>drives the board, dispatches, merges}}
+    planner --> orch{{orchestrator<br/>drives the board, dispatches, relays the verdict}}
     orch --> impl[implementer / worker<br/>one packet, one branch, RED-first]
     impl --> rev[reviewer<br/>runs the checklist, verdict APPROVED / REQUEST CHANGES]
     rev --> orch
