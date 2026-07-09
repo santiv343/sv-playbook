@@ -8,6 +8,7 @@ export interface BackupConfig {
   retention: number;
   maxAgeHours: number;
   onEvents: BackupEvent[];
+  dir?: string;
 }
 
 export interface PlaybookConfig {

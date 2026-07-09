@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync, readFileSync, rmSync, renameSync, openSync, readSync, closeSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { basename, join, dirname } from 'node:path';
+import { basename, join, dirname, isAbsolute } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DB_FILE, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
 import { BACKUP_PREFIX, BACKUPS_DIR, BACKUP_REASON, BACKUP_RETENTION_DEFAULT } from './backup.constants.js';
@@ -9,10 +9,18 @@ import type { BackupOptions, BackupReport, RestoreReport } from './backup.types.
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import { stringColumn, numberColumn } from './rows.js';
 import { RestoreError } from './backup.errors.js';
+import { loadConfig } from '../config.js';
 
 const now = (): string => new Date().toISOString();
 
-function backupsDir(repoRoot: string): string {
+function resolveBackupsDir(repoRoot: string): string {
+  const config = loadConfig(repoRoot);
+  if (config.backup.dir !== undefined) {
+    if (isAbsolute(config.backup.dir)) {
+      return config.backup.dir;
+    }
+    return join(repoRoot, config.backup.dir);
+  }
   return join(repoRoot, SVP_DIR, BACKUPS_DIR);
 }
 
@@ -58,24 +66,23 @@ function freshLeaseCountDirect(dbPath: string): number {
   }
 }
 
-function trimBackups(repoRoot: string, retention: number): void {
-  const dir = backupsDir(repoRoot);
-  const entries = readdirSync(dir)
+function trimBackups(resolvedDir: string, retention: number): void {
+  const entries = readdirSync(resolvedDir)
     .filter((name) => name.endsWith('.sqlite'))
-    .map((name) => ({ name, mtime: statSync(join(dir, name)).mtimeMs }))
+    .map((name) => ({ name, mtime: statSync(join(resolvedDir, name)).mtimeMs }))
     .sort((a, b) => b.mtime - a.mtime);
   for (let index = retention; index < entries.length; index++) {
     const entry = entries[index];
     if (entry === undefined) continue;
-    const sqlitePath = join(dir, entry.name);
+    const sqlitePath = join(resolvedDir, entry.name);
     rmSync(sqlitePath);
     const metadataPath = sqlitePath.replace(/\.sqlite$/, '.json');
     if (existsSync(metadataPath)) rmSync(metadataPath);
   }
 }
 
-export function latestStateBackupAgeHours(repoRoot: string): number | undefined {
-  const dir = backupsDir(repoRoot);
+export function latestStateBackupAgeHours(repoRoot: string, resolvedDir?: string): number | undefined {
+  const dir = resolvedDir ?? resolveBackupsDir(repoRoot);
   if (!existsSync(dir)) return undefined;
   const newest = readdirSync(dir)
     .filter((name) => name.endsWith('.sqlite'))
@@ -110,10 +117,11 @@ function vacuumInto(sourcePath: string, destPath: string): void {
   }
 }
 
-function rawPreRestoreBackup(repoRoot: string, retention?: number): BackupReport {
-  mkdirSync(backupsDir(repoRoot), { recursive: true });
+function rawPreRestoreBackup(repoRoot: string, retention?: number, resolvedDir?: string): BackupReport {
+  const dir = resolvedDir ?? resolveBackupsDir(repoRoot);
+  mkdirSync(dir, { recursive: true });
   const createdAt = now();
-  const sqlitePath = join(backupsDir(repoRoot), `${BACKUP_PREFIX}-${stamp(createdAt)}-pre-restore.sqlite`);
+  const sqlitePath = join(dir, `${BACKUP_PREFIX}-${stamp(createdAt)}-pre-restore.sqlite`);
   const metadataPath = sqlitePath.replace(/\.sqlite$/, '.json');
   try {
     vacuumInto(dbPath(repoRoot), sqlitePath);
@@ -128,18 +136,19 @@ function rawPreRestoreBackup(repoRoot: string, retention?: number): BackupReport
     sizeBytes: statSync(sqlitePath).size,
   };
   writeMetadata(repoRoot, report, BACKUP_REASON.PRE_RESTORE);
-  trimBackups(repoRoot, retention ?? BACKUP_RETENTION_DEFAULT);
+  trimBackups(dir, retention ?? BACKUP_RETENTION_DEFAULT);
   return report;
 }
 
-export function createStateBackup(repoRoot: string, options: BackupOptions): BackupReport {
+export function createStateBackup(repoRoot: string, options: BackupOptions, resolvedDir?: string): BackupReport {
   const freshLeases = freshLeaseCountDirect(dbPath(repoRoot));
   if (freshLeases > 0 && options.allowFreshLeases !== true) {
     throw new Error(`backup refused: ${freshLeases} live lease(s)`);
   }
-  mkdirSync(backupsDir(repoRoot), { recursive: true });
+  const dir = resolvedDir ?? resolveBackupsDir(repoRoot);
+  mkdirSync(dir, { recursive: true });
   const createdAt = now();
-  const sqlitePath = join(backupsDir(repoRoot), `${BACKUP_PREFIX}-${stamp(createdAt)}.sqlite`);
+  const sqlitePath = join(dir, `${BACKUP_PREFIX}-${stamp(createdAt)}.sqlite`);
   const metadataPath = sqlitePath.replace(/\.sqlite$/, '.json');
   vacuumInto(dbPath(repoRoot), sqlitePath);
   const report: BackupReport = {
@@ -150,7 +159,7 @@ export function createStateBackup(repoRoot: string, options: BackupOptions): Bac
     sizeBytes: statSync(sqlitePath).size,
   };
   writeMetadata(repoRoot, report, options.reason);
-  trimBackups(repoRoot, options.retention ?? BACKUP_RETENTION_DEFAULT);
+  trimBackups(dir, options.retention ?? BACKUP_RETENTION_DEFAULT);
   return report;
 }
 
@@ -225,20 +234,20 @@ function isValidSQLite(path: string): boolean {
   }
 }
 
-function preRestoreBackup(repoRoot: string, force: boolean, retention?: number): BackupReport {
+function preRestoreBackup(repoRoot: string, force: boolean, retention?: number, resolvedDir?: string): BackupReport {
   try {
     return createStateBackup(repoRoot, {
       reason: BACKUP_REASON.PRE_RESTORE,
       allowFreshLeases: force,
       ...(retention === undefined ? {} : { retention }),
-    });
+    }, resolvedDir);
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('backup refused:')) throw error;
-    return rawPreRestoreBackup(repoRoot, retention);
+    return rawPreRestoreBackup(repoRoot, retention, resolvedDir);
   }
 }
 
-export function restoreStateBackup(repoRoot: string, backupPath: string, force: boolean, retention?: number): RestoreReport {
+export function restoreStateBackup(repoRoot: string, backupPath: string, force: boolean, retention?: number, resolvedDir?: string): RestoreReport {
   if (!existsSync(backupPath)) throw new Error(`backup file not found: ${backupPath}`);
 
   const liveDbPath = dbPath(repoRoot);
@@ -247,9 +256,11 @@ export function restoreStateBackup(repoRoot: string, backupPath: string, force: 
     throw new Error(`backup refused: ${freshLeases} live lease(s)`);
   }
 
+  const dir = resolvedDir ?? resolveBackupsDir(repoRoot);
+
   const preRestore = isValidSQLite(liveDbPath)
-    ? preRestoreBackup(repoRoot, force, retention)
-    : rawPreRestoreBackup(repoRoot, retention);
+    ? preRestoreBackup(repoRoot, force, retention, dir)
+    : rawPreRestoreBackup(repoRoot, retention, dir);
 
   validateBackup(backupPath);
 

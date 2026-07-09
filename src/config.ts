@@ -30,6 +30,12 @@ function stringOr(value: unknown, fallback: string, field: string): string {
   return value;
 }
 
+function optionalString(value: unknown, field: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new ConfigError(`${field} must be a string`);
+  return value;
+}
+
 function booleanOr(value: unknown, fallback: boolean, fieldName: string): boolean {
   if (value === undefined) return fallback;
   if (typeof value !== 'boolean') throw new ConfigError(`${fieldName} must be a boolean`);
@@ -103,10 +109,15 @@ export function loadConfig(repoRoot: string): PlaybookConfig {
 
 function loadBackupConfig(raw: object | undefined): BackupConfig {
   if (raw === undefined) return { ...DEFAULTS.backup, onEvents: [...DEFAULTS.backup.onEvents] };
-  return {
+  const dir = optionalString(field(raw, 'dir'), 'backup.dir');
+  const config: BackupConfig = {
     enabled: booleanOr(field(raw, 'enabled'), DEFAULTS.backup.enabled, 'backup.enabled'),
     retention: positiveIntegerOr(field(raw, 'retention'), DEFAULTS.backup.retention, 'backup.retention'),
     maxAgeHours: positiveIntegerOr(field(raw, 'maxAgeHours'), DEFAULTS.backup.maxAgeHours, 'backup.maxAgeHours'),
     onEvents: backupEventsOr(field(raw, 'onEvents'), DEFAULTS.backup.onEvents, 'backup.onEvents'),
   };
+  if (dir !== undefined) {
+    config.dir = dir;
+  }
+  return config;
 }
