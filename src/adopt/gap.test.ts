@@ -22,7 +22,7 @@ test('gap analysis flags missing AGENTS.md and missing config as gaps', () => {
   const config = report.checks.find(c => c.requirement === 'playbook.config.json');
 
   assert.ok(agentsMd, 'AGENTS.md check should exist');
-  assert.equal(agentsMd!.status, 'missing');
+  assert.equal(agentsMd.status, 'missing');
   assert.ok(config, 'playbook.config.json check should exist');
-  assert.equal(config!.status, 'missing');
+  assert.equal(config.status, 'missing');
 });
