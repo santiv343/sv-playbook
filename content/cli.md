@@ -69,6 +69,24 @@ Refusal matrix for `task start`:
 | Packet is `ready` and unleased | Acquire lease and move to `active` | |
 | Packet does not exist | Refuse with `unknown packet: <id>` | |
 
+### `sv-playbook adopt`
+
+When: on a bare repo that has never been under the playbook. Runs
+inventory → gap analysis → scaffold (writes playbook.config.json,
+AGENTS.md, and remediation packets under docs/packets/ for every
+addressable gap). Use `--force` to overwrite an existing config or
+AGENTS.md.
+
+Why: it brings a new repo under the playbook in one step. Without
+`--force`, the command refuses to clobber existing playbook artifacts
+and reports gaps instead.
+
+Argument shape:
+
+```sh
+sv-playbook adopt [--force]
+```
+
 ### `sv-playbook describe`
 
 When: produce a machine-readable JSON catalog of all registered CLI
