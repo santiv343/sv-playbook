@@ -45,7 +45,7 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
     if (currentVersion !== SCHEMA_VERSION) {
       db.close();
       throw new StoreVersionError(
-        `store schema v${currentVersion} does not match v${SCHEMA_VERSION}: restore a compatible state backup or run a migration before mutating state`,
+        `store unusable (schema v${currentVersion} does not match v${SCHEMA_VERSION}): restore a verified backup with 'restore state --file <snap>' (primary), or 'rebuild' from git (last resort) — never delete .svp`,
       );
     }
   }
