@@ -207,14 +207,14 @@ flowchart TB
 |---|---|---|---|
 | **product** | `roles/product` | Turns an idea into requirements (`REQ-xxx`) | Writes code |
 | **planner** | `roles/planner` | Authors packets: task, `write_set`, RED with pinned failure cause, stop conditions | Implements |
-| **orchestrator** | `roles/orchestrator` | Drives the board, dispatches workers, delegates review, relays the verdict, salvages dead workers, **merges on APPROVED** (today; see §10) | Implements; reviews own dispatches |
+| **orchestrator** | `roles/orchestrator` | Drives the board, dispatches workers, delegates review, relays the verdict, salvages dead workers | Implements; reviews own dispatches; **merges** (that's the reviewer's job) |
 | **implementer** | `roles/implementer` | Claims one packet, RED-first, stays in `write_set`, verify green, opens PR | Touches `.svp/`; widens scope |
-| **reviewer** | `roles/reviewer` | Runs the checklist against the diff, gives the verdict (APPROVED / REQUEST CHANGES) | Approves on trust |
+| **reviewer** | `roles/reviewer` | Runs the checklist against the diff, gives the verdict (APPROVED / REQUEST CHANGES), then **merges on APPROVED** (per `AGENTS.md`) | Approves on trust |
 | **format** | `roles/format` | The EXEC/JUDGMENT contract every charter follows | — |
 
 The `format` charter is the meta-rule: it defines *how* the other charters are written so that even a weak model executes them unambiguously.
 
-> **Who merges? (in flux):** today the **orchestrator** merges on APPROVED — `AGENTS.md` is the operative source. Moving the merge to the reviewer (*reviewer-owns-merge*) is `TARGET / IN PROGRESS`: packet `ROLE-ORCHESTRATOR-HARDEN-001` reconciles the charters that currently disagree on who merges. Full story in §10.
+> **Who merges?** the **reviewer** merges on APPROVED — `AGENTS.md` is the operative source. `PLANNED`: mechanize the independent approval with a second identity / bot token or CODEOWNERS so it becomes a true `[gate]`.
 
 ---
 
@@ -249,9 +249,9 @@ sequenceDiagram
     R->>R: run sv-playbook docs review checklist
     alt APPROVED
         R-->>O: verdict APPROVED
-        O->>GH: merge (CI verify on ubuntu+windows must be green)
-        O->>GH: verify state == MERGED
-        O->>CLI: task move done (closes packet)
+        R->>GH: merge (CI verify on ubuntu+windows must be green)
+        R->>GH: verify state == MERGED
+        R->>CLI: task move done (closes packet)
     else REQUEST CHANGES
         R-->>O: verdict REQUEST CHANGES
         O->>CLI: task move active (back to worker)
@@ -304,7 +304,7 @@ flowchart TB
 ```
 
 - **Mechanized (GitHub branch protection):** direct pushes to `main` rejected, PR required, `verify` status checks required on ubuntu + windows, linear history, `enforce_admins` on.
-- **Process-enforced (`*`):** the *independent review approval* is **not** mechanically required — a single-token repo can't force an independent approval (the author can't self-approve, and `required_approving_review_count=1` would deadlock a solo repo). Today a separate reviewer agent gives the verdict and **the orchestrator merges** on APPROVED (per `AGENTS.md`), then verifies `state == MERGED` and closes the packet. `TARGET / IN PROGRESS` (`ROLE-ORCHESTRATOR-HARDEN-001`): move the merge itself to the reviewer — *reviewer-owns-merge* — and reconcile the charters that currently disagree on who merges (`AGENTS.md` and `docs review` say orchestrator; `roles/orchestrator` says "never merges"; `roles/reviewer` says reviewer "if delegated"). `PLANNED`: mechanize the approval with a second identity/bot token or CODEOWNERS so review becomes a true `[gate]`.
+- **Process-enforced (`*`):** the *independent review approval* is **not** mechanically required — a single-token repo can't force an independent approval (the author can't self-approve, and `required_approving_review_count=1` would deadlock a solo repo). Today a separate reviewer agent gives the verdict and **performs the merge** on APPROVED (per `AGENTS.md`), then verifies `state == MERGED` and closes the packet. The charters (`AGENTS.md`, `docs review`, `roles/orchestrator`, `roles/reviewer`) are now consistent: the reviewer owns the merge. `PLANNED`: mechanize the independent approval with a second identity / bot token or CODEOWNERS so review becomes a true `[gate]`.
 
 ---
 

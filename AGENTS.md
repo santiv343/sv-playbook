@@ -11,10 +11,15 @@ via `npx sv-playbook docs <topic>`.
    checks required, linear history) — this is a `[gate]`, not a request.
 2. **No PR is merged without a reviewer's APPROVED verdict.** A reviewer agent
    (or the human) runs `npx sv-playbook docs review` on the diff; the
-   orchestrator merges only after APPROVED. On a single-token repo GitHub cannot
-   require an *independent* approving review (the author cannot self-approve), so
-   this gate is process-enforced: a SEPARATE reviewer agent gives the verdict and
-   the orchestrator performs the merge. Bypassing it is a constitution violation.
+   **reviewer performs the merge** on APPROVED (M1–M3 in `docs roles/reviewer`).
+   The mechanized floor is GitHub branch protection (no direct push, PR required,
+   `verify` status checks on ubuntu + windows, linear history, `enforce_admins`).
+   The *independent approving review* itself is **process-enforced** — on a
+   single-token repo GitHub cannot require it via API (the author cannot
+   self-approve), so a SEPARATE reviewer agent gives the verdict and then merges.
+   `PLANNED`: mechanize the approval with a second identity / bot token or
+   CODEOWNERS so review becomes a true `[gate]`. Bypassing it is a constitution
+   violation.
 3. **Evidence is captured by the CLI, never transcribed.** SHAs and verify output
    come from `task move <id> review`, not from memory or pasting (D24).
 4. **Single source (PRINCIPLE-011).** No fact defined twice — duplicated unions,
