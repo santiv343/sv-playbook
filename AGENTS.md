@@ -28,7 +28,7 @@ via `npx sv-playbook docs <topic>`.
 
 ## Your role (one per task — read the charter before starting)
 - **PM / orchestrator** — drives the board, delegates to workers/reviewers,
-  merges on APPROVED. `npx sv-playbook docs roles/orchestrator`
+  relays the verdict. `npx sv-playbook docs roles/orchestrator`
 - **Implementer (worker)** — one packet, one branch, RED-first, verify green.
   `npx sv-playbook docs roles/implementer`
 - **Reviewer** — the checklist, verdict APPROVED | REQUEST CHANGES.

@@ -5,6 +5,8 @@ here cannot be validated mechanically — that is why they exist. Anything
 that becomes mechanizable graduates to a lint/gate and leaves this list.
 
 ## Merge gate — partly mechanized, partly process-enforced
+*Canonical statement: `AGENTS.md` hard rule #2.*
+
 No change reaches `main` without a PR **and** a reviewer's APPROVED verdict.
 **Mechanized:** GitHub branch protection on `main` — `enforce_admins` on, direct
 pushes rejected, `verify` (ubuntu/windows) status checks required, linear history.
