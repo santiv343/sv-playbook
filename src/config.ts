@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULTS } from './config.constants.js';
 import { ConfigError } from './config.errors.js';
-import type { Autonomy, BackupConfig, PlaybookConfig, Tier } from './config.types.js';
+import type { Autonomy, BackupConfig, BaselineConfig, PlaybookConfig, Tier } from './config.types.js';
 import { BACKUP_EVENT } from './db/backup.constants.js';
 import type { BackupEvent } from './db/backup.types.js';
 
@@ -97,7 +97,8 @@ export function loadConfig(repoRoot: string): PlaybookConfig {
   }
 
   const backup = objectField(raw, 'backup');
-  return {
+  const baseline = objectField(raw, 'baseline');
+  const config: PlaybookConfig = {
     productName: stringOr(field(raw, 'productName'), DEFAULTS.productName, 'productName'),
     chatLanguage: stringOr(field(raw, 'chatLanguage'), DEFAULTS.chatLanguage, 'chatLanguage'),
     tier: requireValid(field(raw, 'tier'), isTier, DEFAULTS.tier, 'tier'),
@@ -105,6 +106,11 @@ export function loadConfig(repoRoot: string): PlaybookConfig {
     autonomy: requireValid(field(raw, 'autonomy'), isAutonomy, DEFAULTS.autonomy, 'autonomy'),
     backup: loadBackupConfig(backup),
   };
+  const loadedBaseline = loadBaselineConfig(baseline);
+  if (loadedBaseline !== undefined) {
+    config.baseline = loadedBaseline;
+  }
+  return config;
 }
 
 function loadBackupConfig(raw: object | undefined): BackupConfig {
@@ -118,6 +124,23 @@ function loadBackupConfig(raw: object | undefined): BackupConfig {
   };
   if (dir !== undefined) {
     config.dir = dir;
+  }
+  return config;
+}
+
+function loadBaselineConfig(raw: object | undefined): BaselineConfig | undefined {
+  if (raw === undefined) return undefined;
+  const config: BaselineConfig = {};
+  const commit = optionalString(field(raw, 'commit'), 'baseline.commit');
+  if (commit !== undefined) config.commit = commit;
+  const timestamp = optionalString(field(raw, 'timestamp'), 'baseline.timestamp');
+  if (timestamp !== undefined) config.timestamp = timestamp;
+  const fingerprintsRaw = field(raw, 'fingerprints');
+  if (fingerprintsRaw !== undefined) {
+    if (!Array.isArray(fingerprintsRaw) || !fingerprintsRaw.every((f): f is string => typeof f === 'string')) {
+      throw new ConfigError('baseline.fingerprints must be an array of strings');
+    }
+    config.fingerprints = [...fingerprintsRaw];
   }
   return config;
 }
