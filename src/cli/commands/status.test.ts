@@ -40,7 +40,7 @@ test('status prints board counts and packet rows', async () => {
     const io = fakeIo();
     assert.equal(await main(['status'], io), EXIT.OK, io.errLines.join('\n'));
     const output = io.outLines.join('\n');
-    assert.ok(output.includes('ready: 1'));
+    assert.ok(output.includes('1 ready'));
     assert.ok(output.includes('ST-001'));
   });
 });
