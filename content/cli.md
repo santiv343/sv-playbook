@@ -207,6 +207,22 @@ and wants off-machine durability, but it is an adapter, not a core
 requirement. Until that command exists, `.svp/backups/` are local safety
 copies only.
 
+## Harness skills
+
+Harness skills live in `content/skills/` and teach agents to interact with
+sv-playbook repos deterministically. Each skill is a self-contained `.md` file
+with YAML frontmatter that Claude Code (and compatible harnesses) can load.
+
+To install a harness skill, copy its `.md` file into the harness skills
+directory (e.g. `~/.claude/skills/` or `~/.agents/skills/`).
+
+Canonical skill content is in `content/skills/`. Do not duplicate skill
+instructions here; point to the skill file.
+
+| Skill | File | Purpose |
+|-------|------|---------|
+| `repo-state` | `content/skills/repo-state.md` | Human re-entry — detect `.svp/` and present board status, health, and attention items |
+
 Further commands (`init`, `adopt`, `check`, `agent`,
 `upgrade`) are added by later plans; each adds its section
 here in the same format. This guide documents only implemented commands.
