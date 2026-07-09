@@ -39,12 +39,12 @@ test('cli topic documents doctor', async () => {
   assert.ok(text.includes('sv-playbook doctor'));
 });
 
-test('cli topic documents backup and restore state instead of rebuild', async () => {
+test('cli topic documents backup, restore state, and rebuild', async () => {
   const text = await readTopic('cli');
   assert.ok(text !== undefined);
   assert.ok(text.includes('sv-playbook backup state'));
   assert.ok(text.includes('sv-playbook restore state'));
-  assert.ok(!text.includes('sv-playbook rebuild'));
+  assert.ok(text.includes('sv-playbook rebuild'));
 });
 
 test('cli topic documents status json for serve', async () => {
