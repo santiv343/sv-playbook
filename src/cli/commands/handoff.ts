@@ -1,14 +1,15 @@
 import { parseArgs } from 'node:util';
 import { execFileSync } from 'node:child_process';
 import { EXIT } from '../command.constants.js';
-import type { Command, Io } from '../command.types.js';
+import type { Command } from '../command.types.js';
+import type { Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { readBoardStatus } from '../../status/status.js';
 import type { BoardStatus } from '../../status/status.types.js';
 import { stringColumn } from '../../db/rows.js';
-import { HANDOFF_ROLE_DEFAULT, nextActionAndCounts, rolePointers } from './handoff.constants.js';
+import { ATTENTION_STATUSES, HANDOFF_ROLE_DEFAULT, nextActionAndCounts, rolePointers } from './handoff.constants.js';
 
-const USAGE = 'Usage: sv-playbook handoff [--role <role>] [--force]';
+const NO_PRS = 'open PRs: none';
 
 function staleActivePackets(store: { db: { prepare(sql: string): { all(): unknown[] } } }): string[] {
   const rows = store.db.prepare(`
@@ -31,12 +32,11 @@ function staleActivePackets(store: { db: { prepare(sql: string): { all(): unknow
 
 function renderBoardSnapshot(status: BoardStatus): string[] {
   const lines: string[] = [];
-  const attentionStatuses = ['active', 'blocked', 'ready', 'review'];
   lines.push('counts:');
   for (const [state, count] of Object.entries(status.counts)) {
     lines.push(`  ${state}: ${count}`);
   }
-  const attention = status.packets.filter((p) => attentionStatuses.includes(p.status));
+  const attention = status.packets.filter((p) => ATTENTION_STATUSES.includes(p.status));
   if (attention.length > 0) {
     lines.push('attention:');
     for (const p of attention) {
@@ -44,6 +44,17 @@ function renderBoardSnapshot(status: BoardStatus): string[] {
     }
   }
   return lines;
+}
+
+interface PrEntry {
+  number: number;
+  title: string;
+  headRefName: string;
+  state: string;
+}
+
+function isPrEntry(value: unknown): value is PrEntry {
+  return typeof value === 'object' && value !== null && 'number' in value && 'title' in value;
 }
 
 function renderPrs(): string[] {
@@ -54,19 +65,18 @@ function renderPrs(): string[] {
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
     if (!raw) {
-      lines.push('open PRs: none');
+      lines.push(NO_PRS);
       return lines;
     }
     const prs: unknown = JSON.parse(raw);
     if (!Array.isArray(prs) || prs.length === 0) {
-      lines.push('open PRs: none');
+      lines.push(NO_PRS);
       return lines;
     }
     lines.push('open PRs:');
-    for (const pr of prs) {
-      if (typeof pr === 'object' && pr !== null) {
-        const p = pr as Record<string, unknown>;
-        lines.push(`  #${p.number} ${p.title} (${p.headRefName}) [${p.state}]`);
+    for (const entry of prs) {
+      if (isPrEntry(entry)) {
+        lines.push(`  #${String(entry.number)} ${entry.title} (${entry.headRefName}) [${entry.state}]`);
       }
     }
   } catch {
@@ -79,19 +89,15 @@ export function handoffCommand(): Command {
   return {
     name: 'handoff',
     summary: 'Generate a deterministic continuation prompt from live state',
-    run(args, io): Promise<number> {
+    run(args, io: Io): Promise<number> {
       const parsed = parseArgs({
         args,
-        allowPositionals: false,
+        strict: false,
         options: {
           role: { type: 'string', default: HANDOFF_ROLE_DEFAULT },
           force: { type: 'boolean', default: false },
         },
       });
-      if (parsed.positionals.length > 0) {
-        io.err(USAGE);
-        return Promise.resolve(EXIT.USAGE);
-      }
 
       const repoRoot = commonRoot(process.cwd());
       const store = openStore(repoRoot);
@@ -111,7 +117,7 @@ export function handoffCommand(): Command {
         }
 
         const status = readBoardStatus(store, repoRoot);
-        const role = parsed.values.role as string;
+        const role = String(parsed.values.role);
 
         const output: string[] = [];
         output.push(rolePointers(role));
