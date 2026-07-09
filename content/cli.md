@@ -174,6 +174,33 @@ and wants off-machine durability, but it is an adapter, not a core
 requirement. Until that command exists, `.svp/backups/` are local safety
 copies only.
 
+### `sv-playbook handoff [--role <role>] [--force]`
+
+When: before handing off the orchestrator role to a human or fresh agent,
+or whenever context must be transferred deterministically without a
+hand-written summary.
+
+Why: it assembles a cold-start continuation prompt from live board state
+so the next taker can pick up without losing context. The prompt is
+stable-prefix-first for prompt-cache friendliness, with variable state
+at the end.
+
+Before printing the prompt, handoff checks every `active` and `blocked`
+packet for stale notes (a note older than the latest transition). If
+any are found, it prints a blocking warning to stderr and exits with
+code 1. Pass `--force` to skip this check.
+
+Sections: (1) role pointer to AGENTS.md and `docs roles/<role>`,
+(2) board snapshot (counts + attention packets), (3) open PRs via
+`gh pr list` (degraded gracefully if `gh` is unavailable),
+(4) next-action heuristic.
+
+Argument shape:
+
+```sh
+sv-playbook handoff [--role <role>] [--force]
+```
+
 Further commands (`init`, `adopt`, `check`, `agent`,
 `upgrade`) are added by later plans; each adds its section
 here in the same format. This guide documents only implemented commands.
