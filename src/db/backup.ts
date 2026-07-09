@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync, readFileSync, rmSync, renameSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync, readFileSync, rmSync, renameSync, openSync, readSync, closeSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { basename, join, dirname } from 'node:path';
@@ -201,46 +201,57 @@ function validateBackup(backupPath: string): void {
   }
   try {
     checkDbIntegrity(db);
-  } catch (error) {
-    if (error instanceof RestoreError) throw error;
-    throw new RestoreError(`backup integrity_check failed: ${error instanceof Error ? error.message : String(error)}; restore a known-good backup instead`);
   } finally {
     db.close();
   }
   validateMetadata(backupPath);
 }
 
-export function restoreStateBackup(repoRoot: string, backupPath: string, force: boolean, retention?: number): RestoreReport {
-  if (!existsSync(backupPath)) throw new Error(`backup file not found: ${backupPath}`);
-  
-  let preRestoreBackup: BackupReport;
+function isValidSQLite(path: string): boolean {
+  if (!existsSync(path)) return false;
+  const fd = openSync(path, 'r');
   try {
-    preRestoreBackup = createStateBackup(repoRoot, {
+    const buf = Buffer.alloc(16);
+    const n = readSync(fd, buf, 0, 16, 0);
+    return n === 16 && buf.toString('utf8', 0, 16) === 'SQLite format 3\0';
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function preRestoreBackup(repoRoot: string, force: boolean, retention?: number): BackupReport {
+  try {
+    return createStateBackup(repoRoot, {
       reason: BACKUP_REASON.PRE_RESTORE,
       allowFreshLeases: force,
       ...(retention === undefined ? {} : { retention }),
     });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('backup refused:')) throw error;
-    preRestoreBackup = rawPreRestoreBackup(repoRoot, retention);
+    return rawPreRestoreBackup(repoRoot, retention);
   }
-  
+}
+
+export function restoreStateBackup(repoRoot: string, backupPath: string, force: boolean, retention?: number): RestoreReport {
+  if (!existsSync(backupPath)) throw new Error(`backup file not found: ${backupPath}`);
+
+  const liveDbPath = dbPath(repoRoot);
+  const preRestore = isValidSQLite(liveDbPath)
+    ? preRestoreBackup(repoRoot, force, retention)
+    : rawPreRestoreBackup(repoRoot, retention);
+
   validateBackup(backupPath);
-  
-  const target = dbPath(repoRoot);
+
+  const target = liveDbPath;
   const tempPath = join(dirname(target), `.${basename(target)}.tmp`);
   copyFileSync(backupPath, tempPath);
-  // Windows does not allow renaming over an open file; fall back to copy+delete.
   try {
     renameSync(tempPath, target);
-  } catch (error) {
-    if (process.platform === 'win32') {
-      copyFileSync(tempPath, target);
+  } finally {
+    if (existsSync(tempPath)) {
       rmSync(tempPath);
-    } else {
-      throw error;
     }
   }
 
-  return { restoredFrom: backupPath, preRestoreBackup };
+  return { restoredFrom: backupPath, preRestoreBackup: preRestore };
 }

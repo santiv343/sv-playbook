@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { writeFileSync, existsSync } from 'node:fs';
+import { writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { createStateBackup, restoreStateBackup } from './backup.js';
@@ -61,8 +61,8 @@ test('restore refuses a corrupt backup and leaves the live database intact', asy
   writeFileSync(garbagePath, 'not a sqlite database at all');
 
   // Try to restore from the garbage backup - should throw RestoreError
-  await assert.rejects(
-    Promise.resolve().then(() => restoreStateBackup(repoRoot, garbagePath, false)),
+  assert.throws(
+    () => restoreStateBackup(repoRoot, garbagePath, false),
     { name: 'RestoreError', message: /integrity_check|user_version|sha256/ }
   );
 
@@ -83,4 +83,49 @@ test('restore refuses a corrupt backup and leaves the live database intact', asy
   } finally {
     db.close();
   }
+});
+
+test('restore rejects a backup with wrong schema version', async () => {
+  const repoRoot = await createTestRepo();
+
+  createPacket(repoRoot, 'pkt-known', 'Known Packet');
+  assert.ok(packetExists(repoRoot, 'pkt-known'));
+
+  const goodBackup = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL });
+  assert.ok(existsSync(goodBackup.sqlitePath));
+
+  const db = new DatabaseSync(goodBackup.sqlitePath);
+  try {
+    db.exec('PRAGMA user_version = 999');
+  } finally {
+    db.close();
+  }
+
+  assert.throws(
+    () => restoreStateBackup(repoRoot, goodBackup.sqlitePath, false),
+    /schema version/
+  );
+
+  assert.ok(packetExists(repoRoot, 'pkt-known'), 'known packet should still exist after failed restore');
+});
+
+test('restore rejects a backup with sha256 mismatch', async () => {
+  const repoRoot = await createTestRepo();
+
+  createPacket(repoRoot, 'pkt-known', 'Known Packet');
+  assert.ok(packetExists(repoRoot, 'pkt-known'));
+
+  const goodBackup = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL });
+  assert.ok(existsSync(goodBackup.sqlitePath));
+
+  const buffer = readFileSync(goodBackup.sqlitePath);
+  buffer[50] = 0xFF;
+  writeFileSync(goodBackup.sqlitePath, buffer);
+
+  assert.throws(
+    () => restoreStateBackup(repoRoot, goodBackup.sqlitePath, false),
+    /sha256 mismatch/
+  );
+
+  assert.ok(packetExists(repoRoot, 'pkt-known'), 'known packet should still exist after failed restore');
 });
