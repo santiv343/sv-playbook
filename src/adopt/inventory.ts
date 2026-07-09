@@ -30,12 +30,15 @@ function readPackageJson(repoRoot: string): object {
 }
 
 function extractYamlListItem(line: string): string | null {
-  const m = line.match(/^\s*-\s+'([^']+)'/);
-  if (m) return m[1]!;
-  const m2 = line.match(/^\s*-\s+"([^"]+)"/);
-  if (m2) return m2[1]!;
-  const m3 = line.match(/^\s*-\s+(\S.*)$/);
-  if (m3) return m3[1]!;
+  const m = /^\s*-\s+'([^']+)'/.exec(line);
+  const v = m?.[1];
+  if (v) return v;
+  const m2 = /^\s*-\s+"([^"]+)"/.exec(line);
+  const v2 = m2?.[1];
+  if (v2) return v2;
+  const m3 = /^\s*-\s+(\S.*)$/.exec(line);
+  const v3 = m3?.[1];
+  if (v3) return v3;
   return null;
 }
 
@@ -55,42 +58,61 @@ function readPnpmWorkspace(root: string): string[] {
   }
 }
 
-function detectStack(root: string, pkg: object): string[] {
-  const stack: string[] = ['node'];
+function getDepKeys(pkg: object): string[] {
+  const keys = new Set<string>();
+  const deps = field(pkg, 'dependencies');
+  if (typeof deps === 'object' && deps !== null) {
+    Object.keys(deps).forEach(k => keys.add(k));
+  }
+  const devDeps = field(pkg, 'devDependencies');
+  if (typeof devDeps === 'object' && devDeps !== null) {
+    Object.keys(devDeps).forEach(k => keys.add(k));
+  }
+  return [...keys];
+}
 
-  const deps = { ...(field(pkg, 'dependencies') as Record<string, unknown> ?? {}), ...(field(pkg, 'devDependencies') as Record<string, unknown> ?? {}) };
-  const depKeys = Object.keys(deps);
-
+function addDepFlags(stack: string[], root: string, depKeys: string[]): void {
   if (depKeys.includes('typescript') || existsSync(join(root, 'tsconfig.json'))) {
     stack.push('typescript');
   }
   if (depKeys.includes('react') || depKeys.includes('react-dom')) {
     stack.push('react');
   }
-  if (depKeys.includes('next')) {
-    stack.push('next');
+  for (const tech of DEP_BASED_TECHS) {
+    if (depKeys.includes(tech)) stack.push(tech);
   }
-  if (depKeys.includes('vue')) {
-    stack.push('vue');
-  }
-  if (depKeys.includes('eslint')) {
-    stack.push('eslint');
-  }
-  if (depKeys.includes('prettier')) {
-    stack.push('prettier');
-  }
+}
 
-  if (existsSync(join(root, 'package-lock.json'))) stack.push('npm');
-  if (existsSync(join(root, 'pnpm-lock.yaml'))) stack.push('pnpm');
-  if (existsSync(join(root, 'yarn.lock'))) stack.push('yarn');
-  if (existsSync(join(root, 'bun.lockb'))) stack.push('bun');
+function addFileFlags(stack: string[], root: string): void {
+  for (const [file, label] of LOCKFILES) {
+    if (existsSync(join(root, file))) stack.push(label);
+  }
+  for (const [file, label] of MONOREPO_TOOLS) {
+    if (existsSync(join(root, file))) stack.push(label);
+  }
+}
 
-  if (existsSync(join(root, 'turbo.json'))) stack.push('turborepo');
-  if (existsSync(join(root, 'nx.json'))) stack.push('nx');
-  if (existsSync(join(root, 'lerna.json'))) stack.push('lerna');
-
+function detectStack(root: string, pkg: object): string[] {
+  const stack: string[] = ['node'];
+  addDepFlags(stack, root, getDepKeys(pkg));
+  addFileFlags(stack, root);
   return [...new Set(stack)];
 }
+
+const DEP_BASED_TECHS = ['next', 'vue', 'eslint', 'prettier'];
+
+const LOCKFILES: [string, string][] = [
+  ['package-lock.json', 'npm'],
+  ['pnpm-lock.yaml', 'pnpm'],
+  ['yarn.lock', 'yarn'],
+  ['bun.lockb', 'bun'],
+];
+
+const MONOREPO_TOOLS: [string, string][] = [
+  ['turbo.json', 'turborepo'],
+  ['nx.json', 'nx'],
+  ['lerna.json', 'lerna'],
+];
 
 function checkPlaybookArtifacts(root: string): Record<string, boolean> {
   return {
