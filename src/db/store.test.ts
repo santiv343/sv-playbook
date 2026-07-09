@@ -52,3 +52,23 @@ test('schema version mismatch refuses with the restore recovery message', async 
   assert.equal(numberColumn(reopened.db.prepare('PRAGMA user_version').get(), 'user_version'), SCHEMA_VERSION);
   reopened.close();
 });
+
+test('packets store has a body column and a packet_deps table at the bumped schema version', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-bodydeps-'));
+  const store = openStore(root);
+  const bodyRow = store.db
+    .prepare("PRAGMA table_info(packets)")
+    .all()
+    .find((row: Record<string, unknown>) => stringColumn(row, 'name') === 'body');
+  assert.ok(bodyRow, 'packets table must have a body column');
+  const depsTable = store.db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='packet_deps'")
+    .get();
+  assert.ok(depsTable, 'packet_deps table must exist');
+  const version = numberColumn(
+    store.db.prepare('PRAGMA user_version').get(),
+    'user_version',
+  );
+  assert.equal(version, 3, 'schema version must be bumped to 3');
+  store.close();
+});

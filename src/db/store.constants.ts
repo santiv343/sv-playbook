@@ -1,6 +1,6 @@
 import { EVENT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES, STATUS } from '../tasks/service.constants.js';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const SVP_DIR = '.svp';
 export const DB_FILE = 'playbook.sqlite';
 
@@ -18,7 +18,13 @@ CREATE TABLE IF NOT EXISTS packets (
   write_set TEXT NOT NULL DEFAULT '[]',
   priority INTEGER NOT NULL DEFAULT 100,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS packet_deps (
+  packet_id TEXT NOT NULL,
+  depends_on_id TEXT NOT NULL,
+  PRIMARY KEY (packet_id, depends_on_id)
 );
 CREATE TABLE IF NOT EXISTS transitions (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
