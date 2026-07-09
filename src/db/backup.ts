@@ -4,7 +4,6 @@ import { execFileSync } from 'node:child_process';
 import { basename, join, dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DB_FILE, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
-import { openStore } from './store.js';
 import { BACKUP_PREFIX, BACKUPS_DIR, BACKUP_REASON, BACKUP_RETENTION_DEFAULT } from './backup.constants.js';
 import type { BackupOptions, BackupReport, RestoreReport } from './backup.types.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
@@ -37,18 +36,25 @@ function gitValue(repoRoot: string, args: string[]): string {
   }
 }
 
-function freshLeaseCount(repoRoot: string): number {
-  const store = openStore(repoRoot);
+function freshLeaseCountDirect(dbPath: string): number {
+  let db: DatabaseSync;
   try {
-    const rows = store.db.prepare('SELECT heartbeat_at FROM leases').all();
+    db = new DatabaseSync(dbPath);
+  } catch {
+    return 0;
+  }
+  try {
+    const rows = db.prepare('SELECT heartbeat_at FROM leases').all();
     let count = 0;
     for (const row of rows) {
       const heartbeatAt = stringColumn(row, 'heartbeat_at');
       if (Date.now() - Date.parse(heartbeatAt) <= LEASE_TTL_MS) count++;
     }
     return count;
+  } catch {
+    return 0;
   } finally {
-    store.close();
+    db.close();
   }
 }
 
@@ -127,7 +133,7 @@ function rawPreRestoreBackup(repoRoot: string, retention?: number): BackupReport
 }
 
 export function createStateBackup(repoRoot: string, options: BackupOptions): BackupReport {
-  const freshLeases = freshLeaseCount(repoRoot);
+  const freshLeases = freshLeaseCountDirect(dbPath(repoRoot));
   if (freshLeases > 0 && options.allowFreshLeases !== true) {
     throw new Error(`backup refused: ${freshLeases} live lease(s)`);
   }
@@ -236,6 +242,11 @@ export function restoreStateBackup(repoRoot: string, backupPath: string, force: 
   if (!existsSync(backupPath)) throw new Error(`backup file not found: ${backupPath}`);
 
   const liveDbPath = dbPath(repoRoot);
+  const freshLeases = freshLeaseCountDirect(liveDbPath);
+  if (freshLeases > 0 && !force) {
+    throw new Error(`backup refused: ${freshLeases} live lease(s)`);
+  }
+
   const preRestore = isValidSQLite(liveDbPath)
     ? preRestoreBackup(repoRoot, force, retention)
     : rawPreRestoreBackup(repoRoot, retention);
