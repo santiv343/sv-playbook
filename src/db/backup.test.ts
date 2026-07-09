@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { createStateBackup, restoreStateBackup } from './backup.js';
@@ -128,4 +128,29 @@ test('restore rejects a backup with sha256 mismatch', async () => {
   );
 
   assert.ok(packetExists(repoRoot, 'pkt-known'), 'known packet should still exist after failed restore');
+});
+
+test('backups honor a configured backup.dir outside .svp', async () => {
+  const repoRoot = await createTestRepo();
+  const externalDir = await mkdtemp(join(tmpdir(), 'svp-backup-external-'));
+
+  createPacket(repoRoot, 'pkt-test', 'Test Packet');
+  assert.ok(packetExists(repoRoot, 'pkt-test'));
+
+  writeFileSync(
+    join(repoRoot, 'playbook.config.json'),
+    JSON.stringify({ backup: { dir: externalDir } })
+  );
+
+  const report = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL });
+
+  assert.ok(existsSync(report.sqlitePath), 'backup sqlite should exist');
+  assert.ok(report.sqlitePath.startsWith(externalDir), 'backup should land in external dir');
+
+  const svpBackupsDir = join(repoRoot, '.svp', 'backups');
+  const svpFiles = existsSync(svpBackupsDir) ? readdirSync(svpBackupsDir) : [];
+  assert.ok(
+    !svpFiles.some((name) => name === basename(report.sqlitePath)),
+    '.svp/backups should not contain the backup'
+  );
 });
