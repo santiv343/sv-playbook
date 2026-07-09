@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../db/store.js';
@@ -254,6 +254,15 @@ test('done stamps the packet file', async () => {
   const text = await readFile(join(root, 'docs', 'packets', 'R-001.md'), 'utf8');
   assert.ok(text.includes('\nclosed: done '), 'packet file missing closed stamp');
   store.close();
+});
+
+test('task brief reads the body from the DB, not the markdown file', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('P3-DB'), 'Hello from DB.\n');
+  const path = join(root, 'docs', 'packets', 'P3-DB.md');
+  await writeFile(path, 'garbage content', 'utf8');
+  const brief = briefPacket(store, 'P3-DB');
+  assert.ok(brief.includes('Hello from DB.'), 'brief should contain body from DB, not md file');
 });
 
 test('raw SQL cannot insert an invalid packet status', async () => {

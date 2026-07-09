@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from '../db/store.types.js';
 import { numberColumn, stringColumn } from '../db/rows.js';
-import { generatePacketDocument } from '../packets/document.js';
+import { generatePacketDocument, parsePacketDocument } from '../packets/document.js';
 import type { PacketDefinition } from '../packets/document.types.js';
 import { LifecycleError } from './service.errors.js';
 import {
@@ -49,7 +49,10 @@ export function createPacket(store: Store, docRoot: string, def: PacketDefinitio
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${def.id}.md`);
   writeFileSync(path, generatePacketDocument(def, body), 'utf8');
-  store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, STATUS.DRAFT, JSON.stringify(def.writeSet), now(), now());
+  store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, STATUS.DRAFT, body, JSON.stringify(def.writeSet), now(), now());
+  for (const depId of def.dependsOn) {
+    store.db.prepare('INSERT INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);
+  }
   recordTransition(store, def.id, 'none', STATUS.DRAFT);
 }
 
@@ -226,10 +229,12 @@ export function recoverPacket(store: Store, packetId: string): RecoveryReport {
   const noteRows = store.db.prepare(
     'SELECT at, detail FROM events WHERE packet_id = ? AND command = ? ORDER BY seq DESC LIMIT 5',
   ).all(packetId, EVENT_NOTE);
+  const dependsOn = getDeps(store, packetId);
   return {
     packetId,
     status,
     lease: leaseOf(store, packetId),
+    dependsOn,
     lastTransitions: transitionRows.map((row) => {
       const at = stringColumn(row, 'at');
       const from = stringColumn(row, 'from_status');
@@ -275,15 +280,27 @@ export function notePacket(store: Store, sessionId: string, packetId: string, te
     .run(sessionId, packetId, EVENT_NOTE, detail, now());
 }
 
+function getDeps(store: Store, packetId: string): string[] {
+  const rows = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all(packetId);
+  return rows.map((row) => stringColumn(row, 'depends_on_id'));
+}
+
 export function briefPacket(store: Store, packetId: string): string {
-  const row = store.db.prepare('SELECT id, title, path, status FROM packets WHERE id = ?').get(packetId);
+  const row = store.db.prepare('SELECT id, title, path, status, body FROM packets WHERE id = ?').get(packetId);
   if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
   const id = stringColumn(row, 'id');
   const title = stringColumn(row, 'title');
   const path = stringColumn(row, 'path');
   const status = stringColumn(row, 'status');
-  if (!existsSync(path)) throw new LifecycleError(`packet file missing: ${path}`);
-  const document = readFileSync(path, 'utf8');
+  let body = stringColumn(row, 'body');
+  if (body === '') {
+    if (!existsSync(path)) throw new LifecycleError(`packet file missing: ${path}`);
+    const text = readFileSync(path, 'utf8');
+    const parsed = parsePacketDocument(text);
+    body = parsed.body;
+  }
+  const deps = getDeps(store, packetId);
+  const depLine = deps.length > 0 ? deps.join(', ') : 'none';
   const lease = leaseOf(store, packetId);
   const leaseLine = lease === undefined
     ? '<none>'
@@ -293,9 +310,10 @@ export function briefPacket(store: Store, packetId: string): string {
 ## Status
 state: ${status}
 lease: ${leaseLine}
+depends_on: ${depLine}
 
 ## Definition (${PACKETS_DOCS_DIR}/${PACKETS_DIR}/${id}.md)
-${document}
+${body}
 
 ## Process
 - Contract and workflow: run \`npx sv-playbook docs cli\` before acting.

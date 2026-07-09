@@ -12,6 +12,7 @@ export interface RecoveryReport {
   packetId: string;
   status: string;
   lease: LeaseInfo | undefined;
+  dependsOn: string[];
   lastTransitions: string[];
   lastNotes: string[];
 }
