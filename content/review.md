@@ -4,6 +4,9 @@ Run on EVERY pull request, in full, by the human or reviewer agent. Items
 here cannot be validated mechanically — that is why they exist. Anything
 that becomes mechanizable graduates to a lint/gate and leaves this list.
 
+## Merge gate `[gate]` — mechanized
+No change reaches `main` without a pull request that a reviewer (agent or human) has marked APPROVED. **Enforcement:** GitHub branch protection on `main` — `enforce_admins` on, direct pushes rejected, `verify` (ubuntu/windows) status checks required, linear history. On a single-token repo GitHub cannot require an *independent* approving review (the author cannot self-approve), so approval is given by a SEPARATE reviewer agent and the orchestrator performs the merge only after APPROVED. The mechanized floor is the no-direct-push + status-check block; an agent that merges or pushes to `main` without an APPROVED review violates the constitution.
+
 ## Hard rules — any hit is an INSTANT REQUEST CHANGES, no weighing
 - [ ] Single source (PRINCIPLE-011), concept-wide: no fact defined twice — no duplicated type unions, scattered domain literals, parallel lists, half-applied constants, copy-pasted config, restated rules. If two places must change together, it is one hit.
 - [ ] Any suppression, gate weakening, or baseline added.
