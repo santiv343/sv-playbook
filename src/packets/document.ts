@@ -15,6 +15,7 @@ function jsonArray(values: string[]): string {
 export function generatePacketDocument(def: PacketDefinition, body: string): string {
   assertValid(def);
   return [
+    '<!-- GENERATED FROM THE BOARD — do not edit; use `task amend` -->',
     '---',
     `id: ${def.id}`,
     `title: ${def.title}`,
@@ -42,7 +43,12 @@ function parseStringArray(raw: string, key: string): string[] {
 }
 
 export function parsePacketDocument(text: string): { definition: PacketDefinition; body: string } {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n\r?\n?([\s\S]*)$/.exec(text);
+  let content = text;
+  if (content.startsWith('<!-- GENERATED')) {
+    const nl = content.indexOf('\n');
+    if (nl !== -1) content = content.slice(nl + 1);
+  }
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n\r?\n?([\s\S]*)$/.exec(content);
   if (m === null || m[1] === undefined || m[2] === undefined) {
     throw new PacketFormatError('missing frontmatter fences');
   }

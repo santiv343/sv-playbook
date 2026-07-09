@@ -186,14 +186,6 @@ export function releaseLease(store: Store, sessionId: string, packetId: string):
   store.db.prepare(DELETE_LEASE_SQL).run(packetId);
 }
 
-function stampClosed(store: Store, packetId: string, status: string): void {
-  if (status !== STATUS.DONE && status !== STATUS.DROPPED) return;
-  const row = store.db.prepare('SELECT path FROM packets WHERE id = ?').get(packetId);
-  if (row === undefined) return;
-  const path = stringColumn(row, 'path');
-  writeFileSync(path, `\nclosed: ${status} ${now()}`, { flag: 'a' });
-}
-
 function parseGlobs(raw: string): string[] {
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) return [];
@@ -256,7 +248,6 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   if (!allowed.includes(to)) throw new LifecycleError(`illegal transition ${from} -> ${to}`);
   if (to === STATUS.READY) checkWriteSetConflict(store, packetId);
   if (from === STATUS.ACTIVE) assertLeaseForActive(store, sessionId, packetId);
-  stampClosed(store, packetId, to);
   captureEvidence(store, packetId, from, to);
   if (shouldReleaseLease(from, to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
   recordTransition(store, packetId, from, to, sessionId);
