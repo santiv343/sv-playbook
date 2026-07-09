@@ -240,23 +240,6 @@ test('moving to review captures head evidence as events', async () => {
   assert.match(detail, /^head-sha [0-9a-f]{40}$/);
 });
 
-test('done stamps the packet file', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'svp-rb-'));
-  const { execFileSync } = await import('node:child_process');
-  execFileSync('git', ['init'], { cwd: root });
-  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
-  const store = openStore(root);
-  createPacket(store, root, def('R-001'), 'body');
-  const s1 = ensureSession(store, root);
-  movePacket(store, undefined, 'R-001', 'ready');
-  startPacket(store, s1, root, 'R-001');
-  movePacket(store, s1, 'R-001', 'review');
-  movePacket(store, s1, 'R-001', 'done');
-  const text = await readFile(join(root, 'docs', 'packets', 'R-001.md'), 'utf8');
-  assert.ok(text.includes('\nclosed: done '), 'packet file missing closed stamp');
-  store.close();
-});
-
 test('task brief reads the body from the DB, not the markdown file', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P3-DB'), 'Hello from DB.\n');
@@ -379,6 +362,24 @@ test('importPackets does not modify status on update', async () => {
 
   const row = store.db.prepare('SELECT status FROM packets WHERE id = ?').get('IMP-003');
   assert.equal(stringColumn(row, 'status'), 'ready');
+});
+
+test('moving a packet never modifies its generated markdown export', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('MD-001'), 'Body.\n');
+  const path = join(root, 'docs', 'packets', 'MD-001.md');
+  const initialBytes = await readFile(path);
+  const s1 = ensureSession(store, root);
+  movePacket(store, undefined, 'MD-001', 'ready');
+  startPacket(store, s1, root, 'MD-001');
+  movePacket(store, s1, 'MD-001', 'review');
+  movePacket(store, s1, 'MD-001', 'done');
+  const finalBytes = await readFile(path);
+  assert.deepEqual(finalBytes, initialBytes, 'md file bytes should not change after moves');
+  const text = finalBytes.toString('utf8');
+  assert.ok(text.includes('<!-- GENERATED FROM THE BOARD'), 'missing GENERATED banner');
+  assert.ok(!text.includes('\nclosed:'), 'md must not contain closed: stamp');
+  assert.ok(!text.includes('\nstate:'), 'md must not contain status line');
 });
 
 test('importPackets returns zeros for a missing packets directory', async () => {
