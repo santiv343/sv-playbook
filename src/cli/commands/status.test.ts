@@ -40,8 +40,26 @@ test('status prints board counts and packet rows', async () => {
     const io = fakeIo();
     assert.equal(await main(['status'], io), EXIT.OK, io.errLines.join('\n'));
     const output = io.outLines.join('\n');
-    assert.ok(output.includes('ready: 1'));
-    assert.ok(output.includes('ST-001'));
+    assert.ok(output.includes('1 ready'), 'counts header should include "1 ready"');
+    assert.ok(output.includes('ST-001'), 'output should include ST-001');
+    assert.ok(output.includes('ID'), 'output should have column header "ID"');
+    assert.ok(output.includes('STATUS'), 'output should have column header "STATUS"');
+  });
+});
+
+test('human status renders an aligned table with a counts header', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'Do it.\n');
+    const setupIo = fakeIo();
+    await main(['task', 'create', '--id', 'ST-003', '--title', 'Status Three', '--write', 'src/**', '--body-file', 'body.md'], setupIo);
+
+    const io = fakeIo();
+    assert.equal(await main(['status'], io), EXIT.OK, io.errLines.join('\n'));
+    const output = io.outLines.join('\n');
+    assert.ok(output.includes('done '), 'output should have inline counts header with "done "');
+    assert.ok(output.includes('ID'), 'output should have "ID" column header');
+    assert.ok(output.includes('STATUS'), 'output should have "STATUS" column header');
+    assert.ok(output.includes('LAST EVENT'), 'output should have "LAST EVENT" column header');
   });
 });
 
