@@ -20,3 +20,5 @@ export const BACKUP_EVENT = {
 
 export const BACKUP_RETENTION_DEFAULT = 20;
 export const BACKUP_MAX_AGE_HOURS_DEFAULT = 6;
+export const BACKUP_RETENTION_FLOOR_DEFAULT = 3;
+export const BACKUP_MAX_FAILED_CYCLES = 3;

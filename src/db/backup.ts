@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { basename, join, dirname, isAbsolute } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DB_FILE, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
-import { BACKUP_PREFIX, BACKUPS_DIR, BACKUP_REASON, BACKUP_RETENTION_DEFAULT } from './backup.constants.js';
+import { BACKUP_PREFIX, BACKUPS_DIR, BACKUP_REASON, BACKUP_RETENTION_DEFAULT, BACKUP_RETENTION_FLOOR_DEFAULT } from './backup.constants.js';
 import type { BackupOptions, BackupReport, RestoreReport } from './backup.types.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import { stringColumn, numberColumn } from './rows.js';
@@ -12,74 +12,165 @@ import { RestoreError } from './backup.errors.js';
 import { loadConfig } from '../config.js';
 
 const now = (): string => new Date().toISOString();
+const stamp = (v: string): string => v.replace(/[:\-T.Z]/g, '').slice(0, 14);
 
 function resolveBackupsDir(repoRoot: string): string {
   const config = loadConfig(repoRoot);
   if (config.backup.dir !== undefined) {
-    if (isAbsolute(config.backup.dir)) {
-      return config.backup.dir;
-    }
+    if (isAbsolute(config.backup.dir)) return config.backup.dir;
     return join(repoRoot, config.backup.dir);
   }
   return join(repoRoot, SVP_DIR, BACKUPS_DIR);
 }
 
-function dbPath(repoRoot: string): string {
-  return join(repoRoot, SVP_DIR, DB_FILE);
-}
-
-function stamp(value: string): string {
-  return value.replace(/[:\-T.Z]/g, '').slice(0, 14);
-}
+function dbPath(repoRoot: string): string { return join(repoRoot, SVP_DIR, DB_FILE); }
 
 function sha256(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
 function gitValue(repoRoot: string, args: string[]): string {
-  try {
-    return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).trim();
-  } catch {
-    return 'unknown';
-  }
+  try { return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).trim(); } catch { return 'unknown'; }
 }
 
 function freshLeaseCountDirect(dbPath: string): number {
   let db: DatabaseSync;
-  try {
-    db = new DatabaseSync(dbPath);
-  } catch {
-    return 0;
-  }
+  try { db = new DatabaseSync(dbPath); } catch { return 0; }
   try {
     const rows = db.prepare('SELECT heartbeat_at FROM leases').all();
     let count = 0;
     for (const row of rows) {
-      const heartbeatAt = stringColumn(row, 'heartbeat_at');
-      if (Date.now() - Date.parse(heartbeatAt) <= LEASE_TTL_MS) count++;
+      if (Date.now() - Date.parse(stringColumn(row, 'heartbeat_at')) <= LEASE_TTL_MS) count++;
     }
     return count;
-  } catch {
-    return 0;
-  } finally {
-    db.close();
+  } catch { return 0; } finally { db.close(); }
+}
+
+function trimBackups(resolvedDir: string, retention: number, floor?: number): void {
+  const effectiveFloor = floor ?? BACKUP_RETENTION_FLOOR_DEFAULT;
+  const entries = readdirSync(resolvedDir)
+    .filter((n) => n.endsWith('.sqlite'))
+    .map((name) => {
+      const mp = join(resolvedDir, name.replace(/\.sqlite$/, '.json'));
+      let verified = false;
+      if (existsSync(mp)) {
+        try {
+          const m: unknown = JSON.parse(readFileSync(mp, 'utf8'));
+          if (isRecord(m)) verified = m.verified === true;
+        } catch { /* ignore */ }
+      }
+      return { name, mtime: statSync(join(resolvedDir, name)).mtimeMs, verified };
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+  let verifiedCount = entries.filter((e) => e.verified).length;
+  for (let i = retention; i < entries.length; i++) {
+    const e = entries[i];
+    if (!e || (e.verified && verifiedCount <= effectiveFloor)) continue;
+    rmSync(join(resolvedDir, e.name));
+    const mp = join(resolvedDir, e.name.replace(/\.sqlite$/, '.json'));
+    if (existsSync(mp)) rmSync(mp);
+    if (e.verified) verifiedCount--;
   }
 }
 
-function trimBackups(resolvedDir: string, retention: number): void {
-  const entries = readdirSync(resolvedDir)
-    .filter((name) => name.endsWith('.sqlite'))
-    .map((name) => ({ name, mtime: statSync(join(resolvedDir, name)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime);
-  for (let index = retention; index < entries.length; index++) {
-    const entry = entries[index];
-    if (entry === undefined) continue;
-    const sqlitePath = join(resolvedDir, entry.name);
-    rmSync(sqlitePath);
-    const metadataPath = sqlitePath.replace(/\.sqlite$/, '.json');
-    if (existsSync(metadataPath)) rmSync(metadataPath);
-  }
+function failuresPath(repoRoot: string): string {
+  return join(resolveBackupsDir(repoRoot), '.backup-failures.json');
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function failuresCount(repoRoot: string): number {
+  const p = failuresPath(repoRoot);
+  if (!existsSync(p)) return 0;
+  try {
+    const r: unknown = JSON.parse(readFileSync(p, 'utf8'));
+    if (!isRecord(r)) return 0;
+    const c = r.count;
+    return typeof c === 'number' ? c : 0;
+  } catch { return 0; }
+}
+
+function setFailuresCount(repoRoot: string, count: number): void {
+  const p = failuresPath(repoRoot);
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, JSON.stringify({ count, updatedAt: new Date().toISOString() }), 'utf8');
+}
+
+function markBackupVerified(sqlitePath: string): void {
+  const mp = sqlitePath.replace(/\.sqlite$/, '.json');
+  if (!existsSync(mp)) return;
+  const m: unknown = JSON.parse(readFileSync(mp, 'utf8'));
+  if (!isRecord(m)) return;
+  m.verified = true;
+  m.verified_at = new Date().toISOString();
+  writeFileSync(mp, JSON.stringify(m, null, 2) + '\n', 'utf8');
+}
+
+function newestBackupMeta(dir: string): { verified: boolean; failedCycles: number } {
+  if (!existsSync(dir)) return { verified: false, failedCycles: 0 };
+  const newest = readdirSync(dir).filter((n) => n.endsWith('.sqlite'))
+    .map((n) => ({ n, t: statSync(join(dir, n)).mtimeMs }))
+    .sort((a, b) => b.t - a.t).at(0);
+  if (!newest) return { verified: false, failedCycles: 0 };
+  const mp = join(dir, newest.n.replace(/\.sqlite$/, '.json'));
+  if (!existsSync(mp)) return { verified: false, failedCycles: 0 };
+  try {
+    const raw: unknown = JSON.parse(readFileSync(mp, 'utf8'));
+    if (!isRecord(raw)) return { verified: false, failedCycles: 0 };
+    const v = raw.verified === true;
+    const fc = raw.failed_cycles;
+    return { verified: v, failedCycles: typeof fc === 'number' ? fc : 0 };
+  } catch { return { verified: false, failedCycles: 0 }; }
+}
+
+export function getBackupStatus(repoRoot: string, maxAgeHours?: number): {
+  ageHours: number | undefined; stale: boolean; verified: boolean; failed: boolean; failedCycles: number;
+} {
+  const config = loadConfig(repoRoot);
+  const age = latestStateBackupAgeHours(repoRoot);
+  const stale = age !== undefined && age >= (maxAgeHours ?? config.backup.maxAgeHours);
+  const meta = age !== undefined ? newestBackupMeta(resolveBackupsDir(repoRoot)) : { verified: false, failedCycles: 0 };
+  return {
+    ageHours: age,
+    stale,
+    verified: meta.verified,
+    failed: age !== undefined && !meta.verified,
+    failedCycles: meta.failedCycles + failuresCount(repoRoot),
+  };
+}
+
+export function verifyLatestBackup(repoRoot: string): boolean {
+  const dir = resolveBackupsDir(repoRoot);
+  if (!existsSync(dir)) return false;
+  const newest = readdirSync(dir).filter((n) => n.endsWith('.sqlite'))
+    .map((n) => ({ n, t: statSync(join(dir, n)).mtimeMs })).sort((a, b) => b.t - a.t).at(0);
+  if (!newest) return false;
+  try { validateBackup(join(dir, newest.n)); markBackupVerified(join(dir, newest.n)); return true; } catch { return false; }
+}
+
+export function needsBackup(repoRoot: string, maxAgeHours?: number): boolean {
+  const config = loadConfig(repoRoot);
+  const age = latestStateBackupAgeHours(repoRoot);
+  if (age === undefined) return true;
+  return age >= (maxAgeHours ?? config.backup.maxAgeHours);
+}
+
+function verifyAndTrack(repoRoot: string, sqlitePath: string): void {
+  try { validateBackup(sqlitePath); markBackupVerified(sqlitePath); setFailuresCount(repoRoot, 0); }
+  catch { setFailuresCount(repoRoot, failuresCount(repoRoot) + 1); }
+}
+
+export function recordBackupFailure(repoRoot: string): number {
+  const next = failuresCount(repoRoot) + 1;
+  setFailuresCount(repoRoot, next);
+  return next;
+}
+
+export function recordBackupSuccess(repoRoot: string): void { setFailuresCount(repoRoot, 0); }
+
+export function backupFailedCycles(repoRoot: string): number { return failuresCount(repoRoot); }
 
 export function latestStateBackupAgeHours(repoRoot: string, resolvedDir?: string): number | undefined {
   const dir = resolvedDir ?? resolveBackupsDir(repoRoot);
@@ -94,27 +185,16 @@ export function latestStateBackupAgeHours(repoRoot: string, resolvedDir?: string
 }
 
 function writeMetadata(repoRoot: string, report: BackupReport, reason: string): void {
-  const metadata = {
-    dbFile: basename(report.sqlitePath),
-    reason,
-    schemaVersion: SCHEMA_VERSION,
-    createdAt: report.createdAt,
-    sourceBranch: gitValue(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD']),
-    sourceSha: gitValue(repoRoot, ['rev-parse', 'HEAD']),
-    sizeBytes: report.sizeBytes,
-    sha256: report.sha256,
-  };
-  writeFileSync(report.metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+  writeFileSync(report.metadataPath, `${JSON.stringify({
+    dbFile: basename(report.sqlitePath), reason, schemaVersion: SCHEMA_VERSION,
+    createdAt: report.createdAt, sourceBranch: gitValue(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD']),
+    sourceSha: gitValue(repoRoot, ['rev-parse', 'HEAD']), sizeBytes: report.sizeBytes, sha256: report.sha256,
+  }, null, 2)}\n`, 'utf8');
 }
 
 function vacuumInto(sourcePath: string, destPath: string): void {
   const db = new DatabaseSync(sourcePath);
-  try {
-    const escaped = destPath.replace(/'/g, "''");
-    db.exec(`VACUUM INTO '${escaped}'`);
-  } finally {
-    db.close();
-  }
+  try { db.exec(`VACUUM INTO '${destPath.replace(/'/g, "''")}'`); } finally { db.close(); }
 }
 
 function rawPreRestoreBackup(repoRoot: string, retention?: number, resolvedDir?: string): BackupReport {
@@ -136,6 +216,7 @@ function rawPreRestoreBackup(repoRoot: string, retention?: number, resolvedDir?:
     sizeBytes: statSync(sqlitePath).size,
   };
   writeMetadata(repoRoot, report, BACKUP_REASON.PRE_RESTORE);
+  verifyAndTrack(repoRoot, sqlitePath);
   trimBackups(dir, retention ?? BACKUP_RETENTION_DEFAULT);
   return report;
 }
@@ -159,6 +240,7 @@ export function createStateBackup(repoRoot: string, options: BackupOptions, reso
     sizeBytes: statSync(sqlitePath).size,
   };
   writeMetadata(repoRoot, report, options.reason);
+  verifyAndTrack(repoRoot, sqlitePath);
   trimBackups(dir, options.retention ?? BACKUP_RETENTION_DEFAULT);
   return report;
 }
@@ -225,22 +307,12 @@ function validateBackup(backupPath: string): void {
 function isValidSQLite(path: string): boolean {
   if (!existsSync(path)) return false;
   const fd = openSync(path, 'r');
-  try {
-    const buf = Buffer.alloc(16);
-    const n = readSync(fd, buf, 0, 16, 0);
-    return n === 16 && buf.toString('utf8', 0, 16) === 'SQLite format 3\0';
-  } finally {
-    closeSync(fd);
-  }
+  try { const buf = Buffer.alloc(16); return readSync(fd, buf, 0, 16, 0) === 16 && buf.toString('utf8', 0, 16) === 'SQLite format 3\0'; } finally { closeSync(fd); }
 }
 
 function preRestoreBackup(repoRoot: string, force: boolean, retention?: number, resolvedDir?: string): BackupReport {
   try {
-    return createStateBackup(repoRoot, {
-      reason: BACKUP_REASON.PRE_RESTORE,
-      allowFreshLeases: force,
-      ...(retention === undefined ? {} : { retention }),
-    }, resolvedDir);
+    return createStateBackup(repoRoot, { reason: BACKUP_REASON.PRE_RESTORE, allowFreshLeases: force, ...(retention === undefined ? {} : { retention }) }, resolvedDir);
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('backup refused:')) throw error;
     return rawPreRestoreBackup(repoRoot, retention, resolvedDir);
