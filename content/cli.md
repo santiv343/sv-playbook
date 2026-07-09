@@ -25,9 +25,9 @@ them into the repo; read them on demand.
 
 The reviewer checklist lives at `sv-playbook docs review` and runs in full on every PR.
 
-### `sv-playbook task create|list|start|move|show|recover|takeover|note|brief`
+### `sv-playbook task create|amend|list|start|move|show|recover|takeover|note|brief`
 
-When: use `task create` to author a packet before implementation, `task list`
+When: use `task create` to author a packet before implementation, `task amend` to edit its definition while it is still in `draft` or `ready`, `task list`
 to inspect the execution queue, `task start` when a worker claims ready work,
 and `task move` when the packet changes lifecycle state. Use `task show` for
 packet detail, `task recover` for read-only crash inspection, `task takeover`
@@ -45,6 +45,7 @@ Argument shapes:
 
 ```sh
 sv-playbook task create --id <ID> --title <T> [--write <glob>]... [--depends <ID>]... [--req <REQ>]... [--evidence <E>]... --body-file <path>
+sv-playbook task amend <ID> [--title <T>] [--write <glob>]... [--body-file <path>] [--depends <ID>]... [--req <REQ>]... [--evidence <E>]...
 sv-playbook task list [--json]
 sv-playbook task start <ID>
 sv-playbook task move <ID> <status>

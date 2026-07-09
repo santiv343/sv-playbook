@@ -28,6 +28,9 @@ import type { LeaseInfo, PacketStatus, RecoveryReport, ImportResult } from './se
 
 const now = (): string => new Date().toISOString();
 
+function deleteDeps(store: Store, packetId: string): void {
+  store.db.prepare('DELETE FROM packet_deps WHERE packet_id = ?').run(packetId);
+}
 function recordTransition(store: Store, packetId: string, from: string, to: string, sessionId?: string): void {
   store.db.prepare('INSERT INTO transitions (packet_id, from_status, to_status, session_id, at) VALUES (?,?,?,?,?)')
     .run(packetId, from, to, sessionId ?? null, now());
@@ -64,7 +67,7 @@ function upsertPacketFile(store: Store, path: string): 'imported' | 'updated' {
   if (existing !== undefined) {
     store.db.prepare('UPDATE packets SET body = ?, title = ?, write_set = ?, updated_at = ? WHERE id = ?')
       .run(body, def.title, JSON.stringify(def.writeSet), now(), def.id);
-    store.db.prepare('DELETE FROM packet_deps WHERE packet_id = ?').run(def.id);
+    deleteDeps(store, def.id);
     upsertDeps(store, def);
     return 'updated';
   }
@@ -317,7 +320,25 @@ function getDeps(store: Store, packetId: string): string[] {
   const rows = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all(packetId);
   return rows.map((row) => stringColumn(row, 'depends_on_id'));
 }
-
+export function amendPacket(store: Store, docRoot: string, packetId: string, updates: { title?: string; body?: string; writeSet?: string[]; dependsOn?: string[]; requirements?: string[]; evidenceRequired?: string[]; }): void {
+  const row = store.db.prepare('SELECT id, title, body, write_set, status, path FROM packets WHERE id = ?').get(packetId);
+  if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
+  const s = stringColumn(row, 'status');
+  if (s !== STATUS.DRAFT && s !== STATUS.READY) throw new LifecycleError(`cannot amend packet in status ${s}`, 'only draft and ready packets can be amended');
+  const docDef = parsePacketDocument(readFileSync(stringColumn(row, 'path'), 'utf8')).definition;
+  const title = updates.title ?? stringColumn(row, 'title');
+  const body = updates.body ?? stringColumn(row, 'body');
+  const writeSet = updates.writeSet ?? parseGlobs(stringColumn(row, 'write_set'));
+  const dependsOn = updates.dependsOn ?? getDeps(store, packetId);
+  const requirements = updates.requirements ?? docDef.requirements;
+  const evidenceRequired = updates.evidenceRequired ?? docDef.evidenceRequired;
+  store.db.prepare('UPDATE packets SET title = ?, body = ?, write_set = ?, updated_at = ? WHERE id = ?')
+    .run(title, body, JSON.stringify(writeSet), now(), packetId);
+  deleteDeps(store, packetId);
+  upsertDeps(store, { id: packetId, title, dependsOn, writeSet, requirements, evidenceRequired });
+  writeFileSync(stringColumn(row, 'path'), generatePacketDocument(
+    { id: packetId, title, dependsOn, writeSet, requirements, evidenceRequired }, body), 'utf8');
+}
 export function briefPacket(store: Store, packetId: string): string {
   const row = store.db.prepare('SELECT id, title, path, status, body FROM packets WHERE id = ?').get(packetId);
   if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);

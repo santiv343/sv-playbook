@@ -20,6 +20,7 @@ import {
   notePacket,
   briefPacket,
   importPackets,
+  amendPacket,
 } from './service.js';
 import { LifecycleError } from './service.errors.js';
 
@@ -42,22 +43,17 @@ test('createPacket writes markdown projection and DB row in draft', async () => 
   assert.equal(rows.length, 1);
   assert.equal(rows[0]?.status, 'draft');
 });
-
 test('duplicate id is refused', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P2-001'), 'a');
-  assert.throws(() => {
-    createPacket(store, root, def('P2-001'), 'b');
-  }, LifecycleError);
+  assert.throws(() => { createPacket(store, root, def('P2-001'), 'b'); }, LifecycleError);
 });
 
 test('start requires ready; wrong state names the state', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P2-001'), 'a');
   const s = ensureSession(store, root);
-  assert.throws(() => {
-    startPacket(store, s, root, 'P2-001');
-  }, /wrong state draft/);
+  assert.throws(() => { startPacket(store, s, root, 'P2-001'); }, /wrong state draft/);
 });
 
 test('start matrix: same-session idempotent, other-session refused', async () => {
@@ -69,9 +65,7 @@ test('start matrix: same-session idempotent, other-session refused', async () =>
   startPacket(store, s1, root, 'P2-001'); // idempotent, no throw
   const wt2 = await mkdtemp(join(tmpdir(), 'svp-wt2-'));
   const s2 = ensureSession(store, wt2);
-  assert.throws(() => {
-    startPacket(store, s2, wt2, 'P2-001');
-  }, /held by session/);
+  assert.throws(() => { startPacket(store, s2, wt2, 'P2-001'); }, /held by session/);
 });
 
 test('active exits require the lease holder; done clears the lease', async () => {
@@ -80,9 +74,7 @@ test('active exits require the lease holder; done clears the lease', async () =>
   const s1 = ensureSession(store, root);
   movePacket(store, undefined, 'P2-001', 'ready');
   startPacket(store, s1, root, 'P2-001');
-  assert.throws(() => {
-    movePacket(store, undefined, 'P2-001', 'review');
-  }, /lease/);
+  assert.throws(() => { movePacket(store, undefined, 'P2-001', 'review'); }, /lease/);
   movePacket(store, s1, 'P2-001', 'review');
   movePacket(store, s1, 'P2-001', 'done');
   assert.equal(listPackets(store)[0]?.status, 'done');
@@ -91,9 +83,7 @@ test('active exits require the lease holder; done clears the lease', async () =>
 test('illegal transition is refused with both statuses named', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P2-001'), 'a');
-  assert.throws(() => {
-    movePacket(store, undefined, 'P2-001', 'done');
-  }, /draft.*done/);
+  assert.throws(() => { movePacket(store, undefined, 'P2-001', 'done'); }, /draft.*done/);
 });
 
 test('ensureSession is stable per worktree (reads .svp-session back)', async () => {
@@ -202,9 +192,7 @@ test('demotion and rejection release the lease; release frees an own lease', asy
   startPacket(store, session, root, 'FLOW-LEASE-001');
   releaseLease(store, session, 'FLOW-LEASE-001');
   assert.equal(leaseOf(store, 'FLOW-LEASE-001'), undefined);
-  assert.throws(() => {
-    releaseLease(store, session, 'FLOW-LEASE-001');
-  }, /no lease/);
+  assert.throws(() => { releaseLease(store, session, 'FLOW-LEASE-001'); }, /no lease/);
 });
 
 test('overlaps detects overlapping globs', () => {
@@ -251,10 +239,7 @@ test('task brief reads the body from the DB, not the markdown file', async () =>
 
 test('raw SQL cannot insert an invalid packet status', async () => {
   const { store } = await setup();
-  assert.throws(() => {
-    store.db.prepare('INSERT INTO packets (id, title, path, status, created_at, updated_at) VALUES (?,?,?,?,?,?)')
-      .run('P3-006', 'Packet P3-006', 'docs/packets/P3-006.md', 'invalid', new Date().toISOString(), new Date().toISOString());
-  });
+  assert.throws(() => { store.db.prepare("INSERT INTO packets (id, title, path, status, created_at, updated_at) VALUES ('x','x','/','bad',datetime('now'),datetime('now'))").run(); });
 });
 
 test('importPackets imports a new packet from a valid .md file', async () => {
@@ -387,4 +372,12 @@ test('importPackets returns zeros for a missing packets directory', async () => 
   const result = importPackets(store, root);
   assert.equal(result.imported, 0);
   assert.equal(result.updated, 0);
+});
+test('amend updates the body and write_set in the DB and regenerates the export', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('AMD-001'), 'a');
+  amendPacket(store, root, 'AMD-001', { body: 'b', writeSet: ['src/a/**'] });
+  assert.equal(stringColumn(store.db.prepare('SELECT body FROM packets WHERE id = ?').get('AMD-001'), 'body'), 'b');
+  assert.ok(stringColumn(store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get('AMD-001'), 'write_set').includes('src/a/**'));
+  assert.ok((await readFile(join(root, 'docs', 'packets', 'AMD-001.md'), 'utf8')).includes('src/a/**'));
 });

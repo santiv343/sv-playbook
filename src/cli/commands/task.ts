@@ -22,6 +22,7 @@ import {
   releaseLease,
   startPacket,
   takeoverPacket,
+  amendPacket,
 } from '../../tasks/service.js';
 import { DEFAULT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, PACKET_STATUSES, STATUS } from '../../tasks/service.constants.js';
 import { LifecycleError } from '../../tasks/service.errors.js';
@@ -106,6 +107,37 @@ function handleCreate(args: string[], io: Io): number {
   return withStore((store) => {
     createPacket(store, docRoot, def, body);
     io.out(`created ${def.id} (draft)`);
+    return EXIT.OK;
+  });
+}
+
+function handleAmend(args: string[], io: Io): number {
+  const parsed = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      title: { type: 'string' },
+      write: { type: 'string', multiple: true },
+      depends: { type: 'string', multiple: true },
+      req: { type: 'string', multiple: true },
+      evidence: { type: 'string', multiple: true },
+      'body-file': { type: 'string' },
+    },
+  });
+  const [packetId] = parsed.positionals;
+  if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('amend requires <ID>');
+  const updates: { title?: string; body?: string; writeSet?: string[]; dependsOn?: string[]; requirements?: string[]; evidenceRequired?: string[]; } = {};
+  if (parsed.values.write !== undefined) updates.writeSet = stringValues(parsed.values.write);
+  if (parsed.values.title !== undefined) updates.title = parsed.values.title;
+  if (parsed.values['body-file'] !== undefined) updates.body = readFileSync(stringValue(parsed.values['body-file'], 'body-file'), 'utf8');
+  if (parsed.values.depends !== undefined) updates.dependsOn = stringValues(parsed.values.depends);
+  if (parsed.values.req !== undefined) updates.requirements = stringValues(parsed.values.req);
+  if (parsed.values.evidence !== undefined) updates.evidenceRequired = stringValues(parsed.values.evidence);
+  if (Object.keys(updates).length === 0) throw new UsageError('amend requires at least one flag');
+  const docRoot = worktreeRoot(process.cwd());
+  return withStore((store) => {
+    amendPacket(store, docRoot, packetId, updates);
+    io.out(`amended ${packetId}`);
     return EXIT.OK;
   });
 }
@@ -239,6 +271,10 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   ['create', {
     usage: 'sv-playbook task create --id <ID> --title <T> [--write <glob>]... [--depends <ID>]... [--req <REQ>]... [--evidence <E>]... --body-file <path>',
     run: (rest, io) => handleCreate(rest, io),
+  }],
+  ['amend', {
+    usage: 'sv-playbook task amend <ID> [--title <T>] [--write <glob>]... [--body-file <path>] [--depends <ID>]... [--req <REQ>]... [--evidence <E>]...',
+    run: (rest, io) => handleAmend(rest, io),
   }],
   ['list', {
     usage: 'sv-playbook task list [--json]',
