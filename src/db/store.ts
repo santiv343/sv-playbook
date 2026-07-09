@@ -33,6 +33,13 @@ interface OpenStoreOptions {
   skipVersionCheck?: boolean;
 }
 
+function migrateBodyColumn(db: DatabaseSync): void {
+  const cols = db.prepare("SELECT name FROM pragma_table_info('packets') WHERE name = 'body'").all();
+  if (cols.length === 0) {
+    db.exec('ALTER TABLE packets ADD COLUMN body TEXT NOT NULL DEFAULT \'\'');
+  }
+}
+
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   const dir = join(repoRoot, SVP_DIR);
   mkdirSync(dir, { recursive: true });
@@ -46,7 +53,10 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   } else if (!options?.skipVersionCheck) {
     const row = db.prepare('PRAGMA user_version').get();
     const currentVersion = numberColumn(row, 'user_version');
-    if (currentVersion !== SCHEMA_VERSION) {
+    if (currentVersion === 3) {
+      migrateBodyColumn(db);
+      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    } else if (currentVersion !== SCHEMA_VERSION) {
       db.close();
       throw new StoreVersionError(
         `store unusable (schema v${currentVersion} does not match v${SCHEMA_VERSION}): restore a verified backup with 'restore state --file <snap>' (primary), or 'rebuild' from git (last resort) — never delete .svp`,

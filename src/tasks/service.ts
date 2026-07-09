@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -14,6 +14,7 @@ import {
   EVENT_NOTE,
   EVENT_TAKEOVER,
   EVENT_TRANSITION,
+  EXISTS_SQL,
   INSERT_EVENT_SQL,
   INSERT_LEASE_SQL,
   INSERT_PACKET_SQL,
@@ -23,7 +24,7 @@ import {
   SESSION_FILE_NAME,
   STATUS,
 } from './service.constants.js';
-import type { LeaseInfo, PacketStatus, RecoveryReport } from './service.types.js';
+import type { LeaseInfo, PacketStatus, RecoveryReport, ImportResult } from './service.types.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -43,7 +44,7 @@ export function overlaps(a: string, b: string): boolean {
 }
 
 export function createPacket(store: Store, docRoot: string, def: PacketDefinition, body: string): void {
-  const exists = store.db.prepare('SELECT 1 FROM packets WHERE id = ?').get(def.id);
+  const exists = store.db.prepare(EXISTS_SQL).get(def.id);
   if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`);
   const dir = join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
   mkdirSync(dir, { recursive: true });
@@ -54,6 +55,47 @@ export function createPacket(store: Store, docRoot: string, def: PacketDefinitio
     store.db.prepare('INSERT INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);
   }
   recordTransition(store, def.id, 'none', STATUS.DRAFT);
+}
+
+function upsertPacketFile(store: Store, path: string): 'imported' | 'updated' {
+  const text = readFileSync(path, 'utf8');
+  const { definition: def, body } = parsePacketDocument(text);
+  const existing = store.db.prepare(EXISTS_SQL).get(def.id);
+  if (existing !== undefined) {
+    store.db.prepare('UPDATE packets SET body = ?, title = ?, write_set = ?, updated_at = ? WHERE id = ?')
+      .run(body, def.title, JSON.stringify(def.writeSet), now(), def.id);
+    store.db.prepare('DELETE FROM packet_deps WHERE packet_id = ?').run(def.id);
+    upsertDeps(store, def);
+    return 'updated';
+  }
+  store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, STATUS.DRAFT, body, JSON.stringify(def.writeSet), now(), now());
+  recordTransition(store, def.id, 'none', STATUS.DRAFT);
+  upsertDeps(store, def);
+  return 'imported';
+}
+
+function upsertDeps(store: Store, def: PacketDefinition): void {
+  for (const depId of def.dependsOn) {
+    const depExists = store.db.prepare(EXISTS_SQL).get(depId);
+    if (depExists !== undefined) {
+      store.db.prepare('INSERT OR IGNORE INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);
+    }
+  }
+}
+
+export function importPackets(store: Store, docRoot: string): ImportResult {
+  const dir = join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
+  if (!existsSync(dir)) return { imported: 0, updated: 0 };
+  let imported = 0;
+  let updated = 0;
+  for (const entry of readdirSync(dir)) {
+    if (!entry.endsWith('.md')) continue;
+    const path = join(dir, entry);
+    const kind = upsertPacketFile(store, path);
+    if (kind === 'imported') imported++;
+    else updated++;
+  }
+  return { imported, updated };
 }
 
 export function listPackets(store: Store): Array<{ id: string; title: string; status: string; priority: number; updatedAt: string }> {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../db/store.js';
@@ -19,6 +19,7 @@ import {
   recoverPacket,
   notePacket,
   briefPacket,
+  importPackets,
 } from './service.js';
 import { LifecycleError } from './service.errors.js';
 
@@ -271,4 +272,118 @@ test('raw SQL cannot insert an invalid packet status', async () => {
     store.db.prepare('INSERT INTO packets (id, title, path, status, created_at, updated_at) VALUES (?,?,?,?,?,?)')
       .run('P3-006', 'Packet P3-006', 'docs/packets/P3-006.md', 'invalid', new Date().toISOString(), new Date().toISOString());
   });
+});
+
+test('importPackets imports a new packet from a valid .md file', async () => {
+  const { root, store } = await setup();
+  store.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('DEP-001', 'Dependency 1', '/tmp/dep', 'draft', '[]', datetime('now'), datetime('now'))").run();
+  await mkdir(join(root, 'docs', 'packets'), { recursive: true });
+  const content = [
+    '---',
+    'id: IMP-001',
+    'title: Imported Packet',
+    'depends_on: ["DEP-001"]',
+    'write_set: ["src/import/**"]',
+    'requirements: []',
+    'evidence_required: ["final-sha"]',
+    '---',
+    '',
+    'Imported body text.',
+  ].join('\n');
+  await writeFile(join(root, 'docs', 'packets', 'IMP-001.md'), content, 'utf8');
+  await writeFile(join(root, 'docs', 'packets', 'README.txt'), 'not a packet', 'utf8');
+
+  const result = importPackets(store, root);
+  assert.equal(result.imported, 1);
+  assert.equal(result.updated, 0);
+
+  const row = store.db.prepare('SELECT body, title, status FROM packets WHERE id = ?').get('IMP-001');
+  assert.ok(row !== undefined);
+  assert.equal(stringColumn(row, 'body'), 'Imported body text.');
+  assert.equal(stringColumn(row, 'title'), 'Imported Packet');
+  assert.equal(stringColumn(row, 'status'), 'draft');
+
+  const deps = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all('IMP-001');
+  assert.equal(deps.length, 1);
+  assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-001');
+
+  assert.equal(store.db.prepare('SELECT 1 FROM packets WHERE id = ?').get('README'), undefined);
+});
+
+test('importPackets is idempotent and updates deps on re-run', async () => {
+  const { root, store } = await setup();
+  store.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('DEP-A', 'Dep A', '/tmp/dep', 'draft', '[]', datetime('now'), datetime('now'))").run();
+  store.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('DEP-C', 'Dep C', '/tmp/dep', 'draft', '[]', datetime('now'), datetime('now'))").run();
+  await mkdir(join(root, 'docs', 'packets'), { recursive: true });
+  const mkContent = (title: string, deps: string[], body: string, writeSet: string[]) => [
+    '---',
+    `id: IMP-002`,
+    `title: ${title}`,
+    `depends_on: ${JSON.stringify(deps)}`,
+    `write_set: ${JSON.stringify(writeSet)}`,
+    'requirements: []',
+    'evidence_required: ["final-sha"]',
+    '---',
+    '',
+    body,
+  ].join('\n');
+  await writeFile(join(root, 'docs', 'packets', 'IMP-002.md'), mkContent('First', ['DEP-A'], 'First body.', ['src/a/**']), 'utf8');
+
+  const r1 = importPackets(store, root);
+  assert.equal(r1.imported, 1);
+  assert.equal(r1.updated, 0);
+
+  const r2 = importPackets(store, root);
+  assert.equal(r2.imported, 0);
+  assert.equal(r2.updated, 1);
+
+  let deps = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all('IMP-002');
+  assert.equal(deps.length, 1);
+  assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-A');
+
+  await writeFile(join(root, 'docs', 'packets', 'IMP-002.md'), mkContent('Updated', ['DEP-C'], 'Updated body.', ['src/b/**']), 'utf8');
+  const r3 = importPackets(store, root);
+  assert.equal(r3.imported, 0);
+  assert.equal(r3.updated, 1);
+
+  const row = store.db.prepare('SELECT body, title, write_set FROM packets WHERE id = ?').get('IMP-002');
+  assert.equal(stringColumn(row, 'body'), 'Updated body.');
+  assert.equal(stringColumn(row, 'title'), 'Updated');
+
+  deps = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all('IMP-002');
+  assert.equal(deps.length, 1);
+  assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-C');
+});
+
+test('importPackets does not modify status on update', async () => {
+  const { root, store } = await setup();
+  await mkdir(join(root, 'docs', 'packets'), { recursive: true });
+  const content = [
+    '---',
+    'id: IMP-003',
+    'title: Status Safe Packet',
+    'depends_on: []',
+    'write_set: ["src/safe/**"]',
+    'requirements: []',
+    'evidence_required: ["final-sha"]',
+    '---',
+    '',
+    'Body.',
+  ].join('\n');
+  await writeFile(join(root, 'docs', 'packets', 'IMP-003.md'), content, 'utf8');
+
+  importPackets(store, root);
+  store.db.prepare("UPDATE packets SET status = 'ready', priority = 50 WHERE id = ?").run('IMP-003');
+
+  importPackets(store, root);
+
+  const row = store.db.prepare('SELECT status FROM packets WHERE id = ?').get('IMP-003');
+  assert.equal(stringColumn(row, 'status'), 'ready');
+});
+
+test('importPackets returns zeros for a missing packets directory', async () => {
+  const { store, root } = await setup();
+  const result = importPackets(store, root);
+  assert.equal(result.imported, 0);
+  assert.equal(result.updated, 0);
 });

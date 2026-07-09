@@ -33,6 +33,7 @@ export const INSERT_EVENT_SQL = 'INSERT INTO events (session_id, packet_id, comm
 export const INSERT_LEASE_SQL = 'INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES (?,?,?,?,?)';
 export const DELETE_LEASE_SQL = 'DELETE FROM leases WHERE packet_id = ?';
 export const INSERT_PACKET_SQL = 'INSERT INTO packets (id, title, path, status, body, write_set, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)';
+export const EXISTS_SQL = 'SELECT 1 FROM packets WHERE id = ?';
 
 export const ALLOWED: ReadonlyMap<string, readonly PacketStatus[]> = new Map([
   [STATUS.DRAFT, [STATUS.READY, STATUS.DROPPED]],
