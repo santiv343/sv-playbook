@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
 import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
-import { commonRoot } from '../../db/store.js';
+import { commonRoot, openStore } from '../../db/store.js';
 import { restoreStateBackup } from '../../db/backup.js';
 import { RESTORE_USAGE, STATE_SUBCOMMAND } from './backup.constants.js';
 import { loadConfig } from '../../config.js';
@@ -24,6 +24,7 @@ export const command: Command = {
       const repoRoot = commonRoot(process.cwd());
       const config = loadConfig(repoRoot);
       const report = restoreStateBackup(repoRoot, parsed.values.file, parsed.values.force === true, config.backup.retention);
+      openStore(repoRoot).close();
       io.out(`restored: ${report.restoredFrom}`);
       io.out(`pre-restore backup: ${report.preRestoreBackup.sqlitePath}`);
       return Promise.resolve(EXIT.OK);

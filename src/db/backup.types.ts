@@ -28,3 +28,14 @@ export interface RestoreReport {
   restoredFrom: string;
   preRestoreBackup: BackupReport;
 }
+
+export interface BackupStatus {
+  ageHours: number | undefined;
+  stale: boolean;
+  verified: boolean;
+  failed: boolean;
+  failedCycles: number;
+  terminalPacketCount: number | undefined;
+  liveTerminalPacketCount: number | undefined;
+  terminalCountRegressed: boolean;
+}
