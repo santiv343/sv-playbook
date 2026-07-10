@@ -1,7 +1,7 @@
 <!-- GENERATED FROM THE BOARD — do not edit; use `task amend` -->
 ---
 id: SPRINT-001
-title: (v2) sprints: agrupar packets en una unidad con goal y start/close (gradua IDEA-015)
+title: SUPERSEDED by BETS-CORE-001: sprints were time-boxed; the founder chose budget-boxed bets (2026-07-10)
 depends_on: ["STORE-MIGRATION-SAFETY-001"]
 write_set: ["src/cli/commands/sprint.ts","src/sprints/**","src/cli/registry.ts","src/db/store.ts","src/db/store.constants.ts","src/db/store.test.ts"]
 requirements: []
