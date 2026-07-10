@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { openStore, migrateStore, worktreeRoot } from './store.js';
 import { SCHEMA_VERSION } from './store.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
+import { randomUUID } from 'node:crypto';
 
 test('openStore creates .svp/playbook.sqlite and the schema tables', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-store-'));
@@ -93,6 +94,35 @@ test('doctor flags a review packet whose PR is already merged', async () => {
   assert.notEqual(result.status, 'ok');
   assert.ok(result.detail.includes('already merged'), result.detail);
 
+  store.close();
+});
+
+test('the store runs in WAL mode and two concurrent writers both commit', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-wal-'));
+  execFileSync('git', ['init'], { cwd: root });
+  const store = openStore(root);
+
+  const sid1 = randomUUID();
+  const sid2 = randomUUID();
+  store.db.exec(`INSERT INTO sessions (id, worktree, started_at) VALUES ('${sid1}', '/tmp/wt1', datetime('now'))`);
+  store.db.exec(`INSERT INTO sessions (id, worktree, started_at) VALUES ('${sid2}', '/tmp/wt2', datetime('now'))`);
+
+  const modeRow = store.db.prepare('PRAGMA journal_mode').get();
+  assert.equal(stringColumn(modeRow, 'journal_mode'), 'wal');
+
+  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const db2 = new DatabaseSync(dbPath);
+
+  db2.exec(`INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('pk1', 'T1', '/tmp', 'draft', '[]', datetime('now'), datetime('now'))`);
+
+  store.db.exec(`INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('pk2', 'T2', '/tmp', 'draft', '[]', datetime('now'), datetime('now'))`);
+
+  const pk1 = store.db.prepare("SELECT id FROM packets WHERE id = 'pk1'").get();
+  const pk2 = store.db.prepare("SELECT id FROM packets WHERE id = 'pk2'").get();
+  assert.ok(pk1, 'writer 1 commit should be visible');
+  assert.ok(pk2, 'writer 2 commit should be visible');
+
+  db2.close();
   store.close();
 });
 
