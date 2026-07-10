@@ -7,6 +7,7 @@ import { numberColumn, stringColumn } from '../db/rows.js';
 import { generatePacketDocument, parsePacketDocument } from '../packets/document.js';
 import type { PacketDefinition } from '../packets/document.types.js';
 import { LifecycleError } from './service.errors.js';
+import { contentDir } from '../content.js';
 import {
   ALLOWED,
   DELETE_LEASE_SQL,
@@ -359,7 +360,8 @@ export function briefPacket(store: Store, packetId: string): string {
   const leaseLine = lease === undefined
     ? '<none>'
     : `held by ${lease.sessionId} (${lease.stale ? 'stale' : 'fresh'})`;
-  return `# Brief: ${id} — ${title}
+  const rubricPath = join(contentDir(), 'rubric.md');
+  return (existsSync(rubricPath) ? readFileSync(rubricPath, 'utf8') + '\n' : '') + `# Brief: ${id} — ${title}
 
 ## Status
 state: ${status}
