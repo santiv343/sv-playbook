@@ -2,7 +2,7 @@
 ---
 id: CLI-START-001
 title: sv-playbook start: friccion cero — el CLI genera rol+metodo+estado+proxima accion; AGENTS.md apunta ahi (el prompt deja de vivir en tu cabeza)
-depends_on: ["HANDOFF-CMD-001","TASK-RUBRIC-001"]
+depends_on: ["HANDOFF-CMD-001","TASK-RUBRIC-001","OPERATING-MODEL-001"]
 write_set: ["src/cli/commands/start.ts","src/cli/commands/start.test.ts","src/cli/registry.ts","AGENTS.md","content/cli.md"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]
