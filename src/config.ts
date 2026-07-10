@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULTS } from './config.constants.js';
 import { ConfigError } from './config.errors.js';
-import type { Autonomy, BackupConfig, BaselineConfig, PlaybookConfig, Tier } from './config.types.js';
+import type { Autonomy, BackupConfig, BaselineConfig, GatesConfig, PlaybookConfig, Tier } from './config.types.js';
 import { BACKUP_EVENT } from './db/backup.constants.js';
 import type { BackupEvent } from './db/backup.types.js';
 
@@ -98,6 +98,7 @@ export function loadConfig(repoRoot: string): PlaybookConfig {
 
   const backup = objectField(raw, 'backup');
   const baseline = objectField(raw, 'baseline');
+  const gates = objectField(raw, 'gates');
   const config: PlaybookConfig = {
     productName: stringOr(field(raw, 'productName'), DEFAULTS.productName, 'productName'),
     chatLanguage: stringOr(field(raw, 'chatLanguage'), DEFAULTS.chatLanguage, 'chatLanguage'),
@@ -105,6 +106,7 @@ export function loadConfig(repoRoot: string): PlaybookConfig {
     verifyCommand: stringOr(field(raw, 'verifyCommand'), DEFAULTS.verifyCommand, 'verifyCommand'),
     autonomy: requireValid(field(raw, 'autonomy'), isAutonomy, DEFAULTS.autonomy, 'autonomy'),
     backup: loadBackupConfig(backup),
+    gates: loadGatesConfig(gates),
   };
   const loadedBaseline = loadBaselineConfig(baseline);
   if (loadedBaseline !== undefined) {
@@ -126,6 +128,17 @@ function loadBackupConfig(raw: object | undefined): BackupConfig {
     config.dir = dir;
   }
   return config;
+}
+
+function loadGatesConfig(raw: object | undefined): GatesConfig {
+  if (raw === undefined) return { ...DEFAULTS.gates };
+  return {
+    maxLines: positiveIntegerOr(field(raw, 'maxLines'), DEFAULTS.gates.maxLines, 'gates.maxLines'),
+    maxLinesPerFunction: positiveIntegerOr(field(raw, 'maxLinesPerFunction'), DEFAULTS.gates.maxLinesPerFunction, 'gates.maxLinesPerFunction'),
+    complexity: positiveIntegerOr(field(raw, 'complexity'), DEFAULTS.gates.complexity, 'gates.complexity'),
+    cognitiveComplexity: positiveIntegerOr(field(raw, 'cognitiveComplexity'), DEFAULTS.gates.cognitiveComplexity, 'gates.cognitiveComplexity'),
+    layout: booleanOr(field(raw, 'layout'), DEFAULTS.gates.layout, 'gates.layout'),
+  };
 }
 
 function loadBaselineConfig(raw: object | undefined): BaselineConfig | undefined {
