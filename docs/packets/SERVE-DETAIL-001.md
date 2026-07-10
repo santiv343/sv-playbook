@@ -1,7 +1,7 @@
 <!-- GENERATED FROM THE BOARD — do not edit; use `task amend` -->
 ---
 id: SERVE-DETAIL-001
-title: (v2) serve detalle de tarea en tiempo real: transcript vivo del agente, archivos modificados (+scope), timeline, evidencia, verify, PR/CI, costo, salud
+title: serve detalle de tarea en tiempo real: transcript vivo del agente, archivos modificados (+scope), timeline, evidencia, verify, PR/CI, costo, salud
 depends_on: ["SERVE-001"]
 write_set: ["src/cli/commands/serve.ts","src/serve/**","src/serve/serve.test.ts"]
 requirements: []
