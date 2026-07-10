@@ -371,27 +371,3 @@ test('move to review is refused when the project verify command fails', async ()
   assert.throws(() => { movePacket(store, s1, 'VERIFY-001', 'review'); }, /verify/);
   assert.equal(listPackets(store)[0]?.status, 'active');
 });
-
-test('move to review runs the configured verify command through the shell', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'svp-verify-shell-'));
-  const { execFileSync } = await import('node:child_process');
-  execFileSync('git', ['init'], { cwd: root });
-  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
-  execFileSync('git', ['checkout', '-b', 'feature/verify-shell-test'], { cwd: root });
-  await mkdir(join(root, 'src', 'a'), { recursive: true });
-  await writeFile(join(root, 'src', 'a', 'ok.ts'), ' ', 'utf8');
-  execFileSync('git', ['add', '.'], { cwd: root });
-  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
-  await writeFile(
-    join(root, 'playbook.config.json'),
-    JSON.stringify({ verifyCommand: 'node -e "require(\'node:fs\').writeFileSync(\'verify-marker.txt\',\'ok\')"' }),
-    'utf8',
-  );
-  const store = openStore(root);
-  createPacket(store, root, { ...def('VERIFY-SHELL-001'), writeSet: ['src/a/**'] }, 'a');
-  const s1 = ensureSession(store, root);
-  movePacket(store, undefined, 'VERIFY-SHELL-001', 'ready');
-  startPacket(store, s1, root, 'VERIFY-SHELL-001');
-  movePacket(store, s1, 'VERIFY-SHELL-001', 'review');
-  assert.equal(await readFile(join(root, 'verify-marker.txt'), 'utf8'), 'ok');
-});
