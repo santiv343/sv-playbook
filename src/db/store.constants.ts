@@ -1,6 +1,6 @@
 import { EVENT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES, STATUS } from '../tasks/service.constants.js';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 export const SVP_DIR = '.svp';
 export const DB_FILE = 'playbook.sqlite';
 
@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS packets (
   status TEXT NOT NULL DEFAULT '${STATUS.DRAFT}' CHECK (status IN (${sqlInList(PACKET_STATUSES)})),
   body TEXT NOT NULL DEFAULT '',
   write_set TEXT NOT NULL DEFAULT '[]',
+  type TEXT NOT NULL DEFAULT '',
   pr TEXT,
   priority INTEGER NOT NULL DEFAULT 100,
   created_at TEXT NOT NULL,

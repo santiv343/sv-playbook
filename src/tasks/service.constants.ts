@@ -32,8 +32,19 @@ export const LEASE_TTL_MS = 30 * 60 * 1000;
 export const INSERT_EVENT_SQL = 'INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)';
 export const INSERT_LEASE_SQL = 'INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES (?,?,?,?,?)';
 export const DELETE_LEASE_SQL = 'DELETE FROM leases WHERE packet_id = ?';
-export const INSERT_PACKET_SQL = 'INSERT INTO packets (id, title, path, status, body, write_set, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)';
+export const INSERT_PACKET_SQL = 'INSERT INTO packets (id, title, path, status, body, write_set, type, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)';
 export const EXISTS_SQL = 'SELECT 1 FROM packets WHERE id = ?';
+
+export const TASK_TYPE_PREFIX: Record<string, string> = {
+  feature: 'FEAT',
+  bug: 'BUG',
+  config: 'CONFIG',
+  docs: 'DOCS',
+  gate: 'GATE',
+  store: 'STORE',
+  flow: 'FLOW',
+  chore: 'CHORE',
+};
 
 export const ALLOWED: ReadonlyMap<string, readonly PacketStatus[]> = new Map([
   [STATUS.DRAFT, [STATUS.READY, STATUS.DROPPED]],
