@@ -105,8 +105,7 @@ test('leaseOf reports holder and freshness; refreshHeartbeat updates it', async 
   assert.ok(lease !== undefined);
   assert.equal(lease.sessionId, s1);
   assert.equal(lease.stale, false);
-  store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE packet_id = ?')
-    .run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), 'P3-001');
+  store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE packet_id = ?').run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), 'P3-001');
   const old = leaseOf(store, 'P3-001');
   assert.equal(old?.stale, true);
   refreshHeartbeat(store, s1);
@@ -125,9 +124,8 @@ test('takeover: no lease -> error; stale lease -> allowed; live lease needs forc
   assert.throws(() => { takeoverPacket(store, s2, wt2, 'P3-002', false); }, /lease is live/);
   const forced = takeoverPacket(store, s2, wt2, 'P3-002', true);
   assert.equal(forced.lease?.sessionId, s2);
-  store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE packet_id = ?')
-    .run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), 'P3-002');
-  const back = takeoverPacket(store, s1, root, 'P3-002', false); // stale: no force needed
+  store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE packet_id = ?').run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), 'P3-002');
+  const back = takeoverPacket(store, s1, root, 'P3-002', false);
   assert.equal(back.lease?.sessionId, s1);
 });
 
@@ -155,9 +153,7 @@ test('brief has the fixed structure and embeds the packet document', async () =>
   const { root, store } = await setup();
   createPacket(store, root, def('P3-005'), 'Implement the thing.\n');
   const brief = briefPacket(store, 'P3-005');
-  for (const marker of ['# Brief: P3-005', '## Status', '## Definition', '## Process', 'Implement the thing.']) {
-    assert.ok(brief.includes(marker), `missing ${marker}`);
-  }
+  ['# Brief: P3-005', '## Status', '## Definition', '## Process', 'Implement the thing.'].forEach((m) => { assert.ok(brief.includes(m), `missing ${m}`); });
 });
 
 test('ready demotes to draft and review rejection releases the packet', async () => {
@@ -246,35 +242,20 @@ test('importPackets imports a new packet from a valid .md file', async () => {
   const { root, store } = await setup();
   store.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('DEP-001', 'Dependency 1', '/tmp/dep', 'draft', '[]', datetime('now'), datetime('now'))").run();
   await mkdir(join(root, 'docs', 'packets'), { recursive: true });
-  const content = [
-    '---',
-    'id: IMP-001',
-    'title: Imported Packet',
-    'depends_on: ["DEP-001"]',
-    'write_set: ["src/import/**"]',
-    'requirements: []',
-    'evidence_required: ["final-sha"]',
-    '---',
-    '',
-    'Imported body text.',
-  ].join('\n');
+  const content = '---\nid: IMP-001\ntitle: Imported Packet\ndepends_on: ["DEP-001"]\nwrite_set: ["src/import/**"]\nrequirements: []\nevidence_required: ["final-sha"]\n---\n\nImported body text.';
   await writeFile(join(root, 'docs', 'packets', 'IMP-001.md'), content, 'utf8');
   await writeFile(join(root, 'docs', 'packets', 'README.txt'), 'not a packet', 'utf8');
-
   const result = importPackets(store, root);
   assert.equal(result.imported, 1);
   assert.equal(result.updated, 0);
-
   const row = store.db.prepare('SELECT body, title, status FROM packets WHERE id = ?').get('IMP-001');
   assert.ok(row !== undefined);
   assert.equal(stringColumn(row, 'body'), 'Imported body text.');
   assert.equal(stringColumn(row, 'title'), 'Imported Packet');
   assert.equal(stringColumn(row, 'status'), 'draft');
-
   const deps = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all('IMP-001');
   assert.equal(deps.length, 1);
   assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-001');
-
   assert.equal(store.db.prepare('SELECT 1 FROM packets WHERE id = ?').get('README'), undefined);
 });
 
@@ -283,41 +264,25 @@ test('importPackets is idempotent and updates deps on re-run', async () => {
   store.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('DEP-A', 'Dep A', '/tmp/dep', 'draft', '[]', datetime('now'), datetime('now'))").run();
   store.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('DEP-C', 'Dep C', '/tmp/dep', 'draft', '[]', datetime('now'), datetime('now'))").run();
   await mkdir(join(root, 'docs', 'packets'), { recursive: true });
-  const mkContent = (title: string, deps: string[], body: string, writeSet: string[]) => [
-    '---',
-    `id: IMP-002`,
-    `title: ${title}`,
-    `depends_on: ${JSON.stringify(deps)}`,
-    `write_set: ${JSON.stringify(writeSet)}`,
-    'requirements: []',
-    'evidence_required: ["final-sha"]',
-    '---',
-    '',
-    body,
-  ].join('\n');
+  const mkContent = (title: string, deps: string[], body: string, writeSet: string[]) =>
+    `---\nid: IMP-002\ntitle: ${title}\ndepends_on: ${JSON.stringify(deps)}\nwrite_set: ${JSON.stringify(writeSet)}\nrequirements: []\nevidence_required: ["final-sha"]\n---\n\n${body}`;
   await writeFile(join(root, 'docs', 'packets', 'IMP-002.md'), mkContent('First', ['DEP-A'], 'First body.', ['src/a/**']), 'utf8');
-
   const r1 = importPackets(store, root);
   assert.equal(r1.imported, 1);
   assert.equal(r1.updated, 0);
-
   const r2 = importPackets(store, root);
   assert.equal(r2.imported, 0);
   assert.equal(r2.updated, 1);
-
   let deps = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all('IMP-002');
   assert.equal(deps.length, 1);
   assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-A');
-
   await writeFile(join(root, 'docs', 'packets', 'IMP-002.md'), mkContent('Updated', ['DEP-C'], 'Updated body.', ['src/b/**']), 'utf8');
   const r3 = importPackets(store, root);
   assert.equal(r3.imported, 0);
   assert.equal(r3.updated, 1);
-
   const row = store.db.prepare('SELECT body, title, write_set FROM packets WHERE id = ?').get('IMP-002');
   assert.equal(stringColumn(row, 'body'), 'Updated body.');
   assert.equal(stringColumn(row, 'title'), 'Updated');
-
   deps = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all('IMP-002');
   assert.equal(deps.length, 1);
   assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-C');
@@ -326,27 +291,11 @@ test('importPackets is idempotent and updates deps on re-run', async () => {
 test('importPackets does not modify status on update', async () => {
   const { root, store } = await setup();
   await mkdir(join(root, 'docs', 'packets'), { recursive: true });
-  const content = [
-    '---',
-    'id: IMP-003',
-    'title: Status Safe Packet',
-    'depends_on: []',
-    'write_set: ["src/safe/**"]',
-    'requirements: []',
-    'evidence_required: ["final-sha"]',
-    '---',
-    '',
-    'Body.',
-  ].join('\n');
-  await writeFile(join(root, 'docs', 'packets', 'IMP-003.md'), content, 'utf8');
-
+  await writeFile(join(root, 'docs', 'packets', 'IMP-003.md'), '---\nid: IMP-003\ntitle: Status Safe Packet\ndepends_on: []\nwrite_set: ["src/safe/**"]\nrequirements: []\nevidence_required: ["final-sha"]\n---\n\nBody.', 'utf8');
   importPackets(store, root);
   store.db.prepare("UPDATE packets SET status = 'ready', priority = 50 WHERE id = ?").run('IMP-003');
-
   importPackets(store, root);
-
-  const row = store.db.prepare('SELECT status FROM packets WHERE id = ?').get('IMP-003');
-  assert.equal(stringColumn(row, 'status'), 'ready');
+  assert.equal(stringColumn(store.db.prepare('SELECT status FROM packets WHERE id = ?').get('IMP-003'), 'status'), 'ready');
 });
 
 test('moving a packet never modifies its generated markdown export', async () => {
@@ -378,6 +327,24 @@ test("task brief prepends the universal acceptance rubric to every worker prompt
   createPacket(store, root, def('RUB-001'), 'Body.\n');
   const brief = briefPacket(store, 'RUB-001');
   assert.ok(brief.includes('## Universal Acceptance Rubric'), 'brief should contain the rubric marker');
+});
+
+test('move to review is refused when the branch changed a file outside the write_set', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-ws-'));
+  const { execFileSync } = await import('node:child_process');
+  execFileSync('git', ['init'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
+  execFileSync('git', ['checkout', '-b', 'feature/test'], { cwd: root });
+  await mkdir(join(root, 'src', 'b'), { recursive: true });
+  await writeFile(join(root, 'src', 'b', 'out.ts'), '', 'utf8');
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
+  const store = openStore(root);
+  createPacket(store, root, { ...def('WS-001'), writeSet: ['src/a/**'] }, 'a');
+  const s1 = ensureSession(store, root);
+  movePacket(store, undefined, 'WS-001', 'ready');
+  startPacket(store, s1, root, 'WS-001');
+  assert.throws(() => { movePacket(store, s1, 'WS-001', 'review'); }, /src.b.out/);
 });
 
 test('amend updates the body and write_set in the DB and regenerates the export', async () => {

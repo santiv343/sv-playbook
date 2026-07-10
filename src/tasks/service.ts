@@ -90,27 +90,17 @@ function upsertDeps(store: Store, def: PacketDefinition): void {
 export function importPackets(store: Store, docRoot: string): ImportResult {
   const dir = join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
   if (!existsSync(dir)) return { imported: 0, updated: 0 };
-  let imported = 0;
-  let updated = 0;
+  let imported = 0; let updated = 0;
   for (const entry of readdirSync(dir)) {
     if (!entry.endsWith('.md')) continue;
-    const path = join(dir, entry);
-    const kind = upsertPacketFile(store, path);
-    if (kind === 'imported') imported++;
-    else updated++;
+    if (upsertPacketFile(store, join(dir, entry)) === 'imported') imported++; else updated++;
   }
   return { imported, updated };
 }
 
 export function listPackets(store: Store): Array<{ id: string; title: string; status: string; priority: number; updatedAt: string }> {
-  const rows = store.db.prepare('SELECT id, title, status, priority, updated_at FROM packets ORDER BY priority, id').all();
-  return rows.map((row) => ({
-    id: stringColumn(row, 'id'),
-    title: stringColumn(row, 'title'),
-    status: stringColumn(row, 'status'),
-    priority: numberColumn(row, 'priority'),
-    updatedAt: stringColumn(row, 'updated_at'),
-  }));
+  return store.db.prepare('SELECT id, title, status, priority, updated_at FROM packets ORDER BY priority, id').all()
+    .map((row) => ({ id: stringColumn(row, 'id'), title: stringColumn(row, 'title'), status: stringColumn(row, 'status'), priority: numberColumn(row, 'priority'), updatedAt: stringColumn(row, 'updated_at') }));
 }
 
 export function ensureSession(store: Store, worktree: string): string {
@@ -193,11 +183,7 @@ export function releaseLease(store: Store, sessionId: string, packetId: string):
 function parseGlobs(raw: string): string[] {
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) return [];
-  const result: string[] = [];
-  for (const item of parsed) {
-    if (typeof item === 'string') result.push(item);
-  }
-  return result;
+  return parsed.filter((s) => typeof s === 'string');
 }
 
 function ourGlobs(store: Store, packetId: string): string[] {
@@ -208,11 +194,7 @@ function ourGlobs(store: Store, packetId: string): string[] {
 
 function conflictsWith(ours: string[], row: Record<string, unknown>): boolean {
   const raw = parseGlobs(stringColumn(row, 'write_set'));
-  for (const a of ours) {
-    for (const b of raw) {
-      if (overlaps(a, b)) return true;
-    }
-  }
+  for (const a of ours) for (const b of raw) if (overlaps(a, b)) return true;
   return false;
 }
 
@@ -221,11 +203,32 @@ function checkWriteSetConflict(store: Store, packetId: string): void {
   if (ours.length === 0) return;
   const rows = store.db.prepare('SELECT id, write_set FROM packets WHERE (status = ? OR status = ?) AND id != ?')
     .all(STATUS.READY, STATUS.ACTIVE, packetId);
-  for (const row of rows) {
-    if (conflictsWith(ours, row)) {
-      throw new LifecycleError(`write_set conflict with ${stringColumn(row, 'id')}`);
-    }
+  for (const row of rows) { if (conflictsWith(ours, row)) throw new LifecycleError(`write_set conflict with ${stringColumn(row, 'id')}`); }
+}
+
+function findMergeBase(worktree: string): string | undefined {
+  for (const base of ['origin/main', 'origin/master', 'main', 'master']) {
+    try { return execFileSync('git', ['merge-base', base, 'HEAD'], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' }).trim(); } catch { /* next */ }
   }
+  return undefined;
+}
+
+function gateReview(store: Store, packetId: string, from: string, to: string): void {
+  if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
+  const lease = leaseOf(store, packetId);
+  if (!lease) return;
+  const glbs = ourGlobs(store, packetId);
+  if (glbs.length === 0) return;
+  const mergeBase = findMergeBase(lease.worktree);
+  if (!mergeBase) return;
+  const changed = safeDiff(lease.worktree, mergeBase);
+  if (!changed) return;
+  const offending = changed.split('\n').filter((f) => f !== '' && !glbs.some((g) => overlaps(g, f)));
+  if (offending.length > 0) throw new LifecycleError(`write_set violation: branch changed files outside write_set: ${offending.join(', ')}`);
+}
+
+function safeDiff(worktree: string, mergeBase: string): string {
+  try { return execFileSync('git', ['diff', '--name-only', `${mergeBase}...HEAD`], { cwd: worktree, encoding: 'utf8' }).trim(); } catch { return ''; }
 }
 
 function captureEvidence(store: Store, packetId: string, from: string, to: string): void {
@@ -253,6 +256,7 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   if (to === STATUS.READY) checkWriteSetConflict(store, packetId);
   if (from === STATUS.ACTIVE) assertLeaseForActive(store, sessionId, packetId);
   captureEvidence(store, packetId, from, to);
+  gateReview(store, packetId, from, to);
   if (shouldReleaseLease(from, to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
   recordTransition(store, packetId, from, to, sessionId);
   return from;
@@ -268,17 +272,10 @@ export function recoverPacket(store: Store, packetId: string): RecoveryReport {
   ).all(packetId, EVENT_NOTE);
   const dependsOn = getDeps(store, packetId);
   return {
-    packetId,
-    status,
+    packetId, status, dependsOn,
     lease: leaseOf(store, packetId),
-    dependsOn,
-    lastTransitions: transitionRows.map((row) => {
-      const at = stringColumn(row, 'at');
-      const from = stringColumn(row, 'from_status');
-      const to = stringColumn(row, 'to_status');
-      const sessionId = stringColumn(row, 'session_id');
-      return `${at} ${from}->${to} (${sessionId})`;
-    }),
+    lastTransitions: transitionRows.map((row) =>
+      `${stringColumn(row, 'at')} ${stringColumn(row, 'from_status')}->${stringColumn(row, 'to_status')} (${stringColumn(row, 'session_id')})`),
     lastNotes: noteRows.map((row) => `${stringColumn(row, 'at')} ${stringColumn(row, 'detail')}`),
   };
 }
@@ -357,24 +354,14 @@ export function briefPacket(store: Store, packetId: string): string {
   const deps = getDeps(store, packetId);
   const depLine = deps.length > 0 ? deps.join(', ') : 'none';
   const lease = leaseOf(store, packetId);
-  const leaseLine = lease === undefined
-    ? '<none>'
-    : `held by ${lease.sessionId} (${lease.stale ? 'stale' : 'fresh'})`;
+  const leaseLine = lease ? `held by ${lease.sessionId} (${lease.stale ? 'stale' : 'fresh'})` : '<none>';
   const rubricPath = join(contentDir(), 'rubric.md');
-  return (existsSync(rubricPath) ? readFileSync(rubricPath, 'utf8') + '\n' : '') + `# Brief: ${id} — ${title}
-
-## Status
-state: ${status}
-lease: ${leaseLine}
-depends_on: ${depLine}
-
-## Definition (${PACKETS_DOCS_DIR}/${PACKETS_DIR}/${id}.md)
-${body}
-
-## Process
-- Contract and workflow: run \`npx sv-playbook docs cli\` before acting.
-- All state changes go through \`sv-playbook task move\` — never edit status by hand.
-- Leave breadcrumbs with \`sv-playbook task note ${id} "<text>"\` at each step.
-- Stop conditions and evidence duties are defined in the packet above.
-`;
+  return (existsSync(rubricPath) ? readFileSync(rubricPath, 'utf8') + '\n' : '') +
+    `# Brief: ${id} — ${title}\n\n` +
+    `## Status\nstate: ${status}\nlease: ${leaseLine}\ndepends_on: ${depLine}\n\n` +
+    `## Definition (${PACKETS_DOCS_DIR}/${PACKETS_DIR}/${id}.md)\n${body}\n\n` +
+    `## Process\n- Contract and workflow: run \`npx sv-playbook docs cli\` before acting.\n` +
+    `- All state changes go through \`sv-playbook task move\` — never edit status by hand.\n` +
+    `- Leave breadcrumbs with \`sv-playbook task note ${id} "<text>"\` at each step.\n` +
+    `- Stop conditions and evidence duties are defined in the packet above.\n`;
 }
