@@ -8,6 +8,17 @@ import { command as taskCommand } from './task.js';
 import type { Io } from '../command.types.js';
 import { stringColumn } from '../../db/rows.js';
 
+function arrayColumn(row: unknown, key: string): unknown[] {
+  if (typeof row !== 'object' || row === null) throw new TypeError(`invalid row: expected object for ${key}`);
+  for (const [candidate, value] of Object.entries(row)) {
+    if (candidate === key) {
+      if (!Array.isArray(value)) throw new TypeError(`invalid row: column ${key} must be an array`);
+      return value;
+    }
+  }
+  throw new TypeError(`invalid row: missing column ${key}`);
+}
+
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = []; const errLines: string[] = [];
   return { outLines, errLines, out: (l) => void outLines.push(l), err: (l) => void errLines.push(l) };
@@ -137,5 +148,45 @@ test('moving to done creates an automatic state backup', async () => {
     const files = await readdir(join(process.cwd(), '.svp', 'backups'));
     assert.ok(files.some((file) => file.endsWith('.sqlite')));
     assert.ok(files.some((file) => file.endsWith('.json')));
+  });
+});
+
+test('task list and show json expose the full definition including write_set and depends_on', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'Do it.\n');
+    await writeFile('dep-body.md', 'Dep task\n');
+    const io = fakeIo();
+    await taskCommand.run(['create', '--id', 'DEP-001', '--title', 'Dependency Task', '--write', 'lib/**', '--body-file', 'dep-body.md'], io);
+    await taskCommand.run(['move', 'DEP-001', 'ready'], io);
+
+    await taskCommand.run([
+      'create', '--id', 'FULL-001', '--title', 'Full Test',
+      '--write', 'src/**', '--write', 'test/**',
+      '--depends', 'DEP-001',
+      '--req', 'REQ-1', '--req', 'REQ-2',
+      '--evidence', 'red-test-output', '--evidence', 'verify-root', '--evidence', 'final-sha',
+      '--body-file', 'body.md',
+    ], io);
+
+    const io2 = fakeIo();
+    assert.equal(await taskCommand.run(['list', '--json'], io2), 0);
+    const listRaw: unknown = JSON.parse(io2.outLines.join('\n'));
+    if (!Array.isArray(listRaw)) throw new Error('expected array');
+    const listArr = listRaw;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const fullPacket = listArr.find((p: unknown) => stringColumn(p, 'id') === 'FULL-001');
+    assert.ok(fullPacket !== undefined, 'FULL-001 should be in list');
+    assert.deepStrictEqual(arrayColumn(fullPacket, 'write_set'), ['src/**', 'test/**']);
+    assert.deepStrictEqual(arrayColumn(fullPacket, 'depends_on'), ['DEP-001']);
+
+    const io3 = fakeIo();
+    assert.equal(await taskCommand.run(['show', 'FULL-001', '--json'], io3), 0);
+    const showData: unknown = JSON.parse(io3.outLines.join('\n'));
+    assert.strictEqual(stringColumn(showData, 'packetId'), 'FULL-001');
+    assert.strictEqual(stringColumn(showData, 'title'), 'Full Test');
+    assert.deepStrictEqual(arrayColumn(showData, 'write_set'), ['src/**', 'test/**']);
+    assert.deepStrictEqual(arrayColumn(showData, 'depends_on'), ['DEP-001']);
+    assert.strictEqual(stringColumn(showData, 'body'), 'Do it.\n');
+    assert.deepStrictEqual(arrayColumn(showData, 'evidence_required'), ['red-test-output', 'verify-root', 'final-sha']);
   });
 });
