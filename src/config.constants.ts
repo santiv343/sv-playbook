@@ -13,4 +13,11 @@ export const DEFAULTS: PlaybookConfig = {
     maxAgeHours: BACKUP_MAX_AGE_HOURS_DEFAULT,
     onEvents: [BACKUP_EVENT.DONE, BACKUP_EVENT.FORCE_TAKEOVER, BACKUP_EVENT.RESTORE, BACKUP_EVENT.SCHEMA_MISMATCH],
   },
+  gates: {
+    maxLines: 350,
+    maxLinesPerFunction: 60,
+    complexity: 10,
+    cognitiveComplexity: 10,
+    layout: true,
+  },
 };
