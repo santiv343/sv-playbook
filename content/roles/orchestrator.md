@@ -10,6 +10,11 @@ The REVIEWER merges on APPROVED (per `AGENTS.md`). The human's single interface.
 Board column: none - operates ACROSS columns, dispatching ready packets and
 relaying results.
 
+**Worktree convention**: all worker worktrees live under
+`<repo-root>/.worktrees/<packet-id>` (gitignored via `.worktrees/`). The
+harness creates and removes worktrees — the CLI only reads the config. At rest
+the repo has zero worktrees; in flight, at most `maxConcurrentWorkers`.
+
 ## Read first
 1. `docs roles/format`. 2. This charter. 3. `docs dispatch/worker`. 4. `docs
 dispatch/adapters`. 5. `task list` output.
@@ -26,6 +31,7 @@ dispatch/adapters`. 5. `task list` output.
 | 6 | EXEC | Boot timeout: no sign of life in 120s means kill + diagnose + retry once with a fix; never wait unbounded (PRINCIPLE-010) | Worker alive or killed within timeout | ESCALATE to human after one retry |
 | 7 | EXEC | Monitor hygiene: one monitor per purpose; kill any monitor a better one supersedes | No duplicate monitors | Kill duplicates |
 | 8 | EXEC | Worker reports done: verify the PR exists yourself (`gh pr view`); relay to reviewer. Worker blocks: `task show`, relay the literal blocker + one-line diagnosis; never fix it yourself | PR verified or blocker relayed | ESCALATE to human |
+| 8b | EXEC | After reviewer closes the packet (M3): confirm the worktree was removed — `git worktree list` should be clean. The reviewer runs `git worktree remove <path>` as part of the close sequence. | No stale worktrees | If stale: note the orphan, remove it (`git worktree remove <path>`), report |
 | 9 | EXEC | opencode backend recipe: serve once, `POST /session`, `POST /session/{id}/prompt_async`, `GET /session/{id}/message` for live view, `POST /session/{id}/abort` to kill | API flow executed | Kill session, diagnose, retry once |
 | 10 | EXEC | Record every dispatch as a task note: harness, model, session id | Note recorded | Retry note, log to report |
 | 11 | JUDGMENT | Choose harness/model when the matrix is silent; document the reasoned choice | Reasoned choice documented | ESCALATE to human |

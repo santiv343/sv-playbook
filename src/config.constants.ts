@@ -1,4 +1,4 @@
-import type { PlaybookConfig } from './schema/config.types.js';
+import type { PlaybookConfig } from './config.types.js';
 import { BACKUP_EVENT, BACKUP_MAX_AGE_HOURS_DEFAULT, BACKUP_RETENTION_DEFAULT } from './db/backup.constants.js';
 
 export const DEFAULTS: PlaybookConfig = {
@@ -7,6 +7,7 @@ export const DEFAULTS: PlaybookConfig = {
   tier: 'TIER-2',
   verifyCommand: 'npm run verify',
   autonomy: 'strict',
+  maxConcurrentWorkers: 3,
   backup: {
     enabled: true,
     retention: BACKUP_RETENTION_DEFAULT,
