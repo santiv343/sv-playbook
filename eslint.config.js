@@ -88,6 +88,13 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/schema/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': 'off',
+      '@typescript-eslint/consistent-type-assertions': 'off',
+    },
+  },
+  {
     files: ['**/*.constants.ts', '**/*.types.ts', testFiles],
     rules: {
       'no-restricted-syntax': 'off',
@@ -112,6 +119,22 @@ export default tseslint.config(
     extends: [tseslint.configs.disableTypeChecked],
     rules: {
       'no-restricted-syntax': 'off',
+    },
+  },
+  {
+    files: ['src/config.ts', 'src/db/store.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.object.name='JSON'][callee.property.name='parse']",
+          message: 'JSON.parse is forbidden outside src/schema/. Use schema validation instead.',
+        },
+        ...domainLiterals.map((value) => ({
+          selector: `Literal[value='${value}']`,
+          message: singleSourceMessage,
+        })),
+      ],
     },
   },
 );
