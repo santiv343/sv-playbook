@@ -355,3 +355,25 @@ test('amend updates the body and write_set in the DB and regenerates the export'
   assert.ok(stringColumn(store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get('AMD-001'), 'write_set').includes('src/a/**'));
   assert.ok((await readFile(join(root, 'docs', 'packets', 'AMD-001.md'), 'utf8')).includes('src/a/**'));
 });
+
+test('move to review is refused when the project verify command fails', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-verify-'));
+  const { execFileSync } = await import('node:child_process');
+  execFileSync('git', ['init'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
+  execFileSync('git', ['checkout', '-b', 'feature/verify-test'], { cwd: root });
+  await mkdir(join(root, 'src', 'a'), { recursive: true });
+  await writeFile(join(root, 'src', 'a', 'ok.ts'), ' ', 'utf8');
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({
+    verifyCommand: 'node -e process.exit(1)',
+  }), 'utf8');
+  const store = openStore(root);
+  createPacket(store, root, { ...def('VERIFY-001'), writeSet: ['src/a/**'] }, 'a');
+  const s1 = ensureSession(store, root);
+  movePacket(store, undefined, 'VERIFY-001', 'ready');
+  startPacket(store, s1, root, 'VERIFY-001');
+  assert.throws(() => { movePacket(store, s1, 'VERIFY-001', 'review'); }, /verify/);
+  assert.equal(listPackets(store)[0]?.status, 'active');
+});

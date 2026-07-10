@@ -54,6 +54,26 @@ test('cli topic documents status json for serve', async () => {
   assert.ok(text.includes('status --json'));
 });
 
+test('quality principle is present in principles review and rubric', async () => {
+  const principles = await readTopic('principles');
+  assert.ok(principles !== undefined);
+  assert.ok(principles.includes('PRINCIPLE-014'), 'PRINCIPLE-014 not in principles');
+
+  const review = await readTopic('review');
+  assert.ok(review !== undefined);
+  assert.ok(
+    review.toLowerCase().includes('class of failure'),
+    'class-of-failure question not in review',
+  );
+
+  const rubric = await readTopic('rubric');
+  assert.ok(rubric !== undefined);
+  assert.ok(
+    rubric.toLowerCase().includes('root-cause') || rubric.toLowerCase().includes('durable'),
+    'root-cause/durable-design language not in rubric',
+  );
+});
+
 test('review topic exists with the four checklist sections', async () => {
   const text = await readTopic('review');
   assert.ok(text !== undefined);

@@ -47,3 +47,7 @@ Operational state (the SQLite store, packet definitions, the board) is never rea
 ## PRINCIPLE-011 — Single source for every fact
 
 Any value, type, schema, route, rule, or piece of knowledge exists in exactly ONE authored place; everything else references or derives from it. Duplicated unions, scattered domain literals, parallel lists, half-applied constants and copy-pasted config are all the same defect. Mechanized wherever possible; everything the machine cannot catch is an INSTANT review failure — this rule cannot pass review violated.
+
+## PRINCIPLE-014 — Quality is the operating mode
+
+Agents must prefer the best durable design they can justify over the quickest local patch. A repeated correction from the founder is not a reminder; it is a missing rail, schema, gate, config, rubric entry, or task. If the CLI/process lacks a first-class path for required work, the answer is to add that path, not to normalize manual workaround habits. Reviews fail changes that solve only the observed symptom while leaving the same class of failure open. Speed and cost matter, but never by making ambiguity, hidden state, hand-authored generated artifacts, or unverifiable claims acceptable.
