@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadConfig } from './config.js';
 
 const SRC_DIR = fileURLToPath(new URL('../src', import.meta.url));
+const gates = loadConfig(SRC_DIR).gates;
 
 function isLogicModule(file: string) {
   return file.endsWith('.ts')
@@ -15,6 +17,9 @@ function isLogicModule(file: string) {
 }
 
 test('logic modules contain no exported types, constants or error classes', () => {
+  if (!gates.layout) {
+    return;
+  }
   const violations: string[] = [];
   const files = readdirSync(SRC_DIR, { recursive: true, withFileTypes: true });
 

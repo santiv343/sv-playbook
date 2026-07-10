@@ -20,6 +20,13 @@ test('loadConfig returns defaults when the file is absent', () => {
       maxAgeHours: 6,
       onEvents: ['done', 'force-takeover', 'restore', 'schema-mismatch'],
     },
+    gates: {
+      maxLines: 350,
+      maxLinesPerFunction: 60,
+      complexity: 10,
+      cognitiveComplexity: 10,
+      layout: true,
+    },
   });
 });
 
@@ -50,6 +57,13 @@ test('loadConfig reads a valid config file', () => {
       retention: 3,
       maxAgeHours: 12,
       onEvents: ['done'],
+    },
+    gates: {
+      maxLines: 350,
+      maxLinesPerFunction: 60,
+      complexity: 10,
+      cognitiveComplexity: 10,
+      layout: true,
     },
   });
 });
@@ -84,4 +98,26 @@ test('loadConfig throws ConfigError for invalid backup event', () => {
     backup: { onEvents: ['surprise'] },
   }));
   assert.throws(() => loadConfig(dir), { name: 'ConfigError', message: /backup.onEvents/ });
+});
+
+test('gate thresholds and the layout rule come from config, not hardcoded', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  const config = loadConfig(dir);
+  assert.ok(config.gates, 'gates section should exist');
+  assert.equal(config.gates.maxLines, 350);
+  assert.equal(config.gates.maxLinesPerFunction, 60);
+  assert.equal(config.gates.complexity, 10);
+  assert.equal(config.gates.cognitiveComplexity, 10);
+  assert.equal(config.gates.layout, true);
+
+  const dir2 = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(dir2, 'playbook.config.json'), JSON.stringify({
+    gates: { maxLines: 200, layout: false },
+  }));
+  const config2 = loadConfig(dir2);
+  assert.equal(config2.gates.maxLines, 200);
+  assert.equal(config2.gates.maxLinesPerFunction, 60);
+  assert.equal(config2.gates.complexity, 10);
+  assert.equal(config2.gates.cognitiveComplexity, 10);
+  assert.equal(config2.gates.layout, false);
 });

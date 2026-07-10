@@ -1,5 +1,34 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import sonarjs from 'eslint-plugin-sonarjs';
 import tseslint from 'typescript-eslint';
+
+const DEFAULTS = { maxLines: 350, maxLinesPerFunction: 60, complexity: 10, cognitiveComplexity: 10, layout: true };
+
+function positiveInt(raw, fallback) {
+  return typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? raw : fallback;
+}
+
+function gatesFromRaw(raw) {
+  return {
+    maxLines: positiveInt(raw.maxLines, DEFAULTS.maxLines),
+    maxLinesPerFunction: positiveInt(raw.maxLinesPerFunction, DEFAULTS.maxLinesPerFunction),
+    complexity: positiveInt(raw.complexity, DEFAULTS.complexity),
+    cognitiveComplexity: positiveInt(raw.cognitiveComplexity, DEFAULTS.cognitiveComplexity),
+    layout: typeof raw.layout === 'boolean' ? raw.layout : DEFAULTS.layout,
+  };
+}
+
+function readGates() {
+  try {
+    const raw = JSON.parse(readFileSync(join(import.meta.dirname, 'playbook.config.json'), 'utf8'));
+    return raw && raw.gates && typeof raw.gates === 'object' ? gatesFromRaw(raw.gates) : DEFAULTS;
+  } catch {
+    return DEFAULTS;
+  }
+}
+
+const gates = readGates();
 
 const domainLiterals = ['draft', 'ready', 'active', 'review', 'done', 'blocked', 'dropped', 'transition', 'note', 'takeover', 'evidence'];
 const singleSourceMessage = "single source: use the constant from the module's .constants.ts";
@@ -24,24 +53,15 @@ export default tseslint.config(
           ],
         },
       ],
-      // Numbers stringify deterministically; forbidding them in templates
-      // adds noise without safety. Everything else stays restricted.
+      'max-lines': ['error', { max: gates.maxLines, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: gates.maxLinesPerFunction, skipBlankLines: true, skipComments: true }],
+      'no-nested-ternary': 'error',
+      'complexity': ['error', gates.complexity],
+      'max-depth': ['error', 3],
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
       '@typescript-eslint/consistent-type-assertions': ['error', { assertionStyle: 'never' }],
-      // Graduated from user taste - each rule cites its origin.
-      // taste: split-before-exceed size discipline
-      'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
-      'max-lines-per-function': ['error', { max: 60, skipBlankLines: true, skipComments: true }],
-      // taste: no nested ternary (IIFE-in-ternary pattern)
-      'no-nested-ternary': 'error',
-      // taste: one responsibility, low branching
-      'complexity': ['error', 10],
-      'max-depth': ['error', 3],
-      // taste: single-source contractual strings (production code)
       'sonarjs/no-duplicate-string': ['error', { threshold: 2 }],
-      // taste: cognitive complexity (sonarjs)
-      'sonarjs/cognitive-complexity': ['error', 10],
-      // taste: no mutable shared state reached via process globals in production code
+      'sonarjs/cognitive-complexity': ['error', gates.cognitiveComplexity],
       'no-restricted-imports': [
         'error',
         {

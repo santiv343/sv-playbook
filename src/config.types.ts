@@ -17,6 +17,14 @@ export interface BaselineConfig {
   fingerprints?: string[];
 }
 
+export interface GatesConfig {
+  maxLines: number;
+  maxLinesPerFunction: number;
+  complexity: number;
+  cognitiveComplexity: number;
+  layout: boolean;
+}
+
 export interface PlaybookConfig {
   productName: string;
   chatLanguage: string;
@@ -25,4 +33,5 @@ export interface PlaybookConfig {
   autonomy: Autonomy;
   backup: BackupConfig;
   baseline?: BaselineConfig;
+  gates: GatesConfig;
 }
