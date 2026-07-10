@@ -26,8 +26,6 @@ async function inTempRepo<T>(fn: (root: string) => Promise<T>): Promise<T> {
   }
 }
 
-const REQUIRED_SECTIONS = ['Task', 'RED test', 'Stop conditions', 'Evidence'];
-
 test('check structure fails when a packet is missing a required section', async () => {
   await inTempRepo(async (root) => {
     const frontmatter = [
