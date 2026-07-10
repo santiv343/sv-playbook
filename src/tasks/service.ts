@@ -57,7 +57,8 @@ function recordTransition(store: Store, packetId: string, from: string, to: stri
 
 export function overlaps(a: string, b: string): boolean {
   const pa = a.replace(/\/\*\*$|\/\*$/, ''), pb = b.replace(/\/\*\*$|\/\*$/, '');
-  return pa === pb || pa.startsWith(pb + '/') || pb.startsWith(pa + '/');
+  if (pa === pb || pa.startsWith(pb + '/') || pb.startsWith(pa + '/')) return true;
+  return new RegExp('^' + a.replace(/\./g, '\\.').replace(/\*/g, '[^/]*') + '$').test(b);
 }
 
 export function createPacket(store: Store, docRoot: string, def: PacketDefinition, body: string, type?: string): void {
@@ -198,9 +199,7 @@ function checkWriteSetConflict(store: Store, packetId: string): void {
   }
 }
 function findMergeBase(worktree: string): string | undefined {
-  for (const base of ['origin/main', 'origin/master', 'main', 'master']) {
-    try { return execFileSync('git', ['merge-base', base, 'HEAD'], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' }).trim(); } catch { /* next */ }
-  }
+  for (const base of ['origin/main', 'origin/master', 'main', 'master']) try { return execFileSync('git', ['merge-base', base, 'HEAD'], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' }).trim(); } catch { /* next */ }
   return undefined;
 }
 function gateReview(store: Store, packetId: string, from: string, to: string): void {
