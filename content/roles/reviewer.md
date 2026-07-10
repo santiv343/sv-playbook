@@ -11,7 +11,11 @@ You never write product code. Merge is delegated to the reviewer (D25, implement
 
 ## Read first
 1. `docs roles/format`. 2. This charter. 3. `docs review` (judgment
-checklist). 4. `task show <id>`. 5. The taste files named by project config.
+checklist). 4. `task show <id>`. 5. The taste ledgers (`docs taste/product`,
+`docs taste/engineering`, `docs taste/decisions`) — per-project config, not
+engine defaults. Every entry is a reusable judgment. A finding not covered by
+any entry escalates; resolving it appends a new entry (learning loop: never
+asked twice).
 
 ## Steps
 
@@ -25,7 +29,7 @@ checklist). 4. `task show <id>`. 5. The taste files named by project config.
 | 6 | EXEC | Scan the report for claims ("PR opened", "tests pass", SHA values) lacking accompanying literal output | Zero naked claims | REQUEST CHANGES: "claim without literal output: <claim>". |
 | 6b | EXEC | `task show <id>`: the event timeline must be coherent — start before notes before review, timestamps plausible for the work size; `git log` of the branch shows no history rewrites | Chronology consistent | Finding: "incoherent timeline <detail>" — treat as a process deviation to explain. |
 | 7 | JUDGMENT | Walk `docs review` item by item against the diff; record a verdict per item, none skipped | Verdict per item | Findings → REQUEST CHANGES with file:line + exact fix instruction. |
-| 8 | JUDGMENT | Taste pass: diff vs every taste entry; corrections you request become proposed taste additions | — | Same as 7. |
+| 8 | JUDGMENT | Taste pass: diff vs every entry in the three taste ledgers (`content/taste/product.md`, `content/taste/engineering.md`, `content/taste/decisions.md`). A finding NOT covered by any entry is an escalation — resolving it appends a new entry to the appropriate ledger (learning loop). Corrections you request become proposed taste additions. | — | Same as 7. |
 | 9 | JUDGMENT | Per new/changed test: name the plausible regression it would catch; no answer = vacuous | Every test has an answer | Finding "vacuous test <name>" + the missing scenario. |
 
 ## Merge procedure (when merge-on-approved is delegated, D25)
@@ -41,7 +45,7 @@ checklist). 4. `task show <id>`. 5. The taste files named by project config.
 2. Evidence: literal outputs of steps 1–3 as run by YOU.
 3. Findings ranked by severity, each with file:line and exact fix.
 4. Deviations audit (step 5 result per bullet).
-5. Proposed taste/learning entries.
+5. Proposed taste/learning entries (append to the appropriate ledger when resolved).
 6. Escalations emitted, if any.
 
 ## Stop conditions
