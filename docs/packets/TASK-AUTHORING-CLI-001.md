@@ -2,7 +2,7 @@
 ---
 id: TASK-AUTHORING-CLI-001
 title: task authoring: structured CLI flow assembles packets without body files
-depends_on: ["TASK-CORE-DB-001","TASK-MD-EXPORT-001","TASK-RUBRIC-001"]
+depends_on: ["TASK-CORE-DB-001","TASK-MD-EXPORT-001","TASK-RUBRIC-001","GATE-WRITESET-001"]
 write_set: ["src/cli/commands/task.ts","src/cli/commands/task.test.ts","src/tasks/service.ts","src/tasks/service.test.ts","src/packets/document.ts","src/packets/document.test.ts","content/cli.md","content/roles/planner.md"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]
