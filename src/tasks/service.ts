@@ -34,9 +34,9 @@ const now = (): string => new Date().toISOString();
 export function generateIdFromType(store: Store, type: string): string {
   const prefix = TASK_TYPE_PREFIX[type];
   if (prefix === undefined) throw new LifecycleError(`unknown task type: ${type}`);
-  const rows = store.db.prepare("SELECT id FROM packets WHERE id LIKE ? ORDER BY id DESC LIMIT 1").all(`${prefix}-%`);
+  const start = prefix.length + 2, rows = store.db.prepare("SELECT id FROM packets WHERE id LIKE ? AND CAST(substr(id, ?) AS INTEGER) != 0 ORDER BY id DESC LIMIT 1").all(`${prefix}-%`, start);
   if (rows.length === 0) return `${prefix}-001`;
-  const num = parseInt(stringColumn(rows[0], 'id').replace(`${prefix}-`, ''), 10);
+  const num = parseInt(stringColumn(rows[0], 'id').slice(prefix.length + 1), 10);
   return `${prefix}-${String(Number.isNaN(num) ? 1 : num + 1).padStart(3, '0')}`;
 }
 

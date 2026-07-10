@@ -25,6 +25,16 @@ them into the repo; read them on demand.
 
 The reviewer checklist lives at `sv-playbook docs review` and runs in full on every PR.
 
+Taste ledgers are per-project config documents (NOT engine defaults):
+- `sv-playbook docs taste/product` — product judgments: priorities, shippable bar, tier philosophy, recurring yes/no calls.
+- `sv-playbook docs taste/engineering` — engineering judgments: conventions, quality bar, single-source expectations.
+- `sv-playbook docs taste/decisions` — owner decisions as reusable preferences (rule + scope + rationale + date).
+
+Each ledger is an appendable list of entries. The reviewer consults all
+three during the taste pass; a finding not covered by any entry escalates,
+and resolving it appends a new entry. (v2: `sv-playbook decision` command to
+manage entries CLI-only.)
+
 ### `sv-playbook task create|amend|list|start|move|show|recover|takeover|note|brief`
 
 When: use `task create` to author a packet before implementation, `task amend` to edit its definition while it is still in `draft` or `ready`, `task list`
