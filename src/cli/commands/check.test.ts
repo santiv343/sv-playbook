@@ -61,3 +61,76 @@ test('check structure fails when a packet is missing a required section', async 
     assert.ok(output.includes('Stop conditions') || output.includes('FOO-001'), `expected missing section mention, got: ${output}`);
   });
 });
+
+test('check structure distinguishes historical baselined packet violations from new packet violations', async () => {
+  await inTempRepo(async (root) => {
+    const config = {
+      productName: 'test',
+      chatLanguage: 'en',
+      tier: 'TIER-2',
+      verifyCommand: 'node -e process.exit(0)',
+      autonomy: 'strict',
+      backup: { enabled: false, retention: 3, maxAgeHours: 24, onEvents: ['done'] },
+      gates: { maxLines: 350, maxLinesPerFunction: 60, complexity: 10, cognitiveComplexity: 10, layout: true },
+      baseline: { fingerprints: ['docs/packets/OLD-001.md'] },
+    };
+    await writeFile(join(root, 'playbook.config.json'), JSON.stringify(config), 'utf-8');
+
+    const frontmatter = [
+      '---',
+      'id: FOO-001',
+      'title: test',
+      'depends_on: []',
+      'write_set: ["src/x.ts"]',
+      'requirements: []',
+      'evidence_required: []',
+      '---',
+    ].join('\n');
+    const body = ['', '## Task', 'do something'].join('\n');
+
+    const packetsDir = join(root, 'docs', 'packets');
+    await mkdir(packetsDir, { recursive: true });
+
+    const makePacket = (id: string) =>
+      `<!-- GENERATED FROM THE BOARD — do not edit; use \`task amend\` -->\n${frontmatter.replace('FOO-001', id)}\n${body}\n`;
+    await writeFile(join(packetsDir, 'OLD-001.md'), makePacket('OLD-001'), 'utf-8');
+    await writeFile(join(packetsDir, 'NEW-001.md'), makePacket('NEW-001'), 'utf-8');
+
+    const io = fakeIo();
+    const code = await main(['check', 'structure'], io);
+    const output = io.outLines.join('\n');
+
+    assert.ok(output.includes('baselined'), 'baselined packet should be grandfathered');
+    assert.notEqual(code, EXIT.OK, 'expected non-zero exit because new packet violates');
+    assert.ok(output.includes('NEW-001'), 'new packet violation should be reported');
+    assert.ok(!output.includes('OLD-001.md: missing required section'), 'baselined packet should not also be reported as a missing-section violation');
+  });
+});
+
+test('check structure skips malformed frontmatter for baselined packets', async () => {
+  await inTempRepo(async (root) => {
+    const config = {
+      productName: 'test',
+      chatLanguage: 'en',
+      tier: 'TIER-2',
+      verifyCommand: 'node -e process.exit(0)',
+      autonomy: 'strict',
+      backup: { enabled: false, retention: 3, maxAgeHours: 24, onEvents: ['done'] },
+      gates: { maxLines: 350, maxLinesPerFunction: 60, complexity: 10, cognitiveComplexity: 10, layout: true },
+      baseline: { fingerprints: ['docs/packets/BROKEN-001.md'] },
+    };
+    await writeFile(join(root, 'playbook.config.json'), JSON.stringify(config), 'utf-8');
+
+    const packetsDir = join(root, 'docs', 'packets');
+    await mkdir(packetsDir, { recursive: true });
+
+    await writeFile(join(packetsDir, 'BROKEN-001.md'), 'not valid frontmatter at all\n', 'utf-8');
+
+    const io = fakeIo();
+    const code = await main(['check', 'structure'], io);
+    const output = io.outLines.join('\n');
+
+    assert.ok(output.includes('baselined frontmatter error'), 'baselined malformed frontmatter should be skipped');
+    assert.equal(code, EXIT.OK, 'should exit 0 when only baselined broken packets exist');
+  });
+});

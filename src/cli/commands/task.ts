@@ -250,6 +250,7 @@ function handleRelease(args: string[], io: Io): number {
   return withStore((store) => {
     releaseLease(store, ensureSession(store, process.cwd()), packetId);
     io.out(`released ${packetId}`);
+    io.out(`warning: ${packetId} stays active without a lease; the next owner must run task takeover ${packetId}`);
     return EXIT.OK;
   });
 }
