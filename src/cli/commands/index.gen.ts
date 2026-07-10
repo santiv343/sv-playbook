@@ -14,6 +14,5 @@ import { command as rebuild } from './rebuild.js';
 import { command as restore } from './restore.js';
 import { command as status } from './status.js';
 import { command as task } from './task.js';
-import { command as __fixture__ } from './__fixture__.js';
 
-export const allCommands: readonly Command[] = [adopt, backup, check, describe, doctor, docs, handoff, import_, instructions, rebuild, restore, status, task, __fixture__];
+export const allCommands: readonly Command[] = [adopt, backup, check, describe, doctor, docs, handoff, import_, instructions, rebuild, restore, status, task];
