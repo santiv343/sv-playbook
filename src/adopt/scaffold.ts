@@ -29,11 +29,11 @@ function readGitSha(repoRoot: string): string {
   }
 }
 
-function generateConfig(productName: string, verifyCommand: string | null, repoRoot: string): Record<string, unknown> {
+function generateConfig(productName: string, verifyCommand: string | null, repoRoot: string, tier: string): Record<string, unknown> {
   const config: Record<string, unknown> = {
     productName,
     chatLanguage: DEFAULTS.chatLanguage,
-    tier: DEFAULTS.tier,
+    tier,
     verifyCommand: verifyCommand ?? DEFAULTS.verifyCommand,
     autonomy: DEFAULTS.autonomy,
     backup: {
@@ -114,11 +114,12 @@ export function scaffold(
   gaps: GapReport,
   force: boolean,
   store: Store,
+  tier: string = DEFAULTS.tier,
 ): ScaffoldResult {
   const configPath = join(repoRoot, 'playbook.config.json');
   const agentsPath = join(repoRoot, 'AGENTS.md');
   const productName = readProductName(repoRoot);
-  const config = generateConfig(productName, inventory.verifyCommand, repoRoot);
+  const config = generateConfig(productName, inventory.verifyCommand, repoRoot, tier);
 
   const alreadyAdopted = fileExists(configPath) || fileExists(agentsPath);
   if (alreadyAdopted && !force) {
@@ -126,7 +127,11 @@ export function scaffold(
   }
 
   writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
-  writeFileSync(agentsPath, agentsTemplate(productName), 'utf8');
+  let wroteAgents = false;
+  if (!fileExists(agentsPath)) {
+    writeFileSync(agentsPath, agentsTemplate(productName), 'utf8');
+    wroteAgents = true;
+  }
 
   let index = 1;
   for (const check of gaps.checks) {
@@ -135,5 +140,5 @@ export function scaffold(
     index++;
   }
 
-  return { wroteConfig: true, wroteAgents: true, packetCount: index - 1 };
+  return { wroteConfig: true, wroteAgents, packetCount: index - 1 };
 }
