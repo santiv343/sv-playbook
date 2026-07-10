@@ -45,6 +45,7 @@ export const PlaybookConfigSchema = s.object({
   tier: TierSchema,
   verifyCommand: s.string(),
   autonomy: AutonomySchema,
+  maxConcurrentWorkers: s.positiveInteger(),
   backup: BackupConfigSchema,
   baseline: s.optional(BaselineConfigSchema),
   gates: GatesConfigSchema,
@@ -54,6 +55,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function mergeNested<T extends Record<string, unknown>>(
+  raw: unknown,
+  defaults: T,
+): T {
+  return isRecord(raw) ? { ...defaults, ...raw } : { ...defaults };
+}
+
 function mergeDefaults(raw: Record<string, unknown>): Record<string, unknown> {
   const merged: Record<string, unknown> = {
     productName: raw.productName ?? DEFAULTS.productName,
@@ -61,12 +69,9 @@ function mergeDefaults(raw: Record<string, unknown>): Record<string, unknown> {
     tier: raw.tier ?? DEFAULTS.tier,
     verifyCommand: raw.verifyCommand ?? DEFAULTS.verifyCommand,
     autonomy: raw.autonomy ?? DEFAULTS.autonomy,
-    backup: isRecord(raw.backup)
-      ? { ...DEFAULTS.backup, ...raw.backup }
-      : { ...DEFAULTS.backup },
-    gates: isRecord(raw.gates)
-      ? { ...DEFAULTS.gates, ...raw.gates }
-      : { ...DEFAULTS.gates },
+    maxConcurrentWorkers: raw.maxConcurrentWorkers ?? DEFAULTS.maxConcurrentWorkers,
+    backup: mergeNested(raw.backup, DEFAULTS.backup),
+    gates: mergeNested(raw.gates, DEFAULTS.gates),
   };
   if (raw.baseline !== undefined) {
     merged.baseline = isRecord(raw.baseline) ? raw.baseline : undefined;

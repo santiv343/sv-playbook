@@ -6,7 +6,7 @@ nothing else. This file is the single source — do not hand-write variants.
 
 ```
 ASSIGNMENT: PACKET_ID = <id>
-ASSIGNMENT: WORKDIR = <absolute path, e.g. C:\Users\you\projects\wt-<id-lower>>
+ASSIGNMENT: WORKDIR = <absolute path under repo-root/.worktrees/, e.g. /home/user/project/.worktrees/<packet-id>>
 
 You are a worker. Follow these steps EXACTLY in order. Never skip a step.
 Never do anything not listed. Replace PACKET_ID and WORKDIR everywhere.

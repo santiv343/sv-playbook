@@ -5,6 +5,11 @@ template (`docs dispatch/worker`) is identical for every harness — only the
 spawn recipe below varies. Dispatch events must record (harness, model) so
 rotation yields comparative rework/cost telemetry.
 
+**Worktree location convention**: worker worktrees live under
+`<repo-root>/.worktrees/<packet-id>`. The harness creates the worktree at that
+path. This keeps worktrees scoped to the repo and hidden from project listings
+(`.worktrees/` is gitignored).
+
 | Harness | Version | Spawn (non-interactive) | Boot latency | Kill | Live view |
 | --- | --- | --- | --- | --- | --- |
 | opencode | 1.17.15 | `opencode serve --port <P>` once, then `POST /session` + `POST /session/{id}/prompt_async` | seconds (warm server) | `POST /session/{id}/abort` | `GET /session/{id}/message` |
