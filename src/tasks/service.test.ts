@@ -373,6 +373,13 @@ test('importPackets returns zeros for a missing packets directory', async () => 
   assert.equal(result.imported, 0);
   assert.equal(result.updated, 0);
 });
+test("task brief prepends the universal acceptance rubric to every worker prompt", async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('RUB-001'), 'Body.\n');
+  const brief = briefPacket(store, 'RUB-001');
+  assert.ok(brief.includes('## Universal Acceptance Rubric'), 'brief should contain the rubric marker');
+});
+
 test('amend updates the body and write_set in the DB and regenerates the export', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('AMD-001'), 'a');
