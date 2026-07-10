@@ -276,14 +276,18 @@ export function takeoverPacket(
   packetId: string, force: boolean,
 ): RecoveryReport {
   const lease = leaseOf(store, packetId);
-  if (lease === undefined) throw new LifecycleError('no lease to take over', 'use task start');
-  if (lease.sessionId === sessionId && !lease.stale) throw new LifecycleError('you already hold this lease');
-  if (!lease.stale && !force) throw new LifecycleError('lease is live', 'pause the holder or pass --force');
+  if (lease === undefined && currentStatus(store, packetId) !== STATUS.ACTIVE) {
+    throw new LifecycleError('no lease to take over', 'use task start');
+  }
+  if (lease !== undefined) {
+    if (lease.sessionId === sessionId && !lease.stale) throw new LifecycleError('you already hold this lease');
+    if (!lease.stale && !force) throw new LifecycleError('lease is live', 'pause the holder or pass --force');
+  }
   transact(store, () => {
     store.db.prepare(DELETE_LEASE_SQL).run(packetId);
     store.db.prepare(INSERT_LEASE_SQL).run(packetId, sessionId, worktree, now(), now());
     store.db.prepare(INSERT_EVENT_SQL)
-      .run(sessionId, packetId, EVENT_TAKEOVER, `from ${lease.sessionId} force=${force}`, now());
+      .run(sessionId, packetId, EVENT_TAKEOVER, `from ${lease?.sessionId ?? 'none'} force=${force}`, now());
   });
   return recoverPacket(store, packetId);
 }
