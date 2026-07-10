@@ -41,6 +41,9 @@ is the no-direct-push + status-check block; an agent that merges or pushes to
 - [ ] Evidence quotes literal command output; SHAs come from git, not memory.
 - [ ] Docs the change makes stale are updated in the same PR.
 
+## Root-cause bar (PRINCIPLE-014)
+- [ ] Did this change close the class of failure, or only the instance?
+
 ## Taste pass
 - [ ] Read the user's global + project taste files; flag anything that violates
       an entry, and propose new taste entries for corrections the review makes.
