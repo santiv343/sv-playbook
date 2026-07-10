@@ -53,7 +53,6 @@ test('start requires ready; wrong state names the state', async () => {
   const s = ensureSession(store, root);
   assert.throws(() => { startPacket(store, s, root, 'P2-001'); }, /wrong state draft/);
 });
-
 test('start matrix: same-session idempotent, other-session refused', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P2-001'), 'a');
@@ -65,7 +64,6 @@ test('start matrix: same-session idempotent, other-session refused', async () =>
   const s2 = ensureSession(store, wt2);
   assert.throws(() => { startPacket(store, s2, wt2, 'P2-001'); }, /held by session/);
 });
-
 test('active exits require the lease holder; done clears the lease', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P2-001'), 'a');
@@ -77,13 +75,11 @@ test('active exits require the lease holder; done clears the lease', async () =>
   movePacket(store, s1, 'P2-001', 'done');
   assert.equal(listPackets(store)[0]?.status, 'done');
 });
-
 test('illegal transition is refused with both statuses named', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P2-001'), 'a');
   assert.throws(() => { movePacket(store, undefined, 'P2-001', 'done'); }, /draft.*done/);
 });
-
 test('ensureSession is stable per worktree (reads .svp-session back)', async () => {
   const { root, store } = await setup();
   const a = ensureSession(store, root);
@@ -92,15 +88,13 @@ test('ensureSession is stable per worktree (reads .svp-session back)', async () 
   const onDisk = (await readFile(join(root, '.svp-session'), 'utf8')).trim();
   assert.equal(onDisk, a);
 });
-
 test('leaseOf reports holder and freshness; refreshHeartbeat updates it', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P3-001'), 'a');
   const s1 = ensureSession(store, root);
   movePacket(store, undefined, 'P3-001', 'ready');
   startPacket(store, s1, root, 'P3-001');
-  const lease = leaseOf(store, 'P3-001');
-  assert.ok(lease !== undefined);
+  const lease = leaseOf(store, 'P3-001'); assert.ok(lease !== undefined);
   assert.equal(lease.sessionId, s1);
   assert.equal(lease.stale, false);
   store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE packet_id = ?').run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), 'P3-001');
@@ -109,7 +103,6 @@ test('leaseOf reports holder and freshness; refreshHeartbeat updates it', async 
   refreshHeartbeat(store, s1);
   assert.equal(leaseOf(store, 'P3-001')?.stale, false);
 });
-
 test('takeover: no lease -> error; stale lease -> allowed; live lease needs force', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P3-002'), 'a');
@@ -120,13 +113,10 @@ test('takeover: no lease -> error; stale lease -> allowed; live lease needs forc
   movePacket(store, undefined, 'P3-002', 'ready');
   startPacket(store, s1, root, 'P3-002');
   assert.throws(() => { takeoverPacket(store, s2, wt2, 'P3-002', false); }, /lease is live/);
-  const forced = takeoverPacket(store, s2, wt2, 'P3-002', true);
-  assert.equal(forced.lease?.sessionId, s2);
+  const forced = takeoverPacket(store, s2, wt2, 'P3-002', true); assert.equal(forced.lease?.sessionId, s2);
   store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE packet_id = ?').run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), 'P3-002');
-  const back = takeoverPacket(store, s1, root, 'P3-002', false);
-  assert.equal(back.lease?.sessionId, s1);
+  const back = takeoverPacket(store, s1, root, 'P3-002', false); assert.equal(back.lease?.sessionId, s1);
 });
-
 test('recover reports status, lease and recent history without mutating', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P3-003'), 'a');
@@ -136,7 +126,6 @@ test('recover reports status, lease and recent history without mutating', async 
   assert.equal(report.lease, undefined);
   assert.ok(report.lastTransitions.length >= 2);
 });
-
 test('note records a breadcrumb event visible in recover', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P3-004'), 'a');
@@ -217,16 +206,14 @@ test('moving to review captures head evidence as events', async () => {
   movePacket(store, s1, 'E-001', 'review');
   const events = store.db.prepare("SELECT detail FROM events WHERE command = 'evidence'").all();
   assert.equal(events.length, 2);
-  const detail = stringColumn(events[0], 'detail');
-  assert.ok(detail.startsWith('head-sha '));
+  const detail = stringColumn(events[0], 'detail'); assert.ok(detail.startsWith('head-sha '));
   assert.match(detail, /^head-sha [0-9a-f]{40}$/);
 });
 
 test('task brief reads the body from the DB, not the markdown file', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P3-DB'), 'Hello from DB.\n');
-  const path = join(root, 'docs', 'packets', 'P3-DB.md');
-  await writeFile(path, 'garbage content', 'utf8');
+  await writeFile(join(root, 'docs', 'packets', 'P3-DB.md'), 'garbage content', 'utf8');
   const brief = briefPacket(store, 'P3-DB');
   assert.ok(brief.includes('Hello from DB.'), 'brief should contain body from DB, not md file');
 });
@@ -355,6 +342,14 @@ test('amend updates the body and write_set in the DB and regenerates the export'
   amendPacket(store, root, 'AMD-001', { body: 'b', writeSet: ['src/a/**'] });
   assert.equal(stringColumn(store.db.prepare('SELECT body FROM packets WHERE id = ?').get('AMD-001'), 'body'), 'b');
   assert.ok(stringColumn(store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get('AMD-001'), 'write_set').includes('src/a/**'));
+});
+
+test('sequential creates of the same type increment the generated id past existing ones', async () => {
+  const { root, store } = await setup();
+  store.db.prepare("INSERT INTO packets (id,title,path,status,created_at,updated_at) VALUES ('STORE-041','s','/t','draft',datetime('now'),datetime('now'))").run();
+  assert.equal(generateIdFromType(store, 'store'), 'STORE-042');
+  createPacket(store, root, def('STORE-042'), 'b\n', 'store'); assert.equal(generateIdFromType(store, 'store'), 'STORE-043');
+  store.db.prepare("INSERT INTO packets (id,title,path,status,created_at,updated_at) VALUES ('STORE-MIGRATION-MAIN-001','m','/t','draft',datetime('now'),datetime('now'))").run(); assert.equal(generateIdFromType(store, 'store'), 'STORE-043');
 });
 
 test('move to review is refused when the project verify command fails', async () => {
