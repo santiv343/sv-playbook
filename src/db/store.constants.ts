@@ -70,4 +70,11 @@ CREATE TABLE IF NOT EXISTS constitution_principles (
   rationale TEXT NOT NULL DEFAULT '',
   sort_order INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS decisions (
+  id TEXT PRIMARY KEY,
+  question TEXT NOT NULL,
+  answer TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
