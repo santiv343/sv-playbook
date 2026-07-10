@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from '../db/store.types.js';
@@ -226,10 +226,8 @@ function gateVerify(store: Store, packetId: string, from: string, to: string): v
   const cfgPath = join(lease.worktree, 'playbook.config.json');
   if (!existsSync(cfgPath) || /enforceVerifyOnReview\s*:\s*false/.test(readFileSync(cfgPath, 'utf8'))) return;
   const config = loadConfig(lease.worktree);
-  const cmd = config.verifyCommand.split(/\s+/).filter(Boolean);
-  const bin = cmd[0];
-  if (!bin) return;
-  try { execFileSync(bin, cmd.slice(1), { cwd: lease.worktree, timeout: 120_000, stdio: 'pipe' }); }
+  if (config.verifyCommand.trim() === '') return;
+  try { execSync(config.verifyCommand, { cwd: lease.worktree, timeout: 120_000, stdio: 'pipe' }); }
   catch { throw new LifecycleError(`verify command failed: ${config.verifyCommand}`); }
 }
 function captureEvidence(store: Store, packetId: string, from: string, to: string): void {
