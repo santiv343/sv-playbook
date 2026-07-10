@@ -57,10 +57,8 @@ function recordTransition(store: Store, packetId: string, from: string, to: stri
 }
 
 export function overlaps(a: string, b: string): boolean {
-  const pa = a.replace(/\/\*\*$|\/\*$/, '');
-  const pb = b.replace(/\/\*\*$|\/\*$/, '');
-  if (pa === pb) return true;
-  return pa.startsWith(pb + '/') || pb.startsWith(pa + '/');
+  const pa = a.replace(/\/\*\*$|\/\*$/, ''), pb = b.replace(/\/\*\*$|\/\*$/, '');
+  return pa === pb || pa.startsWith(pb + '/') || pb.startsWith(pa + '/');
 }
 
 export function createPacket(store: Store, docRoot: string, def: PacketDefinition, body: string, type?: string): void {
@@ -97,10 +95,7 @@ function upsertPacketFile(store: Store, path: string): 'imported' | 'updated' {
   return result;
 }
 function upsertDeps(store: Store, def: PacketDefinition): void {
-  for (const depId of def.dependsOn) {
-    const depExists = store.db.prepare(EXISTS_SQL).get(depId);
-    if (depExists !== undefined) store.db.prepare('INSERT OR IGNORE INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);
-  }
+  for (const depId of def.dependsOn) if (store.db.prepare(EXISTS_SQL).get(depId) !== undefined) store.db.prepare('INSERT OR IGNORE INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);
 }
 export function importPackets(store: Store, docRoot: string): ImportResult {
   const dir = join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
@@ -113,26 +108,12 @@ export function importPackets(store: Store, docRoot: string): ImportResult {
   return { imported, updated };
 }
 export function importPacketFile(store: Store, docRoot: string, pathOrId: string): string {
-  let filePath: string;
-  if (pathOrId.includes('/') || pathOrId.includes('\\') || pathOrId.endsWith('.md')) {
-    filePath = pathOrId;
-  } else {
-    filePath = join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR, `${pathOrId}.md`);
-  }
+  const filePath = pathOrId.includes('/') || pathOrId.includes('\\') || pathOrId.endsWith('.md') ? pathOrId : join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR, `${pathOrId}.md`);
   if (!existsSync(filePath)) throw new LifecycleError(`packet file not found: ${filePath}`);
-  const text = readFileSync(filePath, 'utf8');
-  const { definition: def, body } = parsePacketDocument(text);
-  const prefixes = Object.values(TASK_TYPE_PREFIX);
-  const hasKnownPrefix = prefixes.some((p) => def.id.startsWith(p + '-'));
-  if (!hasKnownPrefix) throw new LifecycleError(`unknown packet id prefix: ${def.id}`);
-  const exists = store.db.prepare(EXISTS_SQL).get(def.id);
-  if (exists !== undefined) throw new LifecycleError(`packet already exists in DB: ${def.id}`, 'use task amend to update');
-  transact(store, () => {
-    store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, filePath, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now());
-    recordTransition(store, def.id, 'none', STATUS.DRAFT);
-    upsertDeps(store, def);
-    store.db.prepare(INSERT_EVENT_SQL).run(null, def.id, EVENT_IMPORTED, `imported from ${filePath}`, now());
-  });
+  const { definition: def, body } = parsePacketDocument(readFileSync(filePath, 'utf8'));
+  if (!Object.values(TASK_TYPE_PREFIX).some((p) => def.id.startsWith(p + '-'))) throw new LifecycleError(`unknown packet id prefix: ${def.id}`);
+  if (store.db.prepare(EXISTS_SQL).get(def.id) !== undefined) throw new LifecycleError(`packet already exists in DB: ${def.id}`, 'use task amend to update');
+  transact(store, () => { store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, filePath, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now()); recordTransition(store, def.id, 'none', STATUS.DRAFT); upsertDeps(store, def); store.db.prepare(INSERT_EVENT_SQL).run(null, def.id, EVENT_IMPORTED, `imported from ${filePath}`, now()); });
   return def.id;
 }
 export function listPackets(store: Store): Array<{ id: string; title: string; status: string; priority: number; updatedAt: string }> {
@@ -199,8 +180,7 @@ export function releaseLease(store: Store, sessionId: string, packetId: string):
   transact(store, () => { store.db.prepare(DELETE_LEASE_SQL).run(packetId); });
 }
 function parseGlobs(raw: string): string[] {
-  const parsed: unknown = JSON.parse(raw);
-  return Array.isArray(parsed) ? parsed.filter((s) => typeof s === 'string') : [];
+  const parsed: unknown = JSON.parse(raw); return Array.isArray(parsed) ? parsed.filter((s) => typeof s === 'string') : [];
 }
 function ourGlobs(store: Store, packetId: string): string[] {
   const row = store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get(packetId);

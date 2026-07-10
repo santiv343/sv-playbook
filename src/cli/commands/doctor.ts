@@ -155,33 +155,33 @@ function activeWithoutLeaseCheck(repoRoot: string): CheckResult {
   }
 }
 
+function driftResult(store: Store, repoRoot: string): CheckResult {
+  const dbIds = new Set(
+    store.db.prepare('SELECT id FROM packets').all().map((row) => stringColumn(row, 'id')),
+  );
+  const packetsDir = join(repoRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
+  if (!existsSync(packetsDir)) {
+    return { label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.OK, detail: 'no packets directory' };
+  }
+  const drifted: string[] = [];
+  for (const entry of readdirSync(packetsDir)) {
+    if (!entry.endsWith('.md')) continue;
+    const id = entry.replace(/\.md$/, '');
+    if (!dbIds.has(id)) drifted.push(id);
+  }
+  if (drifted.length === 0) {
+    return { label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.OK, detail: 'all packet files in DB' };
+  }
+  return {
+    label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.WARN,
+    detail: `${drifted.length} packet file(s) in ${PACKETS_DOCS_DIR}/${PACKETS_DIR} not in DB: ${drifted.join(', ')} — use 'task import <id>' to import`,
+  };
+}
+
 function packetsDriftCheck(repoRoot: string): CheckResult {
   try {
     const store = openStore(repoRoot);
-    try {
-      const dbIds = new Set(
-        store.db.prepare('SELECT id FROM packets').all().map((row) => stringColumn(row, 'id')),
-      );
-      const packetsDir = join(repoRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
-      if (!existsSync(packetsDir)) {
-        return { label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.OK, detail: 'no packets directory' };
-      }
-      const drifted: string[] = [];
-      for (const entry of readdirSync(packetsDir)) {
-        if (!entry.endsWith('.md')) continue;
-        const id = entry.replace(/\.md$/, '');
-        if (!dbIds.has(id)) drifted.push(id);
-      }
-      if (drifted.length === 0) {
-        return { label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.OK, detail: 'all packet files in DB' };
-      }
-      return {
-        label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.WARN,
-        detail: `${drifted.length} packet file(s) in ${PACKETS_DOCS_DIR}/${PACKETS_DIR} not in DB: ${drifted.join(', ')} — use 'task import <id>' to import`,
-      };
-    } finally {
-      store.close();
-    }
+    try { return driftResult(store, repoRoot); } finally { store.close(); }
   } catch (error) {
     return { label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.FAIL, detail: errorMessage(error) };
   }
