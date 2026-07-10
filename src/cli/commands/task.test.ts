@@ -222,7 +222,7 @@ test('an existing packet file can be imported into the DB through the CLI and ne
       assert.equal(stringColumn(row, 'status'), 'draft');
       assert.equal(stringColumn(row, 'body'), 'This packet was imported.');
 
-      const event = store.db.prepare("SELECT command, detail FROM events WHERE packet_id = ? AND command = 'imported'").get('FLOW-IMP-001');
+      const event = store.db.prepare("SELECT command, detail FROM events WHERE packet_id = ? AND command = 'note' AND detail LIKE '%imported%'").get('FLOW-IMP-001');
       assert.ok(event !== undefined, 'imported event must exist');
       assert.ok(stringColumn(event, 'detail').includes('FLOW-IMP-001.md'));
 

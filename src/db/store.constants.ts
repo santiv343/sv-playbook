@@ -1,4 +1,4 @@
-import { EVENT_EVIDENCE, EVENT_IMPORTED, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES, STATUS } from '../tasks/service.constants.js';
+import { EVENT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES, STATUS } from '../tasks/service.constants.js';
 
 export const SCHEMA_VERSION = 7;
 export const SVP_DIR = '.svp';
@@ -7,7 +7,7 @@ export const DB_FILE = 'playbook.sqlite';
 const sqlString = (value: string): string => `'${value.replaceAll("'", "''")}'`;
 const sqlInList = (values: readonly string[]): string => values.map(sqlString).join(', ');
 const TRANSITION_STATUSES = ['none', ...PACKET_STATUSES];
-const EVENT_COMMANDS = [EVENT_TRANSITION, EVENT_NOTE, EVENT_TAKEOVER, EVENT_EVIDENCE, EVENT_IMPORTED];
+const EVENT_COMMANDS = [EVENT_TRANSITION, EVENT_NOTE, EVENT_TAKEOVER, EVENT_EVIDENCE];
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS packets (

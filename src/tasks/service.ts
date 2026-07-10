@@ -14,7 +14,6 @@ import {
   ALLOWED,
   DELETE_LEASE_SQL,
   EVENT_EVIDENCE,
-  EVENT_IMPORTED,
   EVENT_NOTE,
   EVENT_TAKEOVER,
   EVENT_TRANSITION,
@@ -113,7 +112,7 @@ export function importPacketFile(store: Store, docRoot: string, pathOrId: string
   const { definition: def, body } = parsePacketDocument(readFileSync(filePath, 'utf8'));
   if (!Object.values(TASK_TYPE_PREFIX).some((p) => def.id.startsWith(p + '-'))) throw new LifecycleError(`unknown packet id prefix: ${def.id}`);
   if (store.db.prepare(EXISTS_SQL).get(def.id) !== undefined) throw new LifecycleError(`packet already exists in DB: ${def.id}`, 'use task amend to update');
-  transact(store, () => { store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, filePath, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now()); recordTransition(store, def.id, 'none', STATUS.DRAFT); upsertDeps(store, def); store.db.prepare(INSERT_EVENT_SQL).run(null, def.id, EVENT_IMPORTED, `imported from ${filePath}`, now()); });
+  transact(store, () => { store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, filePath, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now()); recordTransition(store, def.id, 'none', STATUS.DRAFT); upsertDeps(store, def); store.db.prepare(INSERT_EVENT_SQL).run(null, def.id, EVENT_NOTE, `imported from ${filePath}`, now()); });
   return def.id;
 }
 export function listPackets(store: Store): Array<{ id: string; title: string; status: string; priority: number; updatedAt: string }> {
