@@ -19,7 +19,7 @@ function renderStatus(status: BoardStatus, io: Io): void {
     io.out(line);
   }
   io.out('');
-  for (const line of formatFooter(status.backup.ageHours, status.packets)) {
+  for (const line of formatFooter(status.backup, status.packets)) {
     io.out(line);
   }
 }

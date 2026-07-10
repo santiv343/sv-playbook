@@ -22,6 +22,13 @@ export interface StatusPacket {
 
 export interface StatusBackup {
   readonly ageHours: number | undefined;
+  readonly stale: boolean;
+  readonly verified: boolean;
+  readonly failed: boolean;
+  readonly failedCycles: number;
+  readonly terminalPacketCount: number | undefined;
+  readonly liveTerminalPacketCount: number | undefined;
+  readonly terminalCountRegressed: boolean;
 }
 
 export interface BoardStatus {

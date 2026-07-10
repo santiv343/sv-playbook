@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { writeFileSync, existsSync, readFileSync, readdirSync, utimesSync } from 'node:fs';
+import { copyFileSync, writeFileSync, existsSync, readFileSync, readdirSync, utimesSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { createStateBackup, restoreStateBackup, getBackupStatus, verifyLatestBackup, needsBackup, recordBackupFailure, recordBackupSuccess, backupFailedCycles } from './backup.js';
@@ -40,6 +40,15 @@ function packetExists(repoRoot: string, id: string): boolean {
   try {
     const row = store.db.prepare('SELECT 1 FROM packets WHERE id = ?').get(id);
     return row !== undefined;
+  } finally {
+    store.close();
+  }
+}
+
+function markPacketDone(repoRoot: string, id: string): void {
+  const store = openStore(repoRoot);
+  try {
+    store.db.prepare('UPDATE packets SET status = ?, updated_at = ? WHERE id = ?').run('done', new Date().toISOString(), id);
   } finally {
     store.close();
   }
@@ -107,6 +116,34 @@ test('restore rejects a backup with wrong schema version', async () => {
   );
 
   assert.ok(packetExists(repoRoot, 'pkt-known'), 'known packet should still exist after failed restore');
+});
+
+test('restore accepts a compatible older schema backup for migration on next open', async () => {
+  const repoRoot = await createTestRepo();
+
+  createPacket(repoRoot, 'pkt-legacy', 'Legacy Packet');
+  const goodBackup = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL });
+  const legacyPath = join(repoRoot, 'legacy-v6.sqlite');
+  copyFileSync(goodBackup.sqlitePath, legacyPath);
+
+  const legacyDb = new DatabaseSync(legacyPath);
+  try {
+    legacyDb.exec(`PRAGMA user_version = ${SCHEMA_VERSION - 1}`);
+  } finally {
+    legacyDb.close();
+  }
+
+  restoreStateBackup(repoRoot, legacyPath, false);
+
+  const store = openStore(repoRoot);
+  try {
+    const version = numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version');
+    assert.equal(version, SCHEMA_VERSION);
+    const row = store.db.prepare('SELECT 1 FROM packets WHERE id = ?').get('pkt-legacy');
+    assert.ok(row !== undefined, 'legacy backup packet should survive restore and migration');
+  } finally {
+    store.close();
+  }
 });
 
 test('restore rejects a backup with sha256 mismatch', async () => {
@@ -179,6 +216,22 @@ test('backup status reports verified true after successful creation', async () =
   const status = getBackupStatus(repoRoot);
   assert.ok(status.verified, 'backup should be verified after creation');
   assert.ok(!status.failed, 'backup should not be failed after successful creation');
+});
+
+test('backup status flags newest backup with fewer terminal packets than the live store', async () => {
+  const repoRoot = await createTestRepo();
+
+  createPacket(repoRoot, 'pkt-one', 'First terminal packet');
+  markPacketDone(repoRoot, 'pkt-one');
+  createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL });
+
+  createPacket(repoRoot, 'pkt-two', 'Second terminal packet');
+  markPacketDone(repoRoot, 'pkt-two');
+
+  const status = getBackupStatus(repoRoot);
+  assert.equal(status.terminalPacketCount, 1);
+  assert.equal(status.liveTerminalPacketCount, 2);
+  assert.ok(status.terminalCountRegressed, 'backup should be marked semantically behind the live store');
 });
 
 test('backup status reports failed false when no backup exists', async () => {

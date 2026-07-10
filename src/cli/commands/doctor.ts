@@ -1,14 +1,14 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { loadConfig } from '../../config.js';
+import { getBackupStatus } from '../../db/backup.js';
+import { stringColumn } from '../../db/rows.js';
+import { commonRoot, openStore } from '../../db/store.js';
+import type { Store } from '../../db/store.types.js';
+import { LEASE_TTL_MS, PACKETS_DIR, PACKETS_DOCS_DIR, STATUS } from '../../tasks/service.constants.js';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
-import { commonRoot, openStore } from '../../db/store.js';
-import { latestStateBackupAgeHours } from '../../db/backup.js';
-import { PACKETS_DIR, PACKETS_DOCS_DIR, LEASE_TTL_MS, STATUS } from '../../tasks/service.constants.js';
-import { stringColumn } from '../../db/rows.js';
-import { loadConfig } from '../../config.js';
-import type { Store } from '../../db/store.types.js';
 import {
   DOCTOR_DETAIL,
   DOCTOR_LABEL,
@@ -89,24 +89,37 @@ function backupCheck(repoRoot: string): CheckResult {
   if (!config.backup.enabled) {
     return { label: DOCTOR_LABEL.BACKUP, status: DOCTOR_STATUS.OK, detail: DOCTOR_DETAIL.BACKUP_DISABLED };
   }
-  const age = latestStateBackupAgeHours(repoRoot);
+
+  const backupStatus = getBackupStatus(repoRoot);
+  const age = backupStatus.ageHours;
   if (age === undefined) {
     return { label: DOCTOR_LABEL.BACKUP, status: DOCTOR_STATUS.WARN, detail: DOCTOR_DETAIL.NO_BACKUP };
   }
-  const status = age >= config.backup.maxAgeHours ? DOCTOR_STATUS.WARN : DOCTOR_STATUS.OK;
+  if (backupStatus.terminalCountRegressed) {
+    return {
+      label: DOCTOR_LABEL.BACKUP,
+      status: DOCTOR_STATUS.WARN,
+      detail: `${age.toFixed(1)} hours old; newest backup has ${backupStatus.terminalPacketCount} terminal packet(s), live DB has ${backupStatus.liveTerminalPacketCount}`,
+    };
+  }
+  if (backupStatus.failed) {
+    return { label: DOCTOR_LABEL.BACKUP, status: DOCTOR_STATUS.WARN, detail: `${age.toFixed(1)} hours old; newest backup is unverified` };
+  }
+
+  const status = backupStatus.stale || age >= config.backup.maxAgeHours ? DOCTOR_STATUS.WARN : DOCTOR_STATUS.OK;
   return { label: DOCTOR_LABEL.BACKUP, status, detail: `${age.toFixed(1)} hours old` };
 }
 
 export function reviewMergedCheckFromStore(store: Store): CheckResult {
   const rows = store.db.prepare(
-    "SELECT id, pr FROM packets WHERE status = ? AND pr IS NOT NULL",
+    'SELECT id, pr FROM packets WHERE status = ? AND pr IS NOT NULL',
   ).all(STATUS.REVIEW);
   if (rows.length === 0) {
     return { label: DOCTOR_LABEL.REVIEW_MERGED, status: DOCTOR_STATUS.OK, detail: 'no review packets have recorded PRs' };
   }
   const count = rows.length;
   const ids = rows.map((row) => stringColumn(row, 'id')).join(', ');
-  return { label: DOCTOR_LABEL.REVIEW_MERGED, status: DOCTOR_STATUS.WARN, detail: `${count} review packet(s) already merged — run task close: ${ids}` };
+  return { label: DOCTOR_LABEL.REVIEW_MERGED, status: DOCTOR_STATUS.WARN, detail: `${count} review packet(s) already merged - run task close: ${ids}` };
 }
 
 function reviewMergedCheck(repoRoot: string): CheckResult {
@@ -174,17 +187,17 @@ function renderCheck(check: CheckResult, io: Io): void {
 
 export const command: Command = {
   name: 'doctor',
-    summary: 'Diagnose Node, git, store, packet, and lease health',
-    run(args, io): Promise<number> {
-      const parsed = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } });
-      if (parsed.positionals.length > 0) {
-        io.err(DOCTOR_USAGE);
-        return Promise.resolve(EXIT.USAGE);
-      }
-      const checks = collectChecks();
-      if (parsed.values.json === true) io.out(JSON.stringify(checks));
-      else for (const check of checks) renderCheck(check, io);
-      const failed = checks.some((check) => check.status === DOCTOR_STATUS.FAIL);
-      return Promise.resolve(failed ? EXIT.GATE_FAIL : EXIT.OK);
-    },
+  summary: 'Diagnose Node, git, store, packet, and lease health',
+  run(args, io): Promise<number> {
+    const parsed = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } });
+    if (parsed.positionals.length > 0) {
+      io.err(DOCTOR_USAGE);
+      return Promise.resolve(EXIT.USAGE);
+    }
+    const checks = collectChecks();
+    if (parsed.values.json === true) io.out(JSON.stringify(checks));
+    else for (const check of checks) renderCheck(check, io);
+    const failed = checks.some((check) => check.status === DOCTOR_STATUS.FAIL);
+    return Promise.resolve(failed ? EXIT.GATE_FAIL : EXIT.OK);
+  },
 };

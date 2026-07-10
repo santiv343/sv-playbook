@@ -1,6 +1,6 @@
-import type { Store } from '../db/store.types.js';
+import { getBackupStatus } from '../db/backup.js';
 import { stringColumn } from '../db/rows.js';
-import { latestStateBackupAgeHours } from '../db/backup.js';
+import type { Store } from '../db/store.types.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import {
   COL_ID,
@@ -83,7 +83,8 @@ export function sortedPackets(packets: StatusPacket[]): StatusPacket[] {
 
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
-  return `${text.slice(0, max - 1)}…`;
+  if (max <= 3) return text.slice(0, max);
+  return `${text.slice(0, max - 3)}...`;
 }
 
 function leaseLabel(packet: StatusPacket): string {
@@ -98,7 +99,7 @@ function eventLabel(packet: StatusPacket): string {
 
 export function formatCountsHeader(counts: Record<string, number>): string {
   const parts = DISPLAY_ORDER.filter((s) => counts[s] !== undefined).map((s) => `${counts[s]} ${s}`);
-  return `Board: ${parts.join(' · ')}`;
+  return `Board: ${parts.join(' | ')}`;
 }
 
 export function formatStatusTable(packets: StatusPacket[]): string[] {
@@ -139,10 +140,13 @@ export function formatStatusTable(packets: StatusPacket[]): string[] {
   return lines;
 }
 
-export function formatFooter(backupAgeHours: number | undefined, packets: StatusPacket[]): string[] {
+export function formatFooter(backup: BoardStatus['backup'], packets: StatusPacket[]): string[] {
   const lines: string[] = [];
-  const detail = backupAgeHours === undefined ? 'none' : `${backupAgeHours.toFixed(1)} hours old`;
+  const detail = backup.ageHours === undefined ? 'none' : `${backup.ageHours.toFixed(1)} hours old`;
   lines.push(`backup: ${detail}`);
+  if (backup.terminalCountRegressed) {
+    lines.push(`backup warning: newest backup has ${backup.terminalPacketCount} terminal packet(s), live DB has ${backup.liveTerminalPacketCount}`);
+  }
   const totalLeases = packets.filter((p) => p.lease !== undefined).length;
   const liveLeases = packets.filter((p) => p.lease !== undefined && !p.lease.stale).length;
   lines.push(`${liveLeases}/${totalLeases} leases live`);
@@ -156,6 +160,6 @@ export function readBoardStatus(store: Store, repoRoot: string): BoardStatus {
   return {
     counts: countsFor(packets),
     packets,
-    backup: { ageHours: latestStateBackupAgeHours(repoRoot) },
+    backup: getBackupStatus(repoRoot),
   };
 }

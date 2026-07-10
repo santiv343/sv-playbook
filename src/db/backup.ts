@@ -5,13 +5,15 @@ import { basename, join, dirname, isAbsolute } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DB_FILE, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
 import { BACKUP_PREFIX, BACKUPS_DIR, BACKUP_REASON, BACKUP_RETENTION_DEFAULT, BACKUP_RETENTION_FLOOR_DEFAULT } from './backup.constants.js';
-import type { BackupOptions, BackupReport, RestoreReport } from './backup.types.js';
+import type { BackupOptions, BackupReport, BackupStatus, RestoreReport } from './backup.types.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import { stringColumn, numberColumn } from './rows.js';
 import { RestoreError } from './backup.errors.js';
 import { loadConfig } from '../config.js';
+import { terminalPacketCountAt } from './inspection.js';
 
 const now = (): string => new Date().toISOString();
+const MIN_RESTORABLE_SCHEMA_VERSION = 3;
 const stamp = (v: string): string => {
   const base = v.replace(/[:\-T.Z]/g, '').slice(0, 17);
   const suffix = Math.random().toString(36).slice(2, 6);
@@ -84,7 +86,6 @@ function failuresPath(repoRoot: string): string {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
-
 function failuresCount(repoRoot: string): number {
   const p = failuresPath(repoRoot);
   if (!existsSync(p)) return 0;
@@ -112,36 +113,60 @@ function markBackupVerified(sqlitePath: string): void {
   writeFileSync(mp, JSON.stringify(m, null, 2) + '\n', 'utf8');
 }
 
-function newestBackupMeta(dir: string): { verified: boolean; failedCycles: number } {
-  if (!existsSync(dir)) return { verified: false, failedCycles: 0 };
+interface NewestBackupMeta { verified: boolean; failedCycles: number; terminalPacketCount: number | undefined; }
+function metadataTerminalPacketCount(raw: Record<string, unknown>): number | undefined {
+  const value = raw.terminalPacketCount;
+  return typeof value === 'number' ? value : undefined;
+}
+
+function newestBackupMeta(dir: string): NewestBackupMeta {
+  if (!existsSync(dir)) return { verified: false, failedCycles: 0, terminalPacketCount: undefined };
   const newest = readdirSync(dir).filter((n) => n.endsWith('.sqlite'))
     .map((n) => ({ n, t: statSync(join(dir, n)).mtimeMs }))
     .sort((a, b) => b.t - a.t).at(0);
-  if (!newest) return { verified: false, failedCycles: 0 };
+  if (!newest) return { verified: false, failedCycles: 0, terminalPacketCount: undefined };
+  const sqlitePath = join(dir, newest.n);
   const mp = join(dir, newest.n.replace(/\.sqlite$/, '.json'));
-  if (!existsSync(mp)) return { verified: false, failedCycles: 0 };
+  if (!existsSync(mp)) {
+    return { verified: false, failedCycles: 0, terminalPacketCount: terminalPacketCountAt(sqlitePath) };
+  }
   try {
     const raw: unknown = JSON.parse(readFileSync(mp, 'utf8'));
-    if (!isRecord(raw)) return { verified: false, failedCycles: 0 };
+    if (!isRecord(raw)) {
+      return { verified: false, failedCycles: 0, terminalPacketCount: terminalPacketCountAt(sqlitePath) };
+    }
     const v = raw.verified === true;
     const fc = raw.failed_cycles;
-    return { verified: v, failedCycles: typeof fc === 'number' ? fc : 0 };
-  } catch { return { verified: false, failedCycles: 0 }; }
+    return {
+      verified: v,
+      failedCycles: typeof fc === 'number' ? fc : 0,
+      terminalPacketCount: metadataTerminalPacketCount(raw) ?? terminalPacketCountAt(sqlitePath),
+    };
+  } catch {
+    return { verified: false, failedCycles: 0, terminalPacketCount: terminalPacketCountAt(sqlitePath) };
+  }
 }
 
-export function getBackupStatus(repoRoot: string, maxAgeHours?: number): {
-  ageHours: number | undefined; stale: boolean; verified: boolean; failed: boolean; failedCycles: number;
-} {
+export function getBackupStatus(repoRoot: string, maxAgeHours?: number): BackupStatus {
   const config = loadConfig(repoRoot);
   const age = latestStateBackupAgeHours(repoRoot);
   const stale = age !== undefined && age >= (maxAgeHours ?? config.backup.maxAgeHours);
-  const meta = age !== undefined ? newestBackupMeta(resolveBackupsDir(repoRoot)) : { verified: false, failedCycles: 0 };
+  const meta = age !== undefined
+    ? newestBackupMeta(resolveBackupsDir(repoRoot))
+    : { verified: false, failedCycles: 0, terminalPacketCount: undefined };
+  const liveTerminalPacketCount = terminalPacketCountAt(dbPath(repoRoot));
+  const terminalCountRegressed = meta.terminalPacketCount !== undefined
+    && liveTerminalPacketCount !== undefined
+    && meta.terminalPacketCount < liveTerminalPacketCount;
   return {
     ageHours: age,
     stale,
     verified: meta.verified,
     failed: age !== undefined && !meta.verified,
     failedCycles: meta.failedCycles + failuresCount(repoRoot),
+    terminalPacketCount: meta.terminalPacketCount,
+    liveTerminalPacketCount,
+    terminalCountRegressed,
   };
 }
 
@@ -189,11 +214,14 @@ export function latestStateBackupAgeHours(repoRoot: string, resolvedDir?: string
 }
 
 function writeMetadata(repoRoot: string, report: BackupReport, reason: string): void {
-  writeFileSync(report.metadataPath, `${JSON.stringify({
+  const metadata: Record<string, unknown> = {
     dbFile: basename(report.sqlitePath), reason, schemaVersion: SCHEMA_VERSION,
     createdAt: report.createdAt, sourceBranch: gitValue(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD']),
     sourceSha: gitValue(repoRoot, ['rev-parse', 'HEAD']), sizeBytes: report.sizeBytes, sha256: report.sha256,
-  }, null, 2)}\n`, 'utf8');
+  };
+  const terminalPacketCount = terminalPacketCountAt(report.sqlitePath);
+  if (terminalPacketCount !== undefined) metadata.terminalPacketCount = terminalPacketCount;
+  writeFileSync(report.metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
 }
 
 function vacuumInto(sourcePath: string, destPath: string): void {
@@ -267,8 +295,8 @@ function checkDbIntegrity(db: DatabaseSync): void {
     throw new RestoreError(`backup integrity_check failed: ${integrityCheck}; restore a known-good backup instead`);
   }
   const userVersion = numberColumn(versionRow, 'user_version');
-  if (userVersion !== SCHEMA_VERSION) {
-    throw new RestoreError(`backup schema version ${userVersion} does not match expected ${SCHEMA_VERSION}; restore a compatible backup or migrate first`);
+  if (userVersion < MIN_RESTORABLE_SCHEMA_VERSION || userVersion > SCHEMA_VERSION) {
+    throw new RestoreError(`backup schema version ${userVersion} is not restorable by this build; restore a compatible backup or migrate first`);
   }
 }
 
