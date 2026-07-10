@@ -80,9 +80,8 @@ function importPacketsFromDocs(repoRoot: string, store: Store): number {
   return files.length;
 }
 
-export function rebuildCommand(): Command {
-  return {
-    name: 'rebuild',
+export const command: Command = {
+  name: 'rebuild',
     summary: 'Reconstruct operational DB from git packet exports',
     run(args, io): Promise<number> {
       const parsed = parseArgs({ args, allowPositionals: true, options: { force: { type: 'boolean' } } });
@@ -114,5 +113,4 @@ export function rebuildCommand(): Command {
         return Promise.resolve(EXIT.GATE_FAIL);
       }
     },
-  };
-}
+};

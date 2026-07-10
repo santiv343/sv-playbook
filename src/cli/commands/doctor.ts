@@ -172,9 +172,8 @@ function renderCheck(check: CheckResult, io: Io): void {
   io.out(`${check.label}: ${check.status} - ${check.detail}`);
 }
 
-export function doctorCommand(): Command {
-  return {
-    name: 'doctor',
+export const command: Command = {
+  name: 'doctor',
     summary: 'Diagnose Node, git, store, packet, and lease health',
     run(args, io): Promise<number> {
       const parsed = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } });
@@ -188,5 +187,4 @@ export function doctorCommand(): Command {
       const failed = checks.some((check) => check.status === DOCTOR_STATUS.FAIL);
       return Promise.resolve(failed ? EXIT.GATE_FAIL : EXIT.OK);
     },
-  };
-}
+};

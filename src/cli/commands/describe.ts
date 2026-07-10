@@ -2,9 +2,8 @@ import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
 import { commands } from '../registry.js';
 
-export function describeCommand(): Command {
-  return {
-    name: 'describe',
+export const command: Command = {
+  name: 'describe',
     summary: 'Print a machine-readable JSON catalog of all commands',
     run(args, io): Promise<number> {
     if (args.length > 0) {
@@ -15,5 +14,4 @@ export function describeCommand(): Command {
     io.out(JSON.stringify(catalog));
     return Promise.resolve(EXIT.OK);
     },
-  };
-}
+};

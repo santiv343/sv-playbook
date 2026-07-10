@@ -24,9 +24,8 @@ function renderStatus(status: BoardStatus, io: Io): void {
   }
 }
 
-export function statusCommand(): Command {
-  return {
-    name: 'status',
+export const command: Command = {
+  name: 'status',
     summary: 'Print board, lease, event, and backup status',
     run(args, io): Promise<number> {
       const parsed = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } });
@@ -45,5 +44,4 @@ export function statusCommand(): Command {
         store.close();
       }
     },
-  };
-}
+};

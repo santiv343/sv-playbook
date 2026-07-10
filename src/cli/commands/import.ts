@@ -3,9 +3,8 @@ import { EXIT } from '../command.constants.js';
 import { commonRoot, openStore, worktreeRoot } from '../../db/store.js';
 import { importPackets } from '../../tasks/service.js';
 
-export function importCommand(): Command {
-  return {
-    name: 'import',
+export const command: Command = {
+  name: 'import',
     summary: 'Import packet definitions from docs/packets/*.md into the DB',
     run(_args: string[], io: Io): Promise<number> {
       const repoRoot = commonRoot(process.cwd());
@@ -19,5 +18,4 @@ export function importCommand(): Command {
         store.close();
       }
     },
-  };
-}
+};
