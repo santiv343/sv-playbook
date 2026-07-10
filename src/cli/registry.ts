@@ -1,5 +1,6 @@
 import type { Command } from './command.types.js';
 import { allCommands } from './commands/index.gen.js';
+import { command as decision } from './commands/decision.js';
 
 const FIXTURE_PREFIX = '__';
 const FIXTURE_SUFFIX = '__';
@@ -9,5 +10,7 @@ function isFixtureName(name: string): boolean {
 }
 
 export function commands(): readonly Command[] {
-  return allCommands.filter((c) => !isFixtureName(c.name));
+  const base: Command[] = [...allCommands.filter((c) => !isFixtureName(c.name))];
+  if (!base.some((c) => c.name === 'decision')) base.push(decision);
+  return base;
 }

@@ -198,6 +198,25 @@ Sections: `vision`, `product_definition` (prose bodies). `principles` is managed
 and `list-principles` (ordered list). The `show` subcommand only reads prose sections; for principles,
 use `list-principles` via a future hook or query the DB directly.
 
+### `sv-playbook decision ask|answer|list|show`
+
+When: to escalate a question to the founder (ask), record a binding ruling
+(answer), or inspect the decision ledger (list/show). Use `--pending` with
+`list` to see only unanswered questions.
+
+Why: decisions are data, not chat prose. Every escalation and its answer
+are persisted in the DB and surfaced by start/digest/serve. Answered decisions
+are immutable history — supersede with a new ask instead of mutating.
+
+Argument shapes:
+
+```sh
+sv-playbook decision ask <question text...>
+sv-playbook decision answer <ID> <answer text...>
+sv-playbook decision list [--pending]
+sv-playbook decision show <ID>
+```
+
 ### `sv-playbook handoff [--role <role>] [--force]`
 
 When: before ending a session, before handing off to another model/agent, or
