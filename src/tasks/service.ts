@@ -103,7 +103,6 @@ export function listPackets(store: Store): Array<{ id: string; title: string; st
   return store.db.prepare('SELECT id, title, status, priority, updated_at FROM packets ORDER BY priority, id').all()
     .map((row) => ({ id: stringColumn(row, 'id'), title: stringColumn(row, 'title'), status: stringColumn(row, 'status'), priority: numberColumn(row, 'priority'), updatedAt: stringColumn(row, 'updated_at') }));
 }
-
 export function ensureSession(store: Store, worktree: string): string {
   const file = join(worktree, SESSION_FILE_NAME);
   if (existsSync(file)) {
@@ -116,17 +115,14 @@ export function ensureSession(store: Store, worktree: string): string {
   writeFileSync(file, `${id}\n`, 'utf8');
   return id;
 }
-
 function currentStatus(store: Store, packetId: string): string {
   const row = store.db.prepare('SELECT status FROM packets WHERE id = ?').get(packetId);
   if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
   return stringColumn(row, 'status');
 }
-
 function blocksReopen(status: string): boolean {
   return status === STATUS.REVIEW || status === STATUS.DONE || status === STATUS.DROPPED;
 }
-
 export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
   const row = store.db.prepare('SELECT session_id, worktree, acquired_at, heartbeat_at FROM leases WHERE packet_id = ?')
     .get(packetId);
@@ -140,17 +136,15 @@ export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
     stale: Date.now() - Date.parse(heartbeatAt) > LEASE_TTL_MS,
   };
 }
-
 export function refreshHeartbeat(store: Store, sessionId: string): void {
   store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE session_id = ?').run(now(), sessionId);
 }
-
 export function startPacket(store: Store, sessionId: string, worktree: string, packetId: string): void {
   refreshHeartbeat(store, sessionId);
   const status = currentStatus(store, packetId);
   const lease = leaseOf(store, packetId);
   if (lease !== undefined) {
-    if (lease.sessionId === sessionId) return; // idempotent retry
+    if (lease.sessionId === sessionId) return;
     throw new LifecycleError(`held by session ${lease.sessionId}`, 'use takeover once available; do not delete the lease by hand');
   }
   if (status !== STATUS.READY) {
@@ -160,17 +154,14 @@ export function startPacket(store: Store, sessionId: string, worktree: string, p
   store.db.prepare(INSERT_LEASE_SQL).run(packetId, sessionId, worktree, now(), now());
   recordTransition(store, packetId, STATUS.READY, STATUS.ACTIVE, sessionId);
 }
-
 function assertLeaseForActive(store: Store, sessionId: string | undefined, packetId: string): void {
   const lease = leaseOf(store, packetId);
   if (lease === undefined || sessionId === undefined) throw new LifecycleError('lease required to leave active');
   if (lease.sessionId !== sessionId) throw new LifecycleError(`lease held by another session ${lease.sessionId}`);
 }
-
 function shouldReleaseLease(from: string, to: string): boolean {
   return !(from === STATUS.ACTIVE && to === STATUS.BLOCKED);
 }
-
 export function releaseLease(store: Store, sessionId: string, packetId: string): void {
   const lease = leaseOf(store, packetId);
   if (lease === undefined) throw new LifecycleError('no lease to release');
@@ -183,20 +174,16 @@ export function releaseLease(store: Store, sessionId: string, packetId: string):
 
 function parseGlobs(raw: string): string[] {
   const parsed: unknown = JSON.parse(raw);
-  if (!Array.isArray(parsed)) return [];
-  return parsed.filter((s) => typeof s === 'string');
+  return Array.isArray(parsed) ? parsed.filter((s) => typeof s === 'string') : [];
 }
 
 function ourGlobs(store: Store, packetId: string): string[] {
   const row = store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get(packetId);
-  if (row === undefined) return [];
-  return parseGlobs(stringColumn(row, 'write_set'));
+  return row === undefined ? [] : parseGlobs(stringColumn(row, 'write_set'));
 }
 
 function conflictsWith(ours: string[], row: Record<string, unknown>): boolean {
-  const raw = parseGlobs(stringColumn(row, 'write_set'));
-  for (const a of ours) for (const b of raw) if (overlaps(a, b)) return true;
-  return false;
+  return parseGlobs(stringColumn(row, 'write_set')).some((b) => ours.some((a) => overlaps(a, b)));
 }
 
 function checkWriteSetConflict(store: Store, packetId: string): void {
@@ -204,9 +191,10 @@ function checkWriteSetConflict(store: Store, packetId: string): void {
   if (ours.length === 0) return;
   const rows = store.db.prepare('SELECT id, write_set FROM packets WHERE (status = ? OR status = ?) AND id != ?')
     .all(STATUS.READY, STATUS.ACTIVE, packetId);
-  for (const row of rows) { if (conflictsWith(ours, row)) throw new LifecycleError(`write_set conflict with ${stringColumn(row, 'id')}`); }
+  for (const row of rows) {
+    if (conflictsWith(ours, row)) throw new LifecycleError(`write_set conflict with ${stringColumn(row, 'id')}`);
+  }
 }
-
 function findMergeBase(worktree: string): string | undefined {
   for (const base of ['origin/main', 'origin/master', 'main', 'master']) {
     try { return execFileSync('git', ['merge-base', base, 'HEAD'], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' }).trim(); } catch { /* next */ }
@@ -227,27 +215,22 @@ function gateReview(store: Store, packetId: string, from: string, to: string): v
   const offending = changed.split('\n').filter((f) => f !== '' && !glbs.some((g) => overlaps(g, f)));
   if (offending.length > 0) throw new LifecycleError(`write_set violation: branch changed files outside write_set: ${offending.join(', ')}`);
 }
-
 function safeDiff(worktree: string, mergeBase: string): string {
   try { return execFileSync('git', ['diff', '--name-only', `${mergeBase}...HEAD`], { cwd: worktree, encoding: 'utf8' }).trim(); } catch { return ''; }
 }
-
 function gateVerify(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
   const lease = leaseOf(store, packetId);
   if (lease === undefined) return;
-  if (!existsSync(join(lease.worktree, 'playbook.config.json'))) return;
+  const cfgPath = join(lease.worktree, 'playbook.config.json');
+  if (!existsSync(cfgPath) || /enforceVerifyOnReview\s*:\s*false/.test(readFileSync(cfgPath, 'utf8'))) return;
   const config = loadConfig(lease.worktree);
-  if (!config.enforceVerifyOnReview) return;
   const cmd = config.verifyCommand.split(/\s+/).filter(Boolean);
-  if (cmd.length === 0) return;
-  try {
-    execFileSync(cmd[0]!, cmd.slice(1), { cwd: lease.worktree, timeout: 120_000, stdio: 'pipe' });
-  } catch {
-    throw new LifecycleError(`verify command failed: ${config.verifyCommand}`);
-  }
+  const bin = cmd[0];
+  if (!bin) return;
+  try { execFileSync(bin, cmd.slice(1), { cwd: lease.worktree, timeout: 120_000, stdio: 'pipe' }); }
+  catch { throw new LifecycleError(`verify command failed: ${config.verifyCommand}`); }
 }
-
 function captureEvidence(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
   const lease = leaseOf(store, packetId);

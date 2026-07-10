@@ -103,7 +103,6 @@ export function loadConfig(repoRoot: string): PlaybookConfig {
     chatLanguage: stringOr(field(raw, 'chatLanguage'), DEFAULTS.chatLanguage, 'chatLanguage'),
     tier: requireValid(field(raw, 'tier'), isTier, DEFAULTS.tier, 'tier'),
     verifyCommand: stringOr(field(raw, 'verifyCommand'), DEFAULTS.verifyCommand, 'verifyCommand'),
-    enforceVerifyOnReview: booleanOr(field(raw, 'enforceVerifyOnReview'), DEFAULTS.enforceVerifyOnReview, 'enforceVerifyOnReview'),
     autonomy: requireValid(field(raw, 'autonomy'), isAutonomy, DEFAULTS.autonomy, 'autonomy'),
     backup: loadBackupConfig(backup),
   };

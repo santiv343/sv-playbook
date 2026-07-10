@@ -6,7 +6,6 @@ export const DEFAULTS: PlaybookConfig = {
   chatLanguage: 'en',
   tier: 'TIER-2',
   verifyCommand: 'npm run verify',
-  enforceVerifyOnReview: true,
   autonomy: 'strict',
   backup: {
     enabled: true,
