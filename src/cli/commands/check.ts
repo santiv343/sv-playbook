@@ -5,6 +5,7 @@ import type { Command, Io } from '../command.types.js';
 import { parsePacketDocument } from '../../packets/document.js';
 import { contentDir } from '../../content.js';
 import { loadConfig } from '../../config.js';
+import { checkRoles } from '../../check/roles.js';
 
 const PACKETS_DIR = 'docs/packets';
 
@@ -97,7 +98,17 @@ async function checkInstructions(root: string, io: Io): Promise<boolean> {
 const TARGETS: Record<string, (root: string, io: Io) => Promise<boolean>> = {
   structure: checkStructure,
   instructions: checkInstructions,
+  roles: checkRolesTarget,
 };
+
+async function checkRolesTarget(_root: string, io: Io): Promise<boolean> {
+  const rolesDir = join(contentDir(), 'roles');
+  const violations = await checkRoles(rolesDir);
+  for (const v of violations) {
+    io.out(`content/roles/${v.file}: ${v.message}`);
+  }
+  return violations.length > 0;
+}
 
 async function runTarget(root: string, target: string, io: Io): Promise<number | null> {
   const fn = TARGETS[target];
