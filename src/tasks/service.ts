@@ -14,6 +14,7 @@ import {
   ALLOWED,
   DELETE_LEASE_SQL,
   EVENT_EVIDENCE,
+  EVENT_IMPORTED,
   EVENT_NOTE,
   EVENT_TAKEOVER,
   EVENT_TRANSITION,
@@ -48,11 +49,9 @@ export function generateIdFromType(store: Store, type: string): string {
 }
 function deleteDeps(store: Store, packetId: string): void { store.db.prepare('DELETE FROM packet_deps WHERE packet_id = ?').run(packetId); }
 function recordTransition(store: Store, packetId: string, from: string, to: string, sessionId?: string): void {
-  store.db.prepare('INSERT INTO transitions (packet_id, from_status, to_status, session_id, at) VALUES (?,?,?,?,?)')
-    .run(packetId, from, to, sessionId ?? null, now());
+  store.db.prepare('INSERT INTO transitions (packet_id, from_status, to_status, session_id, at) VALUES (?,?,?,?,?)').run(packetId, from, to, sessionId ?? null, now());
   store.db.prepare('UPDATE packets SET status = ?, updated_at = ? WHERE id = ?').run(to, now(), packetId);
-  store.db.prepare(INSERT_EVENT_SQL)
-    .run(sessionId ?? null, packetId, EVENT_TRANSITION, `${from}->${to}`, now());
+  store.db.prepare(INSERT_EVENT_SQL).run(sessionId ?? null, packetId, EVENT_TRANSITION, `${from}->${to}`, now());
 }
 
 export function overlaps(a: string, b: string): boolean {
@@ -107,13 +106,22 @@ export function importPackets(store: Store, docRoot: string): ImportResult {
   }
   return { imported, updated };
 }
+function resolveImportPath(docRoot: string, pathOrId: string): string {
+  return pathOrId.includes('/') || pathOrId.includes('\\') || pathOrId.endsWith('.md') ? pathOrId : join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR, `${pathOrId}.md`);
+}
+
 export function importPacketFile(store: Store, docRoot: string, pathOrId: string): string {
-  const filePath = pathOrId.includes('/') || pathOrId.includes('\\') || pathOrId.endsWith('.md') ? pathOrId : join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR, `${pathOrId}.md`);
+  const filePath = resolveImportPath(docRoot, pathOrId);
   if (!existsSync(filePath)) throw new LifecycleError(`packet file not found: ${filePath}`);
+
   const { definition: def, body } = parsePacketDocument(readFileSync(filePath, 'utf8'));
-  if (!Object.values(TASK_TYPE_PREFIX).some((p) => def.id.startsWith(p + '-'))) throw new LifecycleError(`unknown packet id prefix: ${def.id}`);
-  if (store.db.prepare(EXISTS_SQL).get(def.id) !== undefined) throw new LifecycleError(`packet already exists in DB: ${def.id}`, 'use task amend to update');
-  transact(store, () => { store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, filePath, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now()); recordTransition(store, def.id, 'none', STATUS.DRAFT); upsertDeps(store, def); store.db.prepare(INSERT_EVENT_SQL).run(null, def.id, EVENT_NOTE, `imported from ${filePath}`, now()); });
+  if (!Object.values(TASK_TYPE_PREFIX).some((p) => def.id.startsWith(p + '-')))
+    throw new LifecycleError(`unknown packet id prefix: ${def.id}`);
+  if (store.db.prepare(EXISTS_SQL).get(def.id) !== undefined)
+    throw new LifecycleError(`packet already exists in DB: ${def.id}`, 'use task amend to update');
+
+  transact(store, () => { store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, filePath, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now()); recordTransition(store, def.id, 'none', STATUS.DRAFT); upsertDeps(store, def); store.db.prepare(INSERT_EVENT_SQL).run(null, def.id, EVENT_IMPORTED, `imported from ${filePath}`, now()); });
+
   return def.id;
 }
 export function listPackets(store: Store): Array<{ id: string; title: string; status: string; priority: number; updatedAt: string }> {
@@ -192,8 +200,7 @@ function conflictsWith(ours: string[], row: Record<string, unknown>): boolean {
 function checkWriteSetConflict(store: Store, packetId: string): void {
   const ours = ourGlobs(store, packetId);
   if (ours.length === 0) return;
-  const rows = store.db.prepare('SELECT id, write_set FROM packets WHERE (status = ? OR status = ?) AND id != ?')
-    .all(STATUS.READY, STATUS.ACTIVE, packetId);
+  const rows = store.db.prepare('SELECT id, write_set FROM packets WHERE (status = ? OR status = ?) AND id != ?').all(STATUS.READY, STATUS.ACTIVE, packetId);
   for (const row of rows) {
     if (conflictsWith(ours, row)) throw new LifecycleError(`write_set conflict with ${stringColumn(row, 'id')}`);
   }
