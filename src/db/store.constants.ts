@@ -1,6 +1,6 @@
 import { EVENT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES, STATUS } from '../tasks/service.constants.js';
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 export const SVP_DIR = '.svp';
 export const DB_FILE = 'playbook.sqlite';
 
@@ -76,5 +76,27 @@ CREATE TABLE IF NOT EXISTS decisions (
   answer TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sprints (
+  id TEXT PRIMARY KEY,
+  goal TEXT NOT NULL DEFAULT '',
+  budget_cap REAL NOT NULL DEFAULT 0,
+  wip_limit INTEGER,
+  state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'closed')),
+  created_at TEXT NOT NULL,
+  closed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS sprint_tasks (
+  sprint_id TEXT NOT NULL REFERENCES sprints(id),
+  packet_id TEXT NOT NULL REFERENCES packets(id),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (sprint_id, packet_id)
+);
+CREATE TABLE IF NOT EXISTS task_costs (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  packet_id TEXT NOT NULL REFERENCES packets(id),
+  amount REAL NOT NULL,
+  recorded_by TEXT,
+  recorded_at TEXT NOT NULL
 );
 `;

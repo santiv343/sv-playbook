@@ -14,7 +14,8 @@ import { command as instructions } from './instructions.js';
 import { command as rebuild } from './rebuild.js';
 import { command as restore } from './restore.js';
 import { command as serve } from './serve.js';
+import { command as sprint } from './sprint.js';
 import { command as status } from './status.js';
 import { command as task } from './task.js';
 
-export const allCommands: readonly Command[] = [adopt, backup, check, constitution, describe, doctor, docs, handoff, import_, instructions, rebuild, restore, serve, status, task];
+export const allCommands: readonly Command[] = [adopt, backup, check, constitution, describe, doctor, docs, handoff, import_, instructions, rebuild, restore, serve, sprint, status, task];
