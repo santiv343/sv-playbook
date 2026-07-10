@@ -271,6 +271,15 @@ and wants off-machine durability, but it is an adapter, not a core
 requirement. Until that command exists, `.svp/backups/` are local safety
 copies only.
 
+The store is intentionally shared across worktrees — one unified board is
+what `serve` renders, so per-worktree isolation would fragment it. The store
+opens in WAL journal mode (`PRAGMA journal_mode = WAL`) so concurrent
+readers never block the writer and vice versa. A `busy_timeout` is set so a
+writer waiting on another writer retries instead of erroring immediately.
+Every mutating operation (`create`, `move`, lease acquire/release, event
+insert, amend, takeover, import`) is wrapped in a short `BEGIN IMMEDIATE`
+transaction so concurrent writers serialize cleanly and never half-apply.
+
 ## Harness skills
 
 Harness skills live in `content/skills/` and teach agents to interact with
