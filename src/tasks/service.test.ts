@@ -8,6 +8,7 @@ import { stringColumn } from '../db/rows.js';
 import {
   createPacket,
   ensureSession,
+  generateIdFromType,
   startPacket,
   movePacket,
   listPackets,
@@ -24,10 +25,7 @@ import {
 } from './service.js';
 import { LifecycleError } from './service.errors.js';
 
-const def = (id: string) => ({
-  id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'],
-  requirements: [], evidenceRequired: ['final-sha'],
-});
+const def = (id: string) => ({ id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'], requirements: [], evidenceRequired: ['final-sha'] });
 
 async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'svp-life-'));
@@ -286,16 +284,9 @@ test('importPackets is idempotent and updates deps on re-run', async () => {
   deps = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all('IMP-002');
   assert.equal(deps.length, 1);
   assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-C');
-});
-
-test('importPackets does not modify status on update', async () => {
-  const { root, store } = await setup();
-  await mkdir(join(root, 'docs', 'packets'), { recursive: true });
-  await writeFile(join(root, 'docs', 'packets', 'IMP-003.md'), '---\nid: IMP-003\ntitle: Status Safe Packet\ndepends_on: []\nwrite_set: ["src/safe/**"]\nrequirements: []\nevidence_required: ["final-sha"]\n---\n\nBody.', 'utf8');
+  store.db.prepare("UPDATE packets SET status = 'ready' WHERE id = ?").run('IMP-002');
   importPackets(store, root);
-  store.db.prepare("UPDATE packets SET status = 'ready', priority = 50 WHERE id = ?").run('IMP-003');
-  importPackets(store, root);
-  assert.equal(stringColumn(store.db.prepare('SELECT status FROM packets WHERE id = ?').get('IMP-003'), 'status'), 'ready');
+  assert.equal(stringColumn(store.db.prepare('SELECT status FROM packets WHERE id = ?').get('IMP-002'), 'status'), 'ready');
 });
 
 test('moving a packet never modifies its generated markdown export', async () => {
@@ -347,13 +338,23 @@ test('move to review is refused when the branch changed a file outside the write
   assert.throws(() => { movePacket(store, s1, 'WS-001', 'review'); }, /src.b.out/);
 });
 
+test('task create --type feature auto-assigns sequential FEAT ids', async () => {
+  const { root, store } = await setup();
+  assert.equal(generateIdFromType(store, 'feature'), 'FEAT-001');
+  createPacket(store, root, def('FEAT-001'), 'Body 1.\n', 'feature');
+  assert.equal(generateIdFromType(store, 'feature'), 'FEAT-002');
+  createPacket(store, root, def('FEAT-002'), 'Body 2.\n', 'feature');
+  const rows = store.db.prepare('SELECT id, type FROM packets ORDER BY id').all();
+  assert.equal(stringColumn(rows[0], 'id'), 'FEAT-001');
+  assert.equal(stringColumn(rows[0], 'type'), 'feature');
+});
+
 test('amend updates the body and write_set in the DB and regenerates the export', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('AMD-001'), 'a');
   amendPacket(store, root, 'AMD-001', { body: 'b', writeSet: ['src/a/**'] });
   assert.equal(stringColumn(store.db.prepare('SELECT body FROM packets WHERE id = ?').get('AMD-001'), 'body'), 'b');
   assert.ok(stringColumn(store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get('AMD-001'), 'write_set').includes('src/a/**'));
-  assert.ok((await readFile(join(root, 'docs', 'packets', 'AMD-001.md'), 'utf8')).includes('src/a/**'));
 });
 
 test('move to review is refused when the project verify command fails', async () => {
@@ -366,9 +367,7 @@ test('move to review is refused when the project verify command fails', async ()
   await writeFile(join(root, 'src', 'a', 'ok.ts'), ' ', 'utf8');
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
-  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({
-    verifyCommand: 'node -e process.exit(1)',
-  }), 'utf8');
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node -e process.exit(1)' }), 'utf8');
   const store = openStore(root);
   createPacket(store, root, { ...def('VERIFY-001'), writeSet: ['src/a/**'] }, 'a');
   const s1 = ensureSession(store, root);

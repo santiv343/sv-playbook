@@ -15,6 +15,7 @@ import {
   createPacket,
   briefPacket,
   ensureSession,
+  generateIdFromType,
   leaseOf,
   listPackets,
   movePacket,
@@ -82,6 +83,7 @@ function handleCreate(args: string[], io: Io): number {
     args,
     allowPositionals: true,
     options: {
+      type: { type: 'string' },
       id: { type: 'string' },
       title: { type: 'string' },
       write: { type: 'string', multiple: true },
@@ -94,19 +96,22 @@ function handleCreate(args: string[], io: Io): number {
   if (parsed.positionals.length !== 0) throw new UsageError('create takes no positional arguments');
   const writeSet = stringValues(parsed.values.write);
   if (writeSet.length === 0) throw new UsageError('missing --write');
-  const def: PacketDefinition = {
-    id: stringValue(parsed.values.id, 'id'),
-    title: stringValue(parsed.values.title, 'title'),
-    dependsOn: stringValues(parsed.values.depends),
-    writeSet,
-    requirements: stringValues(parsed.values.req),
-    evidenceRequired: stringValues(parsed.values.evidence),
-  };
-  if (def.evidenceRequired.length === 0) def.evidenceRequired.push(...DEFAULT_EVIDENCE);
+  const title = stringValue(parsed.values.title, 'title');
   const body = readFileSync(stringValue(parsed.values['body-file'], 'body-file'), 'utf8');
+  const dependsOn = stringValues(parsed.values.depends);
+  const requirements = stringValues(parsed.values.req);
+  const evidenceRequired = stringValues(parsed.values.evidence);
+  if (evidenceRequired.length === 0) evidenceRequired.push(...DEFAULT_EVIDENCE);
   const docRoot = worktreeRoot(process.cwd());
+  const type = parsed.values.type;
+  const explicitId = parsed.values.id;
+  if (type !== undefined && explicitId !== undefined) throw new UsageError('--id is not allowed with --type; use --id only for import/rebuild paths');
   return withStore((store) => {
-    createPacket(store, docRoot, def, body);
+    const id = type !== undefined
+      ? generateIdFromType(store, type)
+      : stringValue(explicitId, 'id');
+    const def: PacketDefinition = { id, title, dependsOn, writeSet, requirements, evidenceRequired };
+    createPacket(store, docRoot, def, body, type);
     io.out(`created ${def.id} (draft)`);
     return EXIT.OK;
   });
@@ -316,7 +321,7 @@ function handleBrief(args: string[], io: Io): number {
 }
 
 const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
-  ['create', { usage: 'sv-playbook task create --id <ID> --title <T> [--write <glob>]... [--depends <ID>]... [--req <REQ>]... [--evidence <E>]... --body-file <path>', run: (rest, io) => handleCreate(rest, io) }],
+  ['create', { usage: 'sv-playbook task create --type <TYPE> --title <T> [--write <glob>]... [--depends <ID>]... [--req <REQ>]... [--evidence <E>]... --body-file <path>', run: (rest, io) => handleCreate(rest, io) }],
   ['amend', { usage: 'sv-playbook task amend <ID> [--title <T>] [--write <glob>]... [--body-file <path>] [--depends <ID>]... [--req <REQ>]... [--evidence <E>]...', run: (rest, io) => handleAmend(rest, io) }],
   ['list', { usage: 'sv-playbook task list [--json]', run: handleList }],
   ['start', { usage: 'sv-playbook task start <ID>', run: (rest, io) => handleStart(rest, io) }],
