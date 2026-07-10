@@ -54,6 +54,34 @@ function migrateTypeColumn(db: DatabaseSync): void {
   }
 }
 
+function migrateConstitutionTables(db: DatabaseSync): void {
+  const tables = new Set(
+    db.prepare("SELECT name FROM sqlite_master WHERE type='table'")
+      .all()
+      .map((row) => stringColumn(row, 'name')),
+  );
+  if (!tables.has('constitution_sections')) {
+    db.exec(`
+      CREATE TABLE constitution_sections (
+        section TEXT PRIMARY KEY,
+        body TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+  }
+  if (!tables.has('constitution_principles')) {
+    db.exec(`
+      CREATE TABLE constitution_principles (
+        id TEXT PRIMARY KEY,
+        rule TEXT NOT NULL,
+        rationale TEXT NOT NULL DEFAULT '',
+        sort_order INTEGER NOT NULL
+      )
+    `);
+  }
+}
+
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   const dir = join(repoRoot, SVP_DIR);
   mkdirSync(dir, { recursive: true });
@@ -74,6 +102,9 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
       db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     } else if (currentVersion === 4) {
       migrateTypeColumn(db);
+      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    } else if (currentVersion === 5) {
+      migrateConstitutionTables(db);
       db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     } else if (currentVersion !== SCHEMA_VERSION) {
       db.close();

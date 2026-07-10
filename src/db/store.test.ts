@@ -126,6 +126,46 @@ test('the store runs in WAL mode and two concurrent writers both commit', async 
   store.close();
 });
 
+test('schema v6 includes constitution_sections and constitution_principles tables', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-const-'));
+  const store = openStore(root);
+  const tables = store.db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+    .all()
+    .map((row) => stringColumn(row, 'name'));
+  assert.ok(tables.includes('constitution_sections'), 'missing constitution_sections table');
+  assert.ok(tables.includes('constitution_principles'), 'missing constitution_principles table');
+  const ver = numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version');
+  assert.equal(ver, SCHEMA_VERSION);
+  store.close();
+});
+
+test('schema migration from v5 creates constitution tables', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-mig5-'));
+  openStore(root).close();
+  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA user_version = 5');
+  db.exec('DROP TABLE IF EXISTS constitution_sections');
+  db.exec('DROP TABLE IF EXISTS constitution_principles');
+  const tablesBefore = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+    .all()
+    .map((row) => stringColumn(row, 'name'));
+  assert.ok(!tablesBefore.includes('constitution_sections'), 'should not exist at v5');
+  db.close();
+  const store = openStore(root);
+  const tablesAfter = store.db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+    .all()
+    .map((row) => stringColumn(row, 'name'));
+  assert.ok(tablesAfter.includes('constitution_sections'), 'should exist after v5 migration');
+  assert.ok(tablesAfter.includes('constitution_principles'), 'should exist after v5 migration');
+  const ver = numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version');
+  assert.equal(ver, SCHEMA_VERSION);
+  store.close();
+});
+
 test('schema migration refuses while a foreign live lease exists', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-mig-'));
   execFileSync('git', ['init'], { cwd: root });

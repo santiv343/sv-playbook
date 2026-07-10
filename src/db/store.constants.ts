@@ -1,6 +1,6 @@
 import { EVENT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES, STATUS } from '../tasks/service.constants.js';
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 export const SVP_DIR = '.svp';
 export const DB_FILE = 'playbook.sqlite';
 
@@ -57,5 +57,17 @@ CREATE TABLE IF NOT EXISTS events (
   command TEXT NOT NULL CHECK (command IN (${sqlInList(EVENT_COMMANDS)})),
   detail TEXT,
   at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS constitution_sections (
+  section TEXT PRIMARY KEY,
+  body TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS constitution_principles (
+  id TEXT PRIMARY KEY,
+  rule TEXT NOT NULL,
+  rationale TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL
 );
 `;
