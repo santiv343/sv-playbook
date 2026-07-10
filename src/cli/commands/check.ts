@@ -23,38 +23,49 @@ async function listMarkdownFiles(root: string, dir: string): Promise<string[]> {
   }
 }
 
-function checkPacketSections(file: string, body: string, io: Io): boolean {
-  let hasViolations = false;
+function checkPacketSections(file: string, body: string, io: Io, baselined?: boolean): boolean {
+  const missing: string[] = [];
   for (const section of REQUIRED_SECTIONS) {
     if (!body.includes(section)) {
-      io.out(`${PACKETS_DIR}/${file}: missing required section ${section}`);
-      hasViolations = true;
+      missing.push(section);
     }
   }
-  return hasViolations;
+  if (missing.length === 0) return false;
+
+  if (baselined) {
+    io.out(`${PACKETS_DIR}/${file}: baselined — skipping grandfathered missing sections: ${missing.join(', ')}`);
+    return false;
+  }
+
+  for (const section of missing) {
+    io.out(`${PACKETS_DIR}/${file}: missing required section ${section}`);
+  }
+  return true;
+}
+
+async function checkOnePacket(root: string, file: string, baselines: Set<string>, io: Io): Promise<boolean> {
+  const content = await readFile(join(root, PACKETS_DIR, file), 'utf-8');
+  const isBaselined = baselines.has(`${PACKETS_DIR}/${file}`);
+  let body: string;
+  try {
+    body = parsePacketDocument(content).body;
+  } catch (err) {
+    if (isBaselined) {
+      io.out(`${PACKETS_DIR}/${file}: baselined frontmatter error — skipping`);
+      return false;
+    }
+    io.out(`${PACKETS_DIR}/${file}: malformed frontmatter - ${err instanceof Error ? err.message : String(err)}`);
+    return true;
+  }
+  return checkPacketSections(file, body, io, isBaselined);
 }
 
 async function checkStructure(root: string, io: Io): Promise<boolean> {
-  let hasViolations = false;
+  const config = loadConfig(root);
+  const baselines = new Set(config.baseline?.fingerprints ?? []);
   const files = await listMarkdownFiles(root, PACKETS_DIR);
-
-  for (const file of files) {
-    const filePath = join(root, PACKETS_DIR, file);
-    const content = await readFile(filePath, 'utf-8');
-
-    let body: string;
-    try {
-      body = parsePacketDocument(content).body;
-    } catch (err) {
-      io.out(`${PACKETS_DIR}/${file}: malformed frontmatter - ${err instanceof Error ? err.message : String(err)}`);
-      hasViolations = true;
-      continue;
-    }
-
-    if (checkPacketSections(file, body, io)) hasViolations = true;
-  }
-
-  return hasViolations;
+  const results = await Promise.all(files.map((f) => checkOnePacket(root, f, baselines, io)));
+  return results.some(Boolean);
 }
 
 async function checkInstructions(root: string, io: Io): Promise<boolean> {
