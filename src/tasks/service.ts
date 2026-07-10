@@ -110,8 +110,7 @@ export function importPackets(store: Store, docRoot: string): ImportResult {
 }
 
 export function listPackets(store: Store): Array<{ id: string; title: string; status: string; priority: number; updatedAt: string }> {
-  return store.db.prepare('SELECT id, title, status, priority, updated_at FROM packets ORDER BY priority, id').all()
-    .map((row) => ({ id: stringColumn(row, 'id'), title: stringColumn(row, 'title'), status: stringColumn(row, 'status'), priority: numberColumn(row, 'priority'), updatedAt: stringColumn(row, 'updated_at') }));
+  return store.db.prepare('SELECT id, title, status, priority, updated_at FROM packets ORDER BY priority, id').all().map((row) => ({ id: stringColumn(row, 'id'), title: stringColumn(row, 'title'), status: stringColumn(row, 'status'), priority: numberColumn(row, 'priority'), updatedAt: stringColumn(row, 'updated_at') }));
 }
 export function ensureSession(store: Store, worktree: string): string {
   const file = join(worktree, SESSION_FILE_NAME);
@@ -131,15 +130,12 @@ function currentStatus(store: Store, packetId: string): string {
   return stringColumn(row, 'status');
 }
 export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
-  const row = store.db.prepare('SELECT session_id, worktree, acquired_at, heartbeat_at FROM leases WHERE packet_id = ?')
-    .get(packetId);
+  const row = store.db.prepare('SELECT session_id, worktree, acquired_at, heartbeat_at FROM leases WHERE packet_id = ?').get(packetId);
   if (row === undefined) return undefined;
   const heartbeatAt = stringColumn(row, 'heartbeat_at');
   return {
-    sessionId: stringColumn(row, 'session_id'),
-    worktree: stringColumn(row, 'worktree'),
-    acquiredAt: stringColumn(row, 'acquired_at'),
-    heartbeatAt,
+    sessionId: stringColumn(row, 'session_id'), worktree: stringColumn(row, 'worktree'),
+    acquiredAt: stringColumn(row, 'acquired_at'), heartbeatAt,
     stale: Date.now() - Date.parse(heartbeatAt) > LEASE_TTL_MS,
   };
 }
@@ -219,6 +215,13 @@ function gateReview(store: Store, packetId: string, from: string, to: string): v
   const offending = changed.split('\n').filter((f) => f !== '' && !glbs.some((g) => overlaps(g, f)));
   if (offending.length > 0) throw new LifecycleError(`write_set violation: branch changed files outside write_set: ${offending.join(', ')}`);
 }
+const gateEvidence = (store: Store, packetId: string, to: string): void => {
+  if (to !== STATUS.DONE) return;
+  const { evidenceRequired } = parsePacketDocument(readFileSync(stringColumn(store.db.prepare('SELECT path FROM packets WHERE id = ?').get(packetId), 'path'), 'utf8')).definition;
+  if (evidenceRequired.length > 0 && store.db.prepare("SELECT 1 FROM events WHERE packet_id = ? AND command = ? LIMIT 1").all(packetId, EVENT_EVIDENCE).length === 0)
+    throw new LifecycleError(`missing required evidence: ${evidenceRequired.join(', ')}`);
+};
+
 function gateVerify(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
   const lease = leaseOf(store, packetId);
@@ -256,9 +259,7 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   if (!allowed.includes(to)) throw new LifecycleError(`illegal transition ${from} -> ${to}`);
   if (to === STATUS.READY) checkWriteSetConflict(store, packetId);
   if (from === STATUS.ACTIVE) assertLeaseForActive(store, sessionId, packetId);
-  captureEvidence(store, packetId, from, to);
-  gateReview(store, packetId, from, to);
-  gateVerify(store, packetId, from, to);
+  captureEvidence(store, packetId, from, to); gateReview(store, packetId, from, to); gateVerify(store, packetId, from, to); gateEvidence(store, packetId, to);
   if (from !== STATUS.ACTIVE || to !== STATUS.BLOCKED) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
   recordTransition(store, packetId, from, to, sessionId);
   return from;
@@ -266,20 +267,12 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
 
 export function recoverPacket(store: Store, packetId: string): RecoveryReport {
   const status = currentStatus(store, packetId);
-  const transitionRows = store.db.prepare(
-    "SELECT at, from_status, to_status, COALESCE(session_id, '-') AS session_id FROM transitions WHERE packet_id = ? ORDER BY seq DESC LIMIT 5",
-  ).all(packetId);
-  const noteRows = store.db.prepare(
-    'SELECT at, detail FROM events WHERE packet_id = ? AND command = ? ORDER BY seq DESC LIMIT 5',
-  ).all(packetId, EVENT_NOTE);
+  const transitionRows = store.db.prepare("SELECT at, from_status, to_status, COALESCE(session_id, '-') AS session_id FROM transitions WHERE packet_id = ? ORDER BY seq DESC LIMIT 5").all(packetId);
+  const noteRows = store.db.prepare('SELECT at, detail FROM events WHERE packet_id = ? AND command = ? ORDER BY seq DESC LIMIT 5').all(packetId, EVENT_NOTE);
   const dependsOn = getDeps(store, packetId);
-  return {
-    packetId, status, dependsOn,
-    lease: leaseOf(store, packetId),
-    lastTransitions: transitionRows.map((row) =>
-      `${stringColumn(row, 'at')} ${stringColumn(row, 'from_status')}->${stringColumn(row, 'to_status')} (${stringColumn(row, 'session_id')})`),
-    lastNotes: noteRows.map((row) => `${stringColumn(row, 'at')} ${stringColumn(row, 'detail')}`),
-  };
+  return { packetId, status, dependsOn, lease: leaseOf(store, packetId),
+    lastTransitions: transitionRows.map((row) => `${stringColumn(row, 'at')} ${stringColumn(row, 'from_status')}->${stringColumn(row, 'to_status')} (${stringColumn(row, 'session_id')})`),
+    lastNotes: noteRows.map((row) => `${stringColumn(row, 'at')} ${stringColumn(row, 'detail')}`) };
 }
 
 export function takeoverPacket(
