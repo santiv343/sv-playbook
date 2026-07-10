@@ -9,6 +9,7 @@ import type { PacketDefinition } from '../packets/document.types.js';
 import { LifecycleError } from './service.errors.js';
 import { contentDir } from '../content.js';
 import { loadConfig } from '../config.js';
+import { getActiveCount, sprintWipLimit, taskSprintId } from '../sprints/service.js';
 import {
   ALLOWED,
   DELETE_LEASE_SQL,
@@ -45,9 +46,7 @@ export function generateIdFromType(store: Store, type: string): string {
   const num = parseInt(stringColumn(rows[0], 'id').slice(prefix.length + 1), 10);
   return `${prefix}-${String(Number.isNaN(num) ? 1 : num + 1).padStart(3, '0')}`;
 }
-function deleteDeps(store: Store, packetId: string): void {
-  store.db.prepare('DELETE FROM packet_deps WHERE packet_id = ?').run(packetId);
-}
+function deleteDeps(store: Store, packetId: string): void { store.db.prepare('DELETE FROM packet_deps WHERE packet_id = ?').run(packetId); }
 function recordTransition(store: Store, packetId: string, from: string, to: string, sessionId?: string): void {
   store.db.prepare('INSERT INTO transitions (packet_id, from_status, to_status, session_id, at) VALUES (?,?,?,?,?)')
     .run(packetId, from, to, sessionId ?? null, now());
@@ -57,10 +56,10 @@ function recordTransition(store: Store, packetId: string, from: string, to: stri
 }
 
 export function overlaps(a: string, b: string): boolean {
-  const prefixA = a.replace(/\/\*\*$|\/\*$/, '');
-  const prefixB = b.replace(/\/\*\*$|\/\*$/, '');
-  if (prefixA === prefixB) return true;
-  return prefixA.startsWith(prefixB + '/') || prefixB.startsWith(prefixA + '/');
+  const pa = a.replace(/\/\*\*$|\/\*$/, '');
+  const pb = b.replace(/\/\*\*$|\/\*$/, '');
+  if (pa === pb) return true;
+  return pa.startsWith(pb + '/') || pb.startsWith(pa + '/');
 }
 
 export function createPacket(store: Store, docRoot: string, def: PacketDefinition, body: string, type?: string): void {
@@ -99,9 +98,7 @@ function upsertPacketFile(store: Store, path: string): 'imported' | 'updated' {
 function upsertDeps(store: Store, def: PacketDefinition): void {
   for (const depId of def.dependsOn) {
     const depExists = store.db.prepare(EXISTS_SQL).get(depId);
-    if (depExists !== undefined) {
-      store.db.prepare('INSERT OR IGNORE INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);
-    }
+    if (depExists !== undefined) store.db.prepare('INSERT OR IGNORE INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);
   }
 }
 export function importPackets(store: Store, docRoot: string): ImportResult {
@@ -119,11 +116,7 @@ export function listPackets(store: Store): Array<{ id: string; title: string; st
 }
 export function ensureSession(store: Store, worktree: string): string {
   const file = join(worktree, SESSION_FILE_NAME);
-  if (existsSync(file)) {
-    const id = readFileSync(file, 'utf8').trim();
-    const known = store.db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(id);
-    if (known !== undefined) return id;
-  }
+  if (existsSync(file)) { const id = readFileSync(file, 'utf8').trim(); if (store.db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(id) !== undefined) return id; }
   const id = randomUUID();
   store.db.prepare('INSERT INTO sessions (id, worktree, started_at) VALUES (?,?,?)').run(id, worktree, now());
   writeFileSync(file, `${id}\n`, 'utf8');
@@ -145,6 +138,15 @@ export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
 export function refreshHeartbeat(store: Store, sessionId: string): void {
   store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE session_id = ?').run(now(), sessionId);
 }
+function checkSprintWipLimit(store: Store, packetId: string): void {
+  const sprintId = taskSprintId(store, packetId);
+  if (sprintId === null) return;
+  const wip = sprintWipLimit(store, sprintId);
+  if (wip === null) return;
+  const active = getActiveCount(store, sprintId);
+  if (active >= wip) throw new LifecycleError(`sprint ${sprintId} WIP limit (${wip}) reached: ${active} tasks already active`);
+}
+
 export function startPacket(store: Store, sessionId: string, worktree: string, packetId: string): void {
   refreshHeartbeat(store, sessionId);
   const status = currentStatus(store, packetId);
@@ -157,10 +159,8 @@ export function startPacket(store: Store, sessionId: string, worktree: string, p
     const hint = (status === STATUS.REVIEW || status === STATUS.DONE || status === STATUS.DROPPED) ? 'reopening goes through the change bridge' : undefined;
     throw new LifecycleError(`wrong state ${status}`, hint);
   }
-  transact(store, () => {
-    store.db.prepare(INSERT_LEASE_SQL).run(packetId, sessionId, worktree, now(), now());
-    recordTransition(store, packetId, STATUS.READY, STATUS.ACTIVE, sessionId);
-  });
+  checkSprintWipLimit(store, packetId);
+  transact(store, () => { store.db.prepare(INSERT_LEASE_SQL).run(packetId, sessionId, worktree, now(), now()); recordTransition(store, packetId, STATUS.READY, STATUS.ACTIVE, sessionId); });
 }
 function assertLeaseForActive(store: Store, sessionId: string | undefined, packetId: string): void {
   const lease = leaseOf(store, packetId);

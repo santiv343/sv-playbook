@@ -54,9 +54,11 @@ function migrateTypeColumn(db: DatabaseSync): void {
   }
 }
 
+const TABLES_SQL = "SELECT name FROM sqlite_master WHERE type='table'";
+
 function migrateConstitutionTables(db: DatabaseSync): void {
   const tables = new Set(
-    db.prepare("SELECT name FROM sqlite_master WHERE type='table'")
+    db.prepare(TABLES_SQL)
       .all()
       .map((row) => stringColumn(row, 'name')),
   );
@@ -77,6 +79,48 @@ function migrateConstitutionTables(db: DatabaseSync): void {
         rule TEXT NOT NULL,
         rationale TEXT NOT NULL DEFAULT '',
         sort_order INTEGER NOT NULL
+      )
+    `);
+  }
+}
+
+function migrateSprintsTables(db: DatabaseSync): void {
+  const tables = new Set(
+    db.prepare(TABLES_SQL)
+      .all()
+      .map((row) => stringColumn(row, 'name')),
+  );
+  if (!tables.has('sprints')) {
+    db.exec(`
+      CREATE TABLE sprints (
+        id TEXT PRIMARY KEY,
+        goal TEXT NOT NULL DEFAULT '',
+        budget_cap REAL NOT NULL DEFAULT 0,
+        wip_limit INTEGER,
+        state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'closed')),
+        created_at TEXT NOT NULL,
+        closed_at TEXT
+      )
+    `);
+  }
+  if (!tables.has('sprint_tasks')) {
+    db.exec(`
+      CREATE TABLE sprint_tasks (
+        sprint_id TEXT NOT NULL REFERENCES sprints(id),
+        packet_id TEXT NOT NULL REFERENCES packets(id),
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (sprint_id, packet_id)
+      )
+    `);
+  }
+  if (!tables.has('task_costs')) {
+    db.exec(`
+      CREATE TABLE task_costs (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        packet_id TEXT NOT NULL REFERENCES packets(id),
+        amount REAL NOT NULL,
+        recorded_by TEXT,
+        recorded_at TEXT NOT NULL
       )
     `);
   }
@@ -105,6 +149,10 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
       db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     } else if (currentVersion === 5) {
       migrateConstitutionTables(db);
+      migrateSprintsTables(db);
+      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    } else if (currentVersion === 6) {
+      migrateSprintsTables(db);
       db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     } else if (currentVersion !== SCHEMA_VERSION) {
       db.close();
