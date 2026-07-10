@@ -120,6 +120,31 @@ test('config defaults maxConcurrentWorkers and rejects a non-positive value', ()
   assert.throws(() => loadConfig(dir3), { name: 'ConfigError' });
 });
 
+test('config accepts a valid custom maxConcurrentWorkers', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(dir, 'playbook.config.json'), JSON.stringify({
+    maxConcurrentWorkers: 5,
+  }));
+  const config = loadConfig(dir);
+  assert.equal(config.maxConcurrentWorkers, 5);
+});
+
+test('config rejects negative maxConcurrentWorkers', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(dir, 'playbook.config.json'), JSON.stringify({
+    maxConcurrentWorkers: -1,
+  }));
+  assert.throws(() => loadConfig(dir), { name: 'ConfigError' });
+});
+
+test('config rejects non-numeric maxConcurrentWorkers', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(dir, 'playbook.config.json'), JSON.stringify({
+    maxConcurrentWorkers: 'three',
+  }));
+  assert.throws(() => loadConfig(dir), { name: 'ConfigError' });
+});
+
 test('gate thresholds and the layout rule come from config, not hardcoded', () => {
   const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
   const config = loadConfig(dir);
