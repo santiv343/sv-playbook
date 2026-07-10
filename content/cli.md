@@ -95,6 +95,21 @@ commands. Each entry has `name` and `summary` fields. Takes no arguments.
 Why: the JSON output feeds the MCP wrapper and harness skills so they
 can discover available commands programmatically.
 
+### `sv-playbook check [target]`
+
+When: after authoring a packet, before opening a PR, or to detect instruction
+mirror drift. Without a target, runs all checks. Targets: `structure`,
+`instructions`.
+
+Why: it gives authored artifacts a deterministic mechanical gate (PRINCIPLE-001)
+complementing `verify`. Exit 1 (GATE_FAIL) on any violation; exit 0 when clean.
+
+Argument shape:
+
+```sh
+sv-playbook check [structure|instructions]
+```
+
 ### `sv-playbook doctor`
 
 When: at setup, after a confusing CLI/store error, or before dispatching

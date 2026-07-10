@@ -10,7 +10,8 @@ import { rebuildCommand } from './commands/rebuild.js';
 import { importCommand } from './commands/import.js';
 import { adoptCommand } from './commands/adopt.js';
 import { instructionsCommand } from './commands/instructions.js';
+import { checkCommand } from './commands/check.js';
 
 export function commands(): readonly Command[] {
-  return [docsCommand(), taskCommand(), describeCommand(), doctorCommand(), backupCommand(), restoreCommand(), statusCommand(), handoffCommand(), rebuildCommand(), importCommand(), adoptCommand(), instructionsCommand()];
+  return [docsCommand(), taskCommand(), describeCommand(), doctorCommand(), backupCommand(), restoreCommand(), statusCommand(), handoffCommand(), rebuildCommand(), importCommand(), adoptCommand(), instructionsCommand(), checkCommand()];
 }
