@@ -1,38 +1,30 @@
 import { parseArgs } from 'node:util';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
-import { SCHEMA, SCHEMA_VERSION, DB_FILE, SVP_DIR } from '../../db/store.constants.js';
+import { DB_FILE, SVP_DIR } from '../../db/store.constants.js';
 import { parsePacketDocument } from '../../packets/document.js';
 import { INSERT_PACKET_SQL, LEASE_TTL_MS, PACKETS_DOCS_DIR, PACKETS_DIR, STATUS } from '../../tasks/service.constants.js';
 import { stringColumn } from '../../db/rows.js';
 import { createStateBackup } from '../../db/backup.js';
 import { BACKUP_REASON } from '../../db/backup.constants.js';
-import { commonRoot } from '../../db/store.js';
+import { commonRoot, openStore } from '../../db/store.js';
+import type { Store } from '../../db/store.types.js';
 
 const now = (): string => new Date().toISOString();
 
-function freshLeases(svpDir: string): number {
-  const dbPath = join(svpDir, DB_FILE);
-  if (!existsSync(dbPath)) return 0;
-  let db: DatabaseSync;
-  try { db = new DatabaseSync(dbPath); } catch { return 0; }
+function freshLeases(repoRoot: string): number {
+  let store: Store;
+  try { store = openStore(repoRoot); } catch { return 0; }
   try {
-    const rows = db.prepare('SELECT heartbeat_at FROM leases').all();
+    const rows = store.db.prepare('SELECT heartbeat_at FROM leases').all();
     let count = 0;
     for (const row of rows) {
       if (Date.now() - Date.parse(stringColumn(row, 'heartbeat_at')) <= LEASE_TTL_MS) count++;
     }
     return count;
-  } catch { return 0; } finally { db.close(); }
-}
-
-function applyPragmas(db: DatabaseSync): void {
-  db.exec('PRAGMA journal_mode = WAL;');
-  db.exec('PRAGMA busy_timeout = 5000;');
-  db.exec('PRAGMA foreign_keys = ON;');
+  } catch { return 0; } finally { store.close(); }
 }
 
 function parseTerminalStatus(body: string): string | undefined {
@@ -50,17 +42,14 @@ function takePreRebuildBackup(repoRoot: string, dbPath: string, io: { out(line: 
   }
 }
 
-function recreateDb(dbPath: string, svpDir: string): DatabaseSync {
+function recreateDb(dbPath: string, svpDir: string, repoRoot: string): Store {
   if (existsSync(dbPath)) rmSync(dbPath);
   mkdirSync(svpDir, { recursive: true });
-  const db = new DatabaseSync(dbPath);
-  applyPragmas(db);
-  db.exec(SCHEMA);
-  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-  return db;
+  return openStore(repoRoot);
 }
 
-function importPacketsFromDocs(repoRoot: string, db: DatabaseSync): number {
+function importPacketsFromDocs(repoRoot: string, store: Store): number {
+  const db = store.db;
   const packetsDir = join(repoRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
   if (!existsSync(packetsDir)) return 0;
 
@@ -106,7 +95,7 @@ export function rebuildCommand(): Command {
         const svpDir = join(repoRoot, SVP_DIR);
         const dbPath = join(svpDir, DB_FILE);
 
-        const liveLeases = freshLeases(svpDir);
+        const liveLeases = freshLeases(repoRoot);
         if (liveLeases > 0 && !parsed.values.force) {
           io.err(`rebuild refused: ${liveLeases} live lease(s) — use --force to proceed`);
           return Promise.resolve(EXIT.GATE_FAIL);
@@ -114,9 +103,9 @@ export function rebuildCommand(): Command {
 
         takePreRebuildBackup(repoRoot, dbPath, io);
 
-        const db = recreateDb(dbPath, svpDir);
-        const count = importPacketsFromDocs(repoRoot, db);
-        db.close();
+        const store = recreateDb(dbPath, svpDir, repoRoot);
+        const count = importPacketsFromDocs(repoRoot, store);
+        store.close();
 
         io.out(`rebuild: ${count} packets reconstructed from docs/packets/*.md`);
         return Promise.resolve(EXIT.OK);
