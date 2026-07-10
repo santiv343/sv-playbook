@@ -94,7 +94,7 @@ test('leaseOf reports holder and freshness; refreshHeartbeat updates it', async 
   const s1 = ensureSession(store, root);
   movePacket(store, undefined, 'P3-001', 'ready');
   startPacket(store, s1, root, 'P3-001');
-  const lease = leaseOf(store, 'P3-001'); assert.ok(lease !== undefined);
+  const lease = leaseOf(store, 'P3-001'); assert.ok(lease);
   assert.equal(lease.sessionId, s1);
   assert.equal(lease.stale, false);
   store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE packet_id = ?').run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), 'P3-001');
@@ -205,9 +205,7 @@ test('moving to review captures head evidence as events', async () => {
   startPacket(store, s1, root, 'E-001');
   movePacket(store, s1, 'E-001', 'review');
   const events = store.db.prepare("SELECT detail FROM events WHERE command = 'evidence'").all();
-  assert.equal(events.length, 2);
-  const detail = stringColumn(events[0], 'detail'); assert.ok(detail.startsWith('head-sha '));
-  assert.match(detail, /^head-sha [0-9a-f]{40}$/);
+  assert.equal(events.length, 2); assert.match(stringColumn(events[0], 'detail'), /^head-sha [0-9a-f]{40}$/);
 });
 
 test('task brief reads the body from the DB, not the markdown file', async () => {
@@ -231,8 +229,7 @@ test('importPackets imports a new packet from a valid .md file', async () => {
   await writeFile(join(root, 'docs', 'packets', 'IMP-001.md'), content, 'utf8');
   await writeFile(join(root, 'docs', 'packets', 'README.txt'), 'not a packet', 'utf8');
   const result = importPackets(store, root);
-  assert.equal(result.imported, 1);
-  assert.equal(result.updated, 0);
+  assert.equal(result.imported, 1); assert.equal(result.updated, 0);
   const row = store.db.prepare('SELECT body, title, status FROM packets WHERE id = ?').get('IMP-001');
   assert.ok(row !== undefined);
   assert.equal(stringColumn(row, 'body'), 'Imported body text.');
@@ -252,22 +249,15 @@ test('importPackets is idempotent and updates deps on re-run', async () => {
   const mkContent = (title: string, deps: string[], body: string, writeSet: string[]) =>
     `---\nid: IMP-002\ntitle: ${title}\ndepends_on: ${JSON.stringify(deps)}\nwrite_set: ${JSON.stringify(writeSet)}\nrequirements: []\nevidence_required: ["final-sha"]\n---\n\n${body}`;
   await writeFile(join(root, 'docs', 'packets', 'IMP-002.md'), mkContent('First', ['DEP-A'], 'First body.', ['src/a/**']), 'utf8');
-  const r1 = importPackets(store, root);
-  assert.equal(r1.imported, 1);
-  assert.equal(r1.updated, 0);
-  const r2 = importPackets(store, root);
-  assert.equal(r2.imported, 0);
-  assert.equal(r2.updated, 1);
+  const r1 = importPackets(store, root); assert.equal(r1.imported, 1); assert.equal(r1.updated, 0);
+  const r2 = importPackets(store, root); assert.equal(r2.imported, 0); assert.equal(r2.updated, 1);
   let deps = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all('IMP-002');
   assert.equal(deps.length, 1);
   assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-A');
   await writeFile(join(root, 'docs', 'packets', 'IMP-002.md'), mkContent('Updated', ['DEP-C'], 'Updated body.', ['src/b/**']), 'utf8');
-  const r3 = importPackets(store, root);
-  assert.equal(r3.imported, 0);
-  assert.equal(r3.updated, 1);
+  const r3 = importPackets(store, root); assert.equal(r3.imported, 0); assert.equal(r3.updated, 1);
   const row = store.db.prepare('SELECT body, title, write_set FROM packets WHERE id = ?').get('IMP-002');
-  assert.equal(stringColumn(row, 'body'), 'Updated body.');
-  assert.equal(stringColumn(row, 'title'), 'Updated');
+  assert.equal(stringColumn(row, 'body'), 'Updated body.'); assert.equal(stringColumn(row, 'title'), 'Updated');
   deps = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all('IMP-002');
   assert.equal(deps.length, 1);
   assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-C');
@@ -350,6 +340,16 @@ test('sequential creates of the same type increment the generated id past existi
   assert.equal(generateIdFromType(store, 'store'), 'STORE-042');
   createPacket(store, root, def('STORE-042'), 'b\n', 'store'); assert.equal(generateIdFromType(store, 'store'), 'STORE-043');
   store.db.prepare("INSERT INTO packets (id,title,path,status,created_at,updated_at) VALUES ('STORE-MIGRATION-MAIN-001','m','/t','draft',datetime('now'),datetime('now'))").run(); assert.equal(generateIdFromType(store, 'store'), 'STORE-043');
+});
+
+test('move to done is refused when a required evidence item is missing', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, { ...def('EV-GATE-001'), evidenceRequired: ['final-sha', 'verify-root'] }, 'a');
+  const s1 = ensureSession(store, root);
+  movePacket(store, undefined, 'EV-GATE-001', 'ready'); startPacket(store, s1, root, 'EV-GATE-001');
+  movePacket(store, s1, 'EV-GATE-001', 'review');
+  store.db.prepare('DELETE FROM events WHERE packet_id = ? AND command = ?').run('EV-GATE-001', 'evidence');
+  assert.throws(() => movePacket(store, s1, 'EV-GATE-001', 'done'), /missing required evidence/);
 });
 
 test('move to review is refused when the project verify command fails', async () => {
