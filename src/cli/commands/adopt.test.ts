@@ -34,7 +34,7 @@ async function inTempBareRepo<T>(fn: () => Promise<T>): Promise<T> {
 test('adopt scaffolds config, AGENTS.md and remediation packets for a bare repo', async () => {
   await inTempBareRepo(async () => {
     const io = fakeIo();
-    await main(['adopt'], io);
+    await main(['adopt', '--force'], io);
 
     assert.ok(existsSync('playbook.config.json'), 'playbook.config.json should exist after adopt');
     assert.ok(existsSync('AGENTS.md'), 'AGENTS.md should exist after adopt');
