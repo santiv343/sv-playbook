@@ -1,8 +1,34 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import sonarjs from 'eslint-plugin-sonarjs';
 import tseslint from 'typescript-eslint';
-import { loadConfig } from './dist/config.js';
 
-const gates = loadConfig(import.meta.dirname).gates;
+const DEFAULTS = { maxLines: 350, maxLinesPerFunction: 60, complexity: 10, cognitiveComplexity: 10, layout: true };
+
+function positiveInt(raw, fallback) {
+  return typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? raw : fallback;
+}
+
+function gatesFromRaw(raw) {
+  return {
+    maxLines: positiveInt(raw.maxLines, DEFAULTS.maxLines),
+    maxLinesPerFunction: positiveInt(raw.maxLinesPerFunction, DEFAULTS.maxLinesPerFunction),
+    complexity: positiveInt(raw.complexity, DEFAULTS.complexity),
+    cognitiveComplexity: positiveInt(raw.cognitiveComplexity, DEFAULTS.cognitiveComplexity),
+    layout: typeof raw.layout === 'boolean' ? raw.layout : DEFAULTS.layout,
+  };
+}
+
+function readGates() {
+  try {
+    const raw = JSON.parse(readFileSync(join(import.meta.dirname, 'playbook.config.json'), 'utf8'));
+    return raw && raw.gates && typeof raw.gates === 'object' ? gatesFromRaw(raw.gates) : DEFAULTS;
+  } catch {
+    return DEFAULTS;
+  }
+}
+
+const gates = readGates();
 
 const domainLiterals = ['draft', 'ready', 'active', 'review', 'done', 'blocked', 'dropped', 'transition', 'note', 'takeover', 'evidence'];
 const singleSourceMessage = "single source: use the constant from the module's .constants.ts";
