@@ -4,6 +4,7 @@ import type { Command } from '../command.types.js';
 import { command as adopt } from './adopt.js';
 import { command as backup } from './backup.js';
 import { command as check } from './check.js';
+import { command as constitution } from './constitution.js';
 import { command as describe } from './describe.js';
 import { command as doctor } from './doctor.js';
 import { command as docs } from './docs.js';
@@ -16,4 +17,4 @@ import { command as serve } from './serve.js';
 import { command as status } from './status.js';
 import { command as task } from './task.js';
 
-export const allCommands: readonly Command[] = [adopt, backup, check, describe, doctor, docs, handoff, import_, instructions, rebuild, restore, serve, status, task];
+export const allCommands: readonly Command[] = [adopt, backup, check, constitution, describe, doctor, docs, handoff, import_, instructions, rebuild, restore, serve, status, task];

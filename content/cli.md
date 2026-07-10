@@ -174,6 +174,30 @@ Read-only guarantee: serve reads the board through `readBoardStatus` —
 the same contract as `status --json` — and never calls store mutators.
 The HTML page polls every 3 seconds and has no control buttons.
 
+### `sv-playbook constitution set|add-principle|show|list`
+
+When: to declare or inspect the instance constitution (vision, product definition, principles).
+The constitution is per-instance, CLI-managed, and DB-resident under `.svp/`. Generated exports
+land in `docs/constitution/` for git durability; they carry a GENERATED banner and must never be
+hand-edited.
+
+Why: the engine's universal invariants live in `content/principles.md`. The instance constitution
+is declared on top and consulted by agents, serve, and the reviewer to align with the project's
+own vision and principles — not the engine's.
+
+Argument shapes:
+
+```sh
+sv-playbook constitution set <section> --body-file <path>
+sv-playbook constitution add-principle --rule <text> --rationale <text>
+sv-playbook constitution show <section> [--json]
+sv-playbook constitution list
+```
+
+Sections: `vision`, `product_definition` (prose bodies). `principles` is managed via `add-principle`
+and `list-principles` (ordered list). The `show` subcommand only reads prose sections; for principles,
+use `list-principles` via a future hook or query the DB directly.
+
 ### `sv-playbook handoff [--role <role>] [--force]`
 
 When: before ending a session, before handing off to another model/agent, or
