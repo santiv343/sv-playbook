@@ -79,6 +79,22 @@ test('packets store has a body column and a packet_deps table at the bumped sche
   store.close();
 });
 
+test('doctor flags a review packet whose PR is already merged', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-rev-merge-'));
+  execFileSync('git', ['init'], { cwd: root });
+  const store = openStore(root);
+
+  store.db.prepare("INSERT INTO packets (id, title, path, status, body, write_set, pr, created_at, updated_at) VALUES ('P1', 'Test', '/tmp/test', 'review', '', '[]', '123', datetime('now'), datetime('now'))").run();
+
+  const { reviewMergedCheckFromStore } = await import('../cli/commands/doctor.js');
+  const result: { status: string; detail: string } = reviewMergedCheckFromStore(store);
+
+  assert.notEqual(result.status, 'ok');
+  assert.ok(result.detail.includes('already merged'), result.detail);
+
+  store.close();
+});
+
 test('schema migration refuses while a foreign live lease exists', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-mig-'));
   execFileSync('git', ['init'], { cwd: root });

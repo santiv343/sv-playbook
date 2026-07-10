@@ -8,6 +8,7 @@ import { latestStateBackupAgeHours } from '../../db/backup.js';
 import { PACKETS_DIR, PACKETS_DOCS_DIR, LEASE_TTL_MS, STATUS } from '../../tasks/service.constants.js';
 import { stringColumn } from '../../db/rows.js';
 import { loadConfig } from '../../config.js';
+import type { Store } from '../../db/store.types.js';
 import {
   DOCTOR_DETAIL,
   DOCTOR_LABEL,
@@ -96,6 +97,31 @@ function backupCheck(repoRoot: string): CheckResult {
   return { label: DOCTOR_LABEL.BACKUP, status, detail: `${age.toFixed(1)} hours old` };
 }
 
+export function reviewMergedCheckFromStore(store: Store): CheckResult {
+  const rows = store.db.prepare(
+    "SELECT id, pr FROM packets WHERE status = ? AND pr IS NOT NULL",
+  ).all(STATUS.REVIEW);
+  if (rows.length === 0) {
+    return { label: DOCTOR_LABEL.REVIEW_MERGED, status: DOCTOR_STATUS.OK, detail: 'no review packets have recorded PRs' };
+  }
+  const count = rows.length;
+  const ids = rows.map((row) => stringColumn(row, 'id')).join(', ');
+  return { label: DOCTOR_LABEL.REVIEW_MERGED, status: DOCTOR_STATUS.WARN, detail: `${count} review packet(s) already merged — run task close: ${ids}` };
+}
+
+function reviewMergedCheck(repoRoot: string): CheckResult {
+  try {
+    const store = openStore(repoRoot);
+    try {
+      return reviewMergedCheckFromStore(store);
+    } finally {
+      store.close();
+    }
+  } catch (error) {
+    return { label: DOCTOR_LABEL.REVIEW_MERGED, status: DOCTOR_STATUS.FAIL, detail: errorMessage(error) };
+  }
+}
+
 function activeWithoutLeaseCheck(repoRoot: string): CheckResult {
   try {
     const store = openStore(repoRoot);
@@ -126,6 +152,7 @@ function collectChecks(): CheckResult[] {
       packetsCheck(repoRoot),
       leasesCheck(repoRoot),
       activeWithoutLeaseCheck(repoRoot),
+      reviewMergedCheck(repoRoot),
       backupCheck(repoRoot),
     );
   } catch (error) {

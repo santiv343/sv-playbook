@@ -40,6 +40,13 @@ function migrateBodyColumn(db: DatabaseSync): void {
   }
 }
 
+function migratePrColumn(db: DatabaseSync): void {
+  const cols = db.prepare("SELECT name FROM pragma_table_info('packets') WHERE name = 'pr'").all();
+  if (cols.length === 0) {
+    db.exec('ALTER TABLE packets ADD COLUMN pr TEXT');
+  }
+}
+
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   const dir = join(repoRoot, SVP_DIR);
   mkdirSync(dir, { recursive: true });
@@ -63,6 +70,7 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
       );
     }
   }
+  migratePrColumn(db);
   return { db, dir, close: () => { db.close(); } };
 }
 
