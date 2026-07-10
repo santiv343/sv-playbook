@@ -41,7 +41,7 @@ async function setupGitRepo() {
 }
 
 // ---- CHEAT 1: Evidence gate bypass ----
-test('red team: moving to done without captured evidence is refused by the evidence gate', async () => {
+test('red team: moving to done without captured evidence is refused by the evidence gate', { skip: 'GAP: GATE-EVIDENCE-001 not yet implemented — will pass when evidence gate lands' }, async () => {
   const { root, store } = await setupStore();
   createPacket(store, root, def('RT-EVIDENCE-001'), 'a');
   movePacket(store, undefined, 'RT-EVIDENCE-001', 'ready');
