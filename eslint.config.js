@@ -42,6 +42,18 @@ export default tseslint.config(
       // taste: cognitive complexity (sonarjs)
       'sonarjs/cognitive-complexity': ['error', 10],
       // taste: no mutable shared state reached via process globals in production code
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['node:sqlite'],
+              message:
+                'CLI is the sole interface: direct DB access is forbidden outside src/db/** (PRINCIPLE-012)',
+            },
+          ],
+        },
+      ],
       'no-restricted-properties': [
         'error',
         { object: 'process', property: 'chdir', message: 'pass directories as parameters instead' },
@@ -67,6 +79,12 @@ export default tseslint.config(
       'sonarjs/no-duplicate-string': 'off',
       'max-lines-per-function': 'off',
       'no-restricted-properties': 'off',
+    },
+  },
+  {
+    files: ['src/db/**/*.ts'],
+    rules: {
+      'no-restricted-imports': 'off',
     },
   },
   {

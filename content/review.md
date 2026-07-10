@@ -21,6 +21,7 @@ is the no-direct-push + status-check block; an agent that merges or pushes to
 ## Hard rules — any hit is an INSTANT REQUEST CHANGES, no weighing
 - [ ] Single source (PRINCIPLE-011), concept-wide: no fact defined twice — no duplicated type unions, scattered domain literals, parallel lists, half-applied constants, copy-pasted config, restated rules. If two places must change together, it is one hit.
 - [ ] Any suppression, gate weakening, or baseline added.
+- [ ] Direct DB access outside src/db or hand-edited packet files (PRINCIPLE-012).
 - [ ] Any claim without literal command output.
 
 ## Code judgment
