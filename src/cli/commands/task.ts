@@ -18,6 +18,7 @@ import {
   briefPacket,
   ensureSession,
   generateIdFromType,
+  importPacketFile,
   leaseOf,
   listPackets,
   movePacket,
@@ -301,6 +302,17 @@ function handleBrief(args: string[], io: Io): number {
   return withStore((store) => { io.out(briefPacket(store, packetId)); return EXIT.OK; });
 }
 
+function handleImport(args: string[], io: Io): number {
+  const [pathOrId] = args;
+  if (args.length !== 1 || pathOrId === undefined) throw new UsageError('import requires <path|ID>');
+  return withStore((store) => {
+    const docRoot = worktreeRoot(process.cwd());
+    const packetId = importPacketFile(store, docRoot, pathOrId);
+    io.out(`imported ${packetId}`);
+    return EXIT.OK;
+  });
+}
+
 const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   ['create', { usage: 'sv-playbook task create --type <TYPE> --title <T> [--write <glob>]... [--depends <ID>]... [--req <REQ>]... [--evidence <E>]... --body-file <path>', run: (rest, io) => handleCreate(rest, io) }],
   ['amend', { usage: 'sv-playbook task amend <ID> [--title <T>] [--write <glob>]... [--body-file <path>] [--depends <ID>]... [--req <REQ>]... [--evidence <E>]...', run: (rest, io) => handleAmend(rest, io) }],
@@ -313,6 +325,7 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   ['release', { usage: 'sv-playbook task release <ID>', run: (rest, io) => handleRelease(rest, io) }],
   [EVENT_NOTE, { usage: 'sv-playbook task note <ID> <text...>', run: (rest, io) => handleNote(rest, io) }],
   ['brief', { usage: 'sv-playbook task brief <ID>', run: handleBrief }],
+  ['import', { usage: 'sv-playbook task import <path|ID>', run: (rest, io) => handleImport(rest, io) }],
   ['close', { usage: 'sv-playbook task close <ID> --pr <n>', run: (rest, io) => handleClose(rest, io) }],
 ]);
 

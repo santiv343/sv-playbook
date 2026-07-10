@@ -14,6 +14,7 @@ import {
   ALLOWED,
   DELETE_LEASE_SQL,
   EVENT_EVIDENCE,
+  EVENT_IMPORTED,
   EVENT_NOTE,
   EVENT_TAKEOVER,
   EVENT_TRANSITION,
@@ -64,7 +65,7 @@ export function overlaps(a: string, b: string): boolean {
 
 export function createPacket(store: Store, docRoot: string, def: PacketDefinition, body: string, type?: string): void {
   const exists = store.db.prepare(EXISTS_SQL).get(def.id);
-  if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`);
+  if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`, 'existing packet file? use task import <path>');
   const dir = join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${def.id}.md`);
@@ -110,6 +111,29 @@ export function importPackets(store: Store, docRoot: string): ImportResult {
     if (upsertPacketFile(store, join(dir, entry)) === 'imported') imported++; else updated++;
   }
   return { imported, updated };
+}
+export function importPacketFile(store: Store, docRoot: string, pathOrId: string): string {
+  let filePath: string;
+  if (pathOrId.includes('/') || pathOrId.includes('\\') || pathOrId.endsWith('.md')) {
+    filePath = pathOrId;
+  } else {
+    filePath = join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR, `${pathOrId}.md`);
+  }
+  if (!existsSync(filePath)) throw new LifecycleError(`packet file not found: ${filePath}`);
+  const text = readFileSync(filePath, 'utf8');
+  const { definition: def, body } = parsePacketDocument(text);
+  const prefixes = Object.values(TASK_TYPE_PREFIX);
+  const hasKnownPrefix = prefixes.some((p) => def.id.startsWith(p + '-'));
+  if (!hasKnownPrefix) throw new LifecycleError(`unknown packet id prefix: ${def.id}`);
+  const exists = store.db.prepare(EXISTS_SQL).get(def.id);
+  if (exists !== undefined) throw new LifecycleError(`packet already exists in DB: ${def.id}`, 'use task amend to update');
+  transact(store, () => {
+    store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, filePath, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now());
+    recordTransition(store, def.id, 'none', STATUS.DRAFT);
+    upsertDeps(store, def);
+    store.db.prepare(INSERT_EVENT_SQL).run(null, def.id, EVENT_IMPORTED, `imported from ${filePath}`, now());
+  });
+  return def.id;
 }
 export function listPackets(store: Store): Array<{ id: string; title: string; status: string; priority: number; updatedAt: string }> {
   return store.db.prepare('SELECT id, title, status, priority, updated_at FROM packets ORDER BY priority, id').all().map((row) => ({ id: stringColumn(row, 'id'), title: stringColumn(row, 'title'), status: stringColumn(row, 'status'), priority: numberColumn(row, 'priority'), updatedAt: stringColumn(row, 'updated_at') }));

@@ -17,6 +17,7 @@ export const DOCTOR_LABEL = {
   BACKUP: 'backup',
   ACTIVE_LEASES: 'active-leases',
   REVIEW_MERGED: 'review-merged',
+  PACKET_DRIFT: 'packet-drift',
 } as const;
 
 export const DOCTOR_DETAIL = {
