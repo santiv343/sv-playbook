@@ -8,6 +8,7 @@ import { generatePacketDocument, parsePacketDocument } from '../packets/document
 import type { PacketDefinition } from '../packets/document.types.js';
 import { LifecycleError } from './service.errors.js';
 import { contentDir } from '../content.js';
+import { loadConfig } from '../config.js';
 import {
   ALLOWED,
   DELETE_LEASE_SQL,
@@ -231,6 +232,22 @@ function safeDiff(worktree: string, mergeBase: string): string {
   try { return execFileSync('git', ['diff', '--name-only', `${mergeBase}...HEAD`], { cwd: worktree, encoding: 'utf8' }).trim(); } catch { return ''; }
 }
 
+function gateVerify(store: Store, packetId: string, from: string, to: string): void {
+  if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
+  const lease = leaseOf(store, packetId);
+  if (lease === undefined) return;
+  if (!existsSync(join(lease.worktree, 'playbook.config.json'))) return;
+  const config = loadConfig(lease.worktree);
+  if (!config.enforceVerifyOnReview) return;
+  const cmd = config.verifyCommand.split(/\s+/).filter(Boolean);
+  if (cmd.length === 0) return;
+  try {
+    execFileSync(cmd[0]!, cmd.slice(1), { cwd: lease.worktree, timeout: 120_000, stdio: 'pipe' });
+  } catch {
+    throw new LifecycleError(`verify command failed: ${config.verifyCommand}`);
+  }
+}
+
 function captureEvidence(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
   const lease = leaseOf(store, packetId);
@@ -257,6 +274,7 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   if (from === STATUS.ACTIVE) assertLeaseForActive(store, sessionId, packetId);
   captureEvidence(store, packetId, from, to);
   gateReview(store, packetId, from, to);
+  gateVerify(store, packetId, from, to);
   if (shouldReleaseLease(from, to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
   recordTransition(store, packetId, from, to, sessionId);
   return from;

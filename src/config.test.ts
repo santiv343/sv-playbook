@@ -13,6 +13,7 @@ test('loadConfig returns defaults when the file is absent', () => {
     chatLanguage: 'en',
     tier: 'TIER-2',
     verifyCommand: 'npm run verify',
+    enforceVerifyOnReview: true,
     autonomy: 'strict',
     backup: {
       enabled: true,
@@ -44,6 +45,7 @@ test('loadConfig reads a valid config file', () => {
     chatLanguage: 'es',
     tier: 'TIER-1',
     verifyCommand: 'npm run check',
+    enforceVerifyOnReview: true,
     autonomy: 'high',
     backup: {
       enabled: false,

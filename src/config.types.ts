@@ -22,6 +22,7 @@ export interface PlaybookConfig {
   chatLanguage: string;
   tier: Tier;
   verifyCommand: string;
+  enforceVerifyOnReview: boolean;
   autonomy: Autonomy;
   backup: BackupConfig;
   baseline?: BaselineConfig;
