@@ -6,6 +6,7 @@ import { commonRoot, openStore } from '../../db/store.js';
 import { inventoryRepo } from '../../adopt/inventory.js';
 import { analyzeGaps } from '../../adopt/gap.js';
 import { scaffold } from '../../adopt/scaffold.js';
+import { DEFAULTS } from '../../config.constants.js';
 import type { InventoryReport } from '../../adopt/inventory.types.js';
 import type { GapReport } from '../../adopt/gap.types.js';
 import type { Io } from '../command.types.js';
@@ -41,9 +42,16 @@ export function adoptCommand(): Command {
     name: 'adopt',
     summary: 'Analyze a repo and scaffold playbook artifacts (inventory+gap only by default; --force to scaffold)',
     run(args, io): Promise<number> {
-      const parsed = parseArgs({ args, allowPositionals: true, options: { force: { type: 'boolean' } } });
+      const parsed = parseArgs({
+        args,
+        allowPositionals: true,
+        options: {
+          force: { type: 'boolean' },
+          tier: { type: 'string', default: DEFAULTS.tier },
+        },
+      });
       if (parsed.positionals.length > 1) {
-        io.err('Usage: sv-playbook adopt [target-dir] [--force]');
+        io.err('Usage: sv-playbook adopt [target-dir] [--force] [--tier <TIER>]');
         return Promise.resolve(EXIT.USAGE);
       }
       const targetDir = resolveTargetDir(parsed.positionals);
@@ -61,7 +69,7 @@ export function adoptCommand(): Command {
         }
         io.out('');
         const store = openStore(targetDir);
-        const result = scaffold(targetDir, inventory, gaps, true, store);
+        const result = scaffold(targetDir, inventory, gaps, true, store, parsed.values.tier);
         store.close();
         io.out(`scaffolded: config=${result.wroteConfig}, agents=${result.wroteAgents}, packets=${result.packetCount}`);
         return Promise.resolve(EXIT.OK);
