@@ -193,6 +193,28 @@ test('task list and show json expose the full definition including write_set and
   });
 });
 
+test('import refuses an unknown packet id prefix', async () => {
+  await inTempRepo(async () => {
+    await mkdir(join('docs', 'packets'), { recursive: true });
+    const content = [
+      '---',
+      'id: UNKNOWN-001',
+      'title: No Prefix',
+      'depends_on: []',
+      'write_set: ["src/**"]',
+      'requirements: []',
+      'evidence_required: ["final-sha"]',
+      '---',
+      '',
+      'No recognized prefix.',
+    ].join('\n');
+    await writeFile(join('docs', 'packets', 'UNKNOWN-001.md'), content, 'utf8');
+    const io = fakeIo();
+    assert.notEqual(await taskCommand.run(['import', 'UNKNOWN-001'], io), 0);
+    assert.ok(io.errLines.some((l) => l.includes('unknown packet id prefix')), io.errLines.join('\n'));
+  });
+});
+
 test('an existing packet file can be imported into the DB through the CLI and never via SQL', async () => {
   await inTempRepo(async () => {
     await mkdir(join('docs', 'packets'), { recursive: true });

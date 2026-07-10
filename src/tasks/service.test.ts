@@ -189,6 +189,8 @@ test('overlaps detects overlapping globs and wildcard semantics', () => {
   assert.equal(overlaps('src/cli/commands/doctor*', 'src/cli/commands/doctor.ts'), true);
   assert.equal(overlaps('src/cli/commands/doctor*', 'src/cli/commands/doctor.constants.ts'), true);
   assert.equal(overlaps('src/cli/commands/task*', 'src/cli/commands/doctor.ts'), false);
+  assert.equal(overlaps('src/*/commands/task*', 'src/cli/commands/task.test.ts'), true);
+  assert.equal(overlaps('src/*/commands/task*', 'src/api/commands/task.ts'), true); assert.equal(overlaps('src/*/commands/task*', 'src/cli/routes/task.ts'), false);
 });
 
 test('moving to ready is refused when the write_set conflicts with an in-flight packet', async () => {
