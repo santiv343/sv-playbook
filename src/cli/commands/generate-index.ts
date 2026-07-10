@@ -3,6 +3,10 @@ import { join } from 'node:path';
 
 const TS_EXT = '.ts';
 
+function isFixtureFile(name: string): boolean {
+  return name.startsWith('__') && name.endsWith(`__${TS_EXT}`);
+}
+
 function isCommandFile(name: string): boolean {
   return name.endsWith(TS_EXT)
     && !name.endsWith(`.test${TS_EXT}`)
@@ -10,7 +14,8 @@ function isCommandFile(name: string): boolean {
     && !name.endsWith(`.types${TS_EXT}`)
     && !name.endsWith(`.errors${TS_EXT}`)
     && !name.startsWith('index.gen')
-    && !name.startsWith('generate-index');
+    && !name.startsWith('generate-index')
+    && !isFixtureFile(name);
 }
 
 export function scanCommandFiles(dir: string): string[] {
