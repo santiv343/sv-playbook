@@ -18,10 +18,23 @@ function isCompiledCommandFile(name: string): boolean {
     && name !== 'generate-index.js';
 }
 
+function isFixtureFileName(name: string): boolean {
+  return name.startsWith('__') && name.endsWith('.js');
+}
+
 test('the registry discovers commands from the commands directory without a hand-edited list', () => {
   const registered = commands();
   const names = registered.map((c) => c.name);
-  assert.ok(names.includes('__fixture__'), '__fixture__ command should be auto-discovered');
+  assert.ok(names.includes('task'), 'real command "task" should be discovered');
+  assert.ok(names.length >= 2, 'registry should discover multiple real commands');
+});
+
+test('the production registry excludes test-only fixture commands', () => {
+  const registered = commands();
+  const names = registered.map((c) => c.name);
+  for (const name of names) {
+    assert.ok(!(name.startsWith('__') && name.endsWith('__')), `fixture command "${name}" leaked into production registry`);
+  }
 });
 
 test('every compiled command file under cli/commands is registered', () => {
@@ -32,6 +45,7 @@ test('every compiled command file under cli/commands is registered', () => {
   const entries = readdirSync(COMMANDS_DIST, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isFile() || !isCompiledCommandFile(entry.name)) continue;
+    if (isFixtureFileName(entry.name)) continue;
     const cmdName = entry.name.replace(/\.js$/, '');
     if (!registeredNames.has(cmdName)) {
       missing.push(cmdName);
