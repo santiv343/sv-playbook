@@ -47,6 +47,13 @@ function migratePrColumn(db: DatabaseSync): void {
   }
 }
 
+function migrateTypeColumn(db: DatabaseSync): void {
+  const cols = db.prepare("SELECT name FROM pragma_table_info('packets') WHERE name = 'type'").all();
+  if (cols.length === 0) {
+    db.exec("ALTER TABLE packets ADD COLUMN type TEXT NOT NULL DEFAULT ''");
+  }
+}
+
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   const dir = join(repoRoot, SVP_DIR);
   mkdirSync(dir, { recursive: true });
@@ -62,6 +69,11 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
     const currentVersion = numberColumn(row, 'user_version');
     if (currentVersion === 3) {
       migrateBodyColumn(db);
+      db.exec('PRAGMA user_version = 4');
+      migrateTypeColumn(db);
+      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    } else if (currentVersion === 4) {
+      migrateTypeColumn(db);
       db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     } else if (currentVersion !== SCHEMA_VERSION) {
       db.close();

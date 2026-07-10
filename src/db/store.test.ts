@@ -64,7 +64,7 @@ test('a version mismatch refuses with a named non-destructive recovery and never
   assert.ok(existsSync(dbPath), '.svp/playbook.sqlite must still exist after mismatch');
 });
 
-test('packets store has a body column and a packet_deps table at the bumped schema version', async () => {
+test('packets store has a body column, a type column, and a packet_deps table at the bumped schema version', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-body-'));
   const store = openStore(root);
   const cols = store.db
@@ -72,10 +72,11 @@ test('packets store has a body column and a packet_deps table at the bumped sche
     .all()
     .map((row) => stringColumn(row, 'name'));
   assert.ok(cols.includes('body'), 'packets table must have a body column');
+  assert.ok(cols.includes('type'), 'packets table must have a type column');
   const deps = store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='packet_deps'").all();
   assert.equal(deps.length, 1, 'packet_deps table must exist');
   const ver = numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version');
-  assert.equal(ver, 4, 'schema version must be bumped to 4');
+  assert.equal(ver, SCHEMA_VERSION, `schema version must be ${SCHEMA_VERSION}`);
   store.close();
 });
 
