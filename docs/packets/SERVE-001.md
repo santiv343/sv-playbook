@@ -3,7 +3,7 @@
 id: SERVE-001
 title: serve: vista web local read-only del tablero en vivo (minima; UI rica = follow-ups IDEA-045)
 depends_on: []
-write_set: ["src/cli/commands/serve.ts","src/cli/commands/serve.test.ts","src/serve/**","src/cli/registry.ts","content/cli.md"]
+write_set: ["src/cli/commands/serve.ts","src/cli/commands/serve.test.ts","src/cli/commands/index.gen.ts","src/serve/**","src/cli/registry.ts","content/cli.md"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]
 ---

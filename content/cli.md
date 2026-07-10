@@ -154,6 +154,26 @@ Argument shape:
 sv-playbook status [--json]
 ```
 
+### `sv-playbook serve [--port <N>]`
+
+When: whenever a human or orchestrator needs a live, read-only web view
+of the board without running the CLI directly.
+
+Why: it starts a local HTTP server (node:http, zero runtime deps) that
+exposes `GET /` (self-contained HTML dashboard with auto-refresh) and
+`GET /api/board` (the same JSON contract as `status --json`). Mutations
+are never available through serve. Default port: 3131.
+
+Argument shape:
+
+```sh
+sv-playbook serve [--port <N>]
+```
+
+Read-only guarantee: serve reads the board through `readBoardStatus` —
+the same contract as `status --json` — and never calls store mutators.
+The HTML page polls every 3 seconds and has no control buttons.
+
 ### `sv-playbook handoff [--role <role>] [--force]`
 
 When: before ending a session, before handing off to another model/agent, or
