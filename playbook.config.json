@@ -1,0 +1,39 @@
+{
+  "productName": "sv-playbook",
+  "chatLanguage": "en",
+  "tier": "TIER-2",
+  "verifyCommand": "npm run verify",
+  "autonomy": "strict",
+  "backup": {
+    "enabled": false,
+    "retention": 3,
+    "maxAgeHours": 24,
+    "onEvents": ["done"]
+  },
+  "gates": {
+    "maxLines": 350,
+    "maxLinesPerFunction": 60,
+    "complexity": 10,
+    "cognitiveComplexity": 10,
+    "layout": true
+  },
+  "baseline": {
+    "fingerprints": [
+      "docs/packets/ADOPT-AURORA-001.md",
+      "docs/packets/CLI-QUIET-001.md",
+      "docs/packets/CONSTITUTION-CLEANUP-001.md",
+      "docs/packets/DOCS-CLI-STORE-001.md",
+      "docs/packets/DOGFOOD-CONSTITUTION-001.md",
+      "docs/packets/DROP-ROTATE-001.md",
+      "docs/packets/FLOW-WORKTREE-001.md",
+      "docs/packets/OPINION-FREE-CORE-001.md",
+      "docs/packets/PROCESS-GATE-001.md",
+      "docs/packets/ROLE-ORCHESTRATOR-001.md",
+      "docs/packets/ROLE-ORCHESTRATOR-HARDEN-001.md",
+      "docs/packets/SERVE-DETAIL-001.md",
+      "docs/packets/SKILL-REPO-STATE-001.md",
+      "docs/packets/TASTE-LEDGER-001.md",
+      "docs/packets/TEST-QUIET-001.md"
+    ]
+  }
+}

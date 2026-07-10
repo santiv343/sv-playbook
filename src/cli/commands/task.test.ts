@@ -88,6 +88,8 @@ test('release frees an own lease and reports no lease on retry', async () => {
     await taskCommand.run(['start', 'REL-001'], io);
     assert.equal(await taskCommand.run(['release', 'REL-001'], io), 0);
     assert.ok(io.outLines.includes('released REL-001'));
+    assert.ok(io.outLines.some((line) => line.includes('stays active without a lease')));
+    assert.ok(io.outLines.some((line) => line.includes('task takeover REL-001')));
     assert.equal(await taskCommand.run(['release', 'REL-001'], io), 1);
     assert.ok(io.errLines.some((line) => line.includes('no lease')));
   });

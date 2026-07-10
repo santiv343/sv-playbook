@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from '../db/store.types.js';
@@ -226,10 +226,8 @@ function gateVerify(store: Store, packetId: string, from: string, to: string): v
   const cfgPath = join(lease.worktree, 'playbook.config.json');
   if (!existsSync(cfgPath) || /enforceVerifyOnReview\s*:\s*false/.test(readFileSync(cfgPath, 'utf8'))) return;
   const config = loadConfig(lease.worktree);
-  const cmd = config.verifyCommand.split(/\s+/).filter(Boolean);
-  const bin = cmd[0];
-  if (!bin) return;
-  try { execFileSync(bin, cmd.slice(1), { cwd: lease.worktree, timeout: 120_000, stdio: 'pipe' }); }
+  if (config.verifyCommand.trim() === '') return;
+  try { execSync(config.verifyCommand, { cwd: lease.worktree, timeout: 120_000, stdio: 'pipe' }); }
   catch { throw new LifecycleError(`verify command failed: ${config.verifyCommand}`); }
 }
 function captureEvidence(store: Store, packetId: string, from: string, to: string): void {
@@ -276,14 +274,18 @@ export function takeoverPacket(
   packetId: string, force: boolean,
 ): RecoveryReport {
   const lease = leaseOf(store, packetId);
-  if (lease === undefined) throw new LifecycleError('no lease to take over', 'use task start');
-  if (lease.sessionId === sessionId && !lease.stale) throw new LifecycleError('you already hold this lease');
-  if (!lease.stale && !force) throw new LifecycleError('lease is live', 'pause the holder or pass --force');
+  if (lease === undefined && currentStatus(store, packetId) !== STATUS.ACTIVE) {
+    throw new LifecycleError('no lease to take over', 'use task start');
+  }
+  if (lease !== undefined) {
+    if (lease.sessionId === sessionId && !lease.stale) throw new LifecycleError('you already hold this lease');
+    if (!lease.stale && !force) throw new LifecycleError('lease is live', 'pause the holder or pass --force');
+  }
   transact(store, () => {
     store.db.prepare(DELETE_LEASE_SQL).run(packetId);
     store.db.prepare(INSERT_LEASE_SQL).run(packetId, sessionId, worktree, now(), now());
     store.db.prepare(INSERT_EVENT_SQL)
-      .run(sessionId, packetId, EVENT_TAKEOVER, `from ${lease.sessionId} force=${force}`, now());
+      .run(sessionId, packetId, EVENT_TAKEOVER, `from ${lease?.sessionId ?? 'none'} force=${force}`, now());
   });
   return recoverPacket(store, packetId);
 }

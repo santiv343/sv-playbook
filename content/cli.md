@@ -114,6 +114,16 @@ mirror drift. Without a target, runs all checks. Targets: `structure`,
 Why: it gives authored artifacts a deterministic mechanical gate (PRINCIPLE-001)
 complementing `verify`. Exit 1 (GATE_FAIL) on any violation; exit 0 when clean.
 
+Structure check and baselines: `check structure` validates that every packet
+in `docs/packets/` has the required sections (`## Task`, `## RED test`,
+`## Stop conditions`, `## Evidence`). New packets must always pass. Historical
+packets with accepted violations can be grandfathered by listing their relative
+path (e.g. `docs/packets/OLD-001.md`) under `baseline.fingerprints` in
+`playbook.config.json`. A baselined packet's missing sections are reported as
+info (not a failure), while any new packet missing sections still causes
+GATE_FAIL. Without a `playbook.config.json` or without `baseline.fingerprints`,
+every packet is checked strictly.
+
 Argument shape:
 
 ```sh
