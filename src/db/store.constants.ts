@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS packets (
   status TEXT NOT NULL DEFAULT '${STATUS.DRAFT}' CHECK (status IN (${sqlInList(PACKET_STATUSES)})),
   body TEXT NOT NULL DEFAULT '',
   write_set TEXT NOT NULL DEFAULT '[]',
+  pr TEXT,
   priority INTEGER NOT NULL DEFAULT 100,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

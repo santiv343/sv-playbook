@@ -16,6 +16,7 @@ export const DOCTOR_LABEL = {
   LEASES: 'leases',
   BACKUP: 'backup',
   ACTIVE_LEASES: 'active-leases',
+  REVIEW_MERGED: 'review-merged',
 } as const;
 
 export const DOCTOR_DETAIL = {
