@@ -25,10 +25,20 @@ import {
   PACKETS_DOCS_DIR,
   SESSION_FILE_NAME,
   STATUS,
+  TASK_TYPE_PREFIX,
 } from './service.constants.js';
 import type { LeaseInfo, PacketStatus, RecoveryReport, ImportResult } from './service.types.js';
 
 const now = (): string => new Date().toISOString();
+
+export function generateIdFromType(store: Store, type: string): string {
+  const prefix = TASK_TYPE_PREFIX[type];
+  if (prefix === undefined) throw new LifecycleError(`unknown task type: ${type}`);
+  const rows = store.db.prepare("SELECT id FROM packets WHERE id LIKE ? ORDER BY id DESC LIMIT 1").all(`${prefix}-%`);
+  if (rows.length === 0) return `${prefix}-001`;
+  const num = parseInt(stringColumn(rows[0], 'id').replace(`${prefix}-`, ''), 10);
+  return `${prefix}-${String(Number.isNaN(num) ? 1 : num + 1).padStart(3, '0')}`;
+}
 
 function deleteDeps(store: Store, packetId: string): void {
   store.db.prepare('DELETE FROM packet_deps WHERE packet_id = ?').run(packetId);
@@ -48,14 +58,14 @@ export function overlaps(a: string, b: string): boolean {
   return prefixA.startsWith(prefixB + '/') || prefixB.startsWith(prefixA + '/');
 }
 
-export function createPacket(store: Store, docRoot: string, def: PacketDefinition, body: string): void {
+export function createPacket(store: Store, docRoot: string, def: PacketDefinition, body: string, type?: string): void {
   const exists = store.db.prepare(EXISTS_SQL).get(def.id);
   if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`);
   const dir = join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${def.id}.md`);
   writeFileSync(path, generatePacketDocument(def, body), 'utf8');
-  store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, STATUS.DRAFT, body, JSON.stringify(def.writeSet), now(), now());
+  store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, STATUS.DRAFT, body, JSON.stringify(def.writeSet), type ?? '', now(), now());
   for (const depId of def.dependsOn) {
     store.db.prepare('INSERT INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);
   }
@@ -73,7 +83,7 @@ function upsertPacketFile(store: Store, path: string): 'imported' | 'updated' {
     upsertDeps(store, def);
     return 'updated';
   }
-  store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, STATUS.DRAFT, body, JSON.stringify(def.writeSet), now(), now());
+  store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now());
   recordTransition(store, def.id, 'none', STATUS.DRAFT);
   upsertDeps(store, def);
   return 'imported';
@@ -120,9 +130,6 @@ function currentStatus(store: Store, packetId: string): string {
   if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
   return stringColumn(row, 'status');
 }
-function blocksReopen(status: string): boolean {
-  return status === STATUS.REVIEW || status === STATUS.DONE || status === STATUS.DROPPED;
-}
 export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
   const row = store.db.prepare('SELECT session_id, worktree, acquired_at, heartbeat_at FROM leases WHERE packet_id = ?')
     .get(packetId);
@@ -148,7 +155,7 @@ export function startPacket(store: Store, sessionId: string, worktree: string, p
     throw new LifecycleError(`held by session ${lease.sessionId}`, 'use takeover once available; do not delete the lease by hand');
   }
   if (status !== STATUS.READY) {
-    const hint = blocksReopen(status) ? 'reopening goes through the change bridge' : undefined;
+    const hint = (status === STATUS.REVIEW || status === STATUS.DONE || status === STATUS.DROPPED) ? 'reopening goes through the change bridge' : undefined;
     throw new LifecycleError(`wrong state ${status}`, hint);
   }
   store.db.prepare(INSERT_LEASE_SQL).run(packetId, sessionId, worktree, now(), now());
@@ -158,9 +165,6 @@ function assertLeaseForActive(store: Store, sessionId: string | undefined, packe
   const lease = leaseOf(store, packetId);
   if (lease === undefined || sessionId === undefined) throw new LifecycleError('lease required to leave active');
   if (lease.sessionId !== sessionId) throw new LifecycleError(`lease held by another session ${lease.sessionId}`);
-}
-function shouldReleaseLease(from: string, to: string): boolean {
-  return !(from === STATUS.ACTIVE && to === STATUS.BLOCKED);
 }
 export function releaseLease(store: Store, sessionId: string, packetId: string): void {
   const lease = leaseOf(store, packetId);
@@ -210,13 +214,10 @@ function gateReview(store: Store, packetId: string, from: string, to: string): v
   if (glbs.length === 0) return;
   const mergeBase = findMergeBase(lease.worktree);
   if (!mergeBase) return;
-  const changed = safeDiff(lease.worktree, mergeBase);
+  const changed = (() => { try { return execFileSync('git', ['diff', '--name-only', `${mergeBase}...HEAD`], { cwd: lease.worktree, encoding: 'utf8' }).trim(); } catch { return ''; } })();
   if (!changed) return;
   const offending = changed.split('\n').filter((f) => f !== '' && !glbs.some((g) => overlaps(g, f)));
   if (offending.length > 0) throw new LifecycleError(`write_set violation: branch changed files outside write_set: ${offending.join(', ')}`);
-}
-function safeDiff(worktree: string, mergeBase: string): string {
-  try { return execFileSync('git', ['diff', '--name-only', `${mergeBase}...HEAD`], { cwd: worktree, encoding: 'utf8' }).trim(); } catch { return ''; }
 }
 function gateVerify(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
@@ -258,7 +259,7 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   captureEvidence(store, packetId, from, to);
   gateReview(store, packetId, from, to);
   gateVerify(store, packetId, from, to);
-  if (shouldReleaseLease(from, to)) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
+  if (from !== STATUS.ACTIVE || to !== STATUS.BLOCKED) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
   recordTransition(store, packetId, from, to, sessionId);
   return from;
 }
