@@ -114,9 +114,8 @@ async function runTarget(root: string, target: string, io: Io): Promise<number |
   }
 }
 
-export function checkCommand(): Command {
-  return {
-    name: 'check',
+export const command: Command = {
+  name: 'check',
     summary: 'Validate authored artifacts (structure, instructions drift)',
     async run(args, io) {
       const root = process.cwd();
@@ -131,5 +130,4 @@ export function checkCommand(): Command {
 
       return hasViolations ? EXIT.GATE_FAIL : EXIT.OK;
     },
-  };
-}
+};

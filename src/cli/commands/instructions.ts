@@ -42,9 +42,8 @@ export async function renderInstructions(opts: RenderOptions): Promise<void> {
   }
 }
 
-export function instructionsCommand(): Command {
-  return {
-    name: 'instructions',
+export const command: Command = {
+  name: 'instructions',
     summary: 'Generate cold-start agent instructions from a single source',
     async run(args, io) {
       const parsed = parseArgs({
@@ -57,5 +56,4 @@ export function instructionsCommand(): Command {
       await renderInstructions({ root, io, write: !!parsed.values.write });
       return EXIT.OK;
     },
-  };
-}
+};

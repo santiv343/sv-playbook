@@ -4,9 +4,8 @@ import { listTopics, readTopic } from '../../content.js';
 
 const AVAILABLE_TOPICS = 'Available topics:';
 
-export function docsCommand(): Command {
-  return {
-    name: 'docs',
+export const command: Command = {
+  name: 'docs',
     summary: 'Print a playbook process document (list topics when no argument)',
     async run(args, io) {
     const [topic] = args;
@@ -25,5 +24,4 @@ export function docsCommand(): Command {
     io.out(text);
     return EXIT.OK;
     },
-  };
-}
+};

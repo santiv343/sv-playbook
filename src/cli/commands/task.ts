@@ -354,9 +354,8 @@ function handleTaskError(error: unknown, io: Io): number {
   throw error;
 }
 
-export function taskCommand(): Command {
-  return {
-    name: 'task',
+export const command: Command = {
+  name: 'task',
     summary: 'Create, list, start, move, inspect, and recover execution packets',
     run(args, io) {
     try {
@@ -368,5 +367,4 @@ export function taskCommand(): Command {
       return Promise.resolve(handleTaskError(error, io));
     }
     },
-  };
-}
+};

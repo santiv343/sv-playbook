@@ -85,9 +85,8 @@ function renderPrs(): string[] {
   return lines;
 }
 
-export function handoffCommand(): Command {
-  return {
-    name: 'handoff',
+export const command: Command = {
+  name: 'handoff',
     summary: 'Generate a deterministic continuation prompt from live state',
     run(args, io: Io): Promise<number> {
       const parsed = parseArgs({
@@ -139,5 +138,4 @@ export function handoffCommand(): Command {
         store.close();
       }
     },
-  };
-}
+};

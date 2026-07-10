@@ -37,9 +37,8 @@ function resolveTargetDir(positionals: (string | undefined)[]): string {
   return commonRoot(process.cwd());
 }
 
-export function adoptCommand(): Command {
-  return {
-    name: 'adopt',
+export const command: Command = {
+  name: 'adopt',
     summary: 'Analyze a repo and scaffold playbook artifacts (inventory+gap only by default; --force to scaffold)',
     run(args, io): Promise<number> {
       const parsed = parseArgs({
@@ -78,5 +77,4 @@ export function adoptCommand(): Command {
         return Promise.resolve(EXIT.GATE_FAIL);
       }
     },
-  };
-}
+};

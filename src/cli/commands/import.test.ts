@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { importCommand } from './import.js';
+import { command as importCommand } from './import.js';
 import type { Io } from '../command.types.js';
 import { stringColumn } from '../../db/rows.js';
 
@@ -44,7 +44,7 @@ test('import loads a packet body and its deps from markdown into the DB', async 
     await writeFile(join('docs', 'packets', 'IMP-001.md'), content, 'utf8');
 
     const io = fakeIo();
-    const code = await importCommand().run([], io);
+    const code = await importCommand.run([], io);
     assert.equal(code, 0);
 
     const { openStore } = await import('../../db/store.js');
