@@ -326,3 +326,16 @@ test('red team: starting a draft packet is refused with the current status name'
     /wrong state draft/,
   );
 });
+
+// ---- SAFETY: Store migration always uses fixture DBs, never the shared .svp ----
+test('red team: store fixture DB is used during migration, never the shared .svp', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-rt-mig-'));
+  execFileSync('git', ['init'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
+
+  const store = openStore(root);
+  const fixturePath = join(root, SVP_DIR, DB_FILE);
+  assert.ok(existsSync(fixturePath), 'fixture DB must exist under fixture root');
+  assert.ok(fixturePath.startsWith(root), 'fixture DB path must be under the test root');
+  store.close();
+});

@@ -4,10 +4,11 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { numberColumn, stringColumn } from './rows.js';
-import { DB_FILE, EVENT_COMMANDS, SCHEMA, SCHEMA_VERSION, SVP_DIR, sqlInList } from './store.constants.js';
+import { DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SVP_DIR, sqlInList } from './store.constants.js';
 import { StoreVersionError } from './store.errors.js';
 import { createStateBackup } from './backup.js';
 import { BACKUP_REASON } from './backup.constants.js';
+import type { BackupReason } from './backup.types.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import type { Store } from './store.types.js';
 
@@ -23,6 +24,23 @@ export function worktreeRoot(startDir: string): string {
   return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: startDir, encoding: 'utf8' }).trim();
 }
 
+function getCurrentBranch(repoRoot: string): string {
+  try {
+    return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function isOnDefaultBranch(repoRoot: string): boolean {
+  const branch = getCurrentBranch(repoRoot);
+  if (branch === '' || branch === 'main' || branch === 'master') return true;
+  try {
+    const remoteRef = execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
+    return branch === remoteRef.replace('refs/remotes/origin/', '');
+  } catch { return false; }
+}
+
 function applyPragmas(db: DatabaseSync): void {
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec('PRAGMA journal_mode = WAL;');
@@ -31,7 +49,11 @@ function applyPragmas(db: DatabaseSync): void {
 
 interface OpenStoreOptions {
   skipVersionCheck?: boolean;
+  migrateLive?: boolean;
 }
+
+const MIGRATION_REFUSED_TEXT = (branch: string): string =>
+  `migration refused: on branch "${branch}" which is not the default branch — switch to main or pass --migrate-live to migrate the live store from this branch`;
 
 function migrateBodyColumn(db: DatabaseSync): void {
   const cols = db.prepare("SELECT name FROM pragma_table_info('packets') WHERE name = 'body'").all();
@@ -126,6 +148,80 @@ function migrateSprintsTables(db: DatabaseSync): void {
   }
 }
 
+function runVersionMigration(db: DatabaseSync, fromVersion: number): void {
+  if (fromVersion === 3) {
+    migrateBodyColumn(db);
+    db.exec('PRAGMA user_version = 4');
+    migrateTypeColumn(db);
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  } else if (fromVersion === 4) {
+    migrateTypeColumn(db);
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  } else if (fromVersion === 5) {
+    migrateConstitutionTables(db);
+    migrateSprintsTables(db);
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  } else if (fromVersion === 6) {
+    migrateSprintsTables(db);
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  } else if (fromVersion === 7) {
+    const eventCheck = `command TEXT NOT NULL CHECK (command IN (${sqlInList(EVENT_COMMANDS)}))`;
+    db.exec(`CREATE TABLE events_new (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT,
+      packet_id TEXT,
+      ${eventCheck},
+      detail TEXT,
+      at TEXT NOT NULL
+    )`);
+    db.exec('INSERT INTO events_new (seq, session_id, packet_id, command, detail, at) SELECT seq, session_id, packet_id, command, detail, at FROM events');
+    db.exec('DROP TABLE events');
+    db.exec('ALTER TABLE events_new RENAME TO events');
+    db.exec('PRAGMA user_version = 8');
+  }
+}
+
+function emitSchemaMigrated(db: DatabaseSync): void {
+  try {
+    db.prepare('INSERT INTO events (command, at) VALUES (?, ?)').run(EVENT_SCHEMA_MIGRATED, new Date().toISOString());
+  } catch (err) {
+    console.error(`failed to emit schema-migrated event: ${String(err)}`);
+  }
+}
+
+function createVerifiedBackup(repoRoot: string, reason: BackupReason): void {
+  const backup = createStateBackup(repoRoot, { reason, allowFreshLeases: true });
+  const expectedSha = backup.sha256;
+  const actualSha = createHash('sha256').update(readFileSync(backup.sqlitePath)).digest('hex');
+  if (actualSha !== expectedSha) {
+    throw new Error('pre-migration backup verification failed (sha256 mismatch)');
+  }
+  const vacDb = new DatabaseSync(backup.sqlitePath);
+  const integrityRow = vacDb.prepare('PRAGMA integrity_check').get();
+  const integrityCheck = stringColumn(integrityRow, 'integrity_check');
+  vacDb.close();
+  if (integrityCheck !== 'ok') {
+    throw new Error('pre-migration backup verification failed (integrity check)');
+  }
+}
+
+const TOO_NEW_TEXT = (currentVersion: number): string =>
+  `store unusable (schema v${currentVersion} does not match v${SCHEMA_VERSION}): a migration PR is likely open or just merged — git pull and retry. Restore a verified backup with 'restore state --file <snap>' (primary), or 'rebuild' from git (last resort) — never delete .svp`;
+
+function performMigration(db: DatabaseSync, repoRoot: string, currentVersion: number, options?: OpenStoreOptions): void {
+  if (!isOnDefaultBranch(repoRoot)) {
+    if (options?.migrateLive) {
+      console.error(`bypassing branch guard: migrating live from "${getCurrentBranch(repoRoot)}"`);
+    } else {
+      db.close();
+      throw new StoreVersionError(MIGRATION_REFUSED_TEXT(getCurrentBranch(repoRoot)));
+    }
+  }
+  createVerifiedBackup(repoRoot, BACKUP_REASON.STORE_OPEN);
+  runVersionMigration(db, currentVersion);
+  emitSchemaMigrated(db);
+}
+
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   const dir = join(repoRoot, SVP_DIR);
   mkdirSync(dir, { recursive: true });
@@ -139,40 +235,12 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   } else if (!options?.skipVersionCheck) {
     const row = db.prepare('PRAGMA user_version').get();
     const currentVersion = numberColumn(row, 'user_version');
-    if (currentVersion === 3) {
-      migrateBodyColumn(db);
-      db.exec('PRAGMA user_version = 4');
-      migrateTypeColumn(db);
-      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-    } else if (currentVersion === 4) {
-      migrateTypeColumn(db);
-      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-    } else if (currentVersion === 5) {
-      migrateConstitutionTables(db);
-      migrateSprintsTables(db);
-      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-    } else if (currentVersion === 6) {
-      migrateSprintsTables(db);
-      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-    } else if (currentVersion === 7) {
-      const eventCheck = `command TEXT NOT NULL CHECK (command IN (${sqlInList(EVENT_COMMANDS)}))`;
-      db.exec(`CREATE TABLE events_new (
-        seq INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT,
-        packet_id TEXT,
-        ${eventCheck},
-        detail TEXT,
-        at TEXT NOT NULL
-      )`);
-      db.exec('INSERT INTO events_new (seq, session_id, packet_id, command, detail, at) SELECT seq, session_id, packet_id, command, detail, at FROM events');
-      db.exec('DROP TABLE events');
-      db.exec('ALTER TABLE events_new RENAME TO events');
-      db.exec('PRAGMA user_version = 8');
+
+    if (currentVersion >= 3 && currentVersion < SCHEMA_VERSION) {
+      performMigration(db, repoRoot, currentVersion, options);
     } else if (currentVersion !== SCHEMA_VERSION) {
       db.close();
-      throw new StoreVersionError(
-        `store unusable (schema v${currentVersion} does not match v${SCHEMA_VERSION}): restore a verified backup with 'restore state --file <snap>' (primary), or 'rebuild' from git (last resort) — never delete .svp`,
-      );
+      throw new StoreVersionError(TOO_NEW_TEXT(currentVersion));
     }
   }
   migratePrColumn(db);
@@ -181,29 +249,13 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
 
 interface MigrateStoreOptions {
   currentSessionId?: string;
+  migrateLive?: boolean;
 }
 
-export function migrateStore(repoRoot: string, options?: MigrateStoreOptions): void {
-  const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
-  const backup = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL, allowFreshLeases: true });
-
-  const expectedSha = backup.sha256;
-  const actualSha = createHash('sha256').update(readFileSync(backup.sqlitePath)).digest('hex');
-  if (actualSha !== expectedSha) {
-    throw new Error('migration aborted: pre-migration backup verification failed (sha256 mismatch)');
-  }
-  const vacDb = new DatabaseSync(backup.sqlitePath);
-  const integrityRow = vacDb.prepare('PRAGMA integrity_check').get();
-  const integrityCheck = stringColumn(integrityRow, 'integrity_check');
-  vacDb.close();
-  if (integrityCheck !== 'ok') {
-    throw new Error('migration aborted: pre-migration backup verification failed (integrity check)');
-  }
-
+function assertNoForeignLeases(dbPath: string, currentSessionId?: string): void {
   const liveDb = new DatabaseSync(dbPath);
   const leaseRows = liveDb.prepare('SELECT session_id, heartbeat_at FROM leases').all();
   liveDb.close();
-  const currentSessionId = options?.currentSessionId;
   let foreignCount = 0;
   for (const row of leaseRows) {
     const sid = stringColumn(row, 'session_id');
@@ -218,8 +270,25 @@ export function migrateStore(repoRoot: string, options?: MigrateStoreOptions): v
       `migration blocked: ${foreignCount} other worktree/session(s) are live on the shared store — pause them or isolate state per worktree before migrating`,
     );
   }
+}
+
+export function migrateStore(repoRoot: string, options?: MigrateStoreOptions): void {
+  const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
+
+  if (!isOnDefaultBranch(repoRoot)) {
+    if (options?.migrateLive) {
+      console.error(`bypassing branch guard: migrating live from "${getCurrentBranch(repoRoot)}"`);
+    } else {
+      throw new StoreVersionError(MIGRATION_REFUSED_TEXT(getCurrentBranch(repoRoot)));
+    }
+  }
+
+  createVerifiedBackup(repoRoot, BACKUP_REASON.MANUAL);
+
+  assertNoForeignLeases(dbPath, options?.currentSessionId);
 
   const db = new DatabaseSync(dbPath);
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  emitSchemaMigrated(db);
   db.close();
 }
