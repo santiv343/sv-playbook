@@ -166,6 +166,44 @@ test('schema migration from v5 creates constitution tables', async () => {
   store.close();
 });
 
+test('schema migration from v7 to v8 rebuilds events table with extended CHECK including imported', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-mig7-'));
+  openStore(root).close();
+  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA user_version = 7');
+  db.exec('DROP TABLE IF EXISTS events');
+  db.exec(`CREATE TABLE events (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT,
+    packet_id TEXT,
+    command TEXT NOT NULL CHECK (command IN ('transition', 'note', 'takeover', 'evidence')),
+    detail TEXT,
+    at TEXT NOT NULL
+  )`);
+  db.exec("INSERT INTO events (command, at) VALUES ('transition', datetime('now'))");
+  db.exec("INSERT INTO events (command, at) VALUES ('note', datetime('now'))");
+  db.exec("INSERT INTO events (command, at) VALUES ('takeover', datetime('now'))");
+  db.exec("INSERT INTO events (command, at) VALUES ('evidence', datetime('now'))");
+  assert.throws(
+    () => { db.exec("INSERT INTO events (command, at) VALUES ('imported', datetime('now'))"); },
+    /CHECK constraint failed/,
+  );
+  const oldCount = numberColumn(db.prepare('SELECT COUNT(*) as c FROM events').get(), 'c');
+  assert.equal(oldCount, 4);
+  db.close();
+
+  const store = openStore(root);
+  const ver = numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version');
+  assert.equal(ver, 8);
+  const count = numberColumn(store.db.prepare('SELECT COUNT(*) as c FROM events').get(), 'c');
+  assert.equal(count, 4, 'old events must survive migration');
+  store.db.exec("INSERT INTO events (command, at) VALUES ('imported', datetime('now'))");
+  const countAfter = numberColumn(store.db.prepare('SELECT COUNT(*) as c FROM events').get(), 'c');
+  assert.equal(countAfter, 5);
+  store.close();
+});
+
 test('schema migration refuses while a foreign live lease exists', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-mig-'));
   execFileSync('git', ['init'], { cwd: root });
