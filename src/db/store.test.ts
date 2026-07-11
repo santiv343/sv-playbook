@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { openStore, migrateStore, worktreeRoot } from './store.js';
-import { SCHEMA_VERSION } from './store.constants.js';
+import { EVENT_SCHEMA_MIGRATED, SCHEMA_VERSION } from './store.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
 import { randomUUID } from 'node:crypto';
 
@@ -197,10 +197,10 @@ test('schema migration from v7 to v8 rebuilds events table with extended CHECK i
   const ver = numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version');
   assert.equal(ver, 8);
   const count = numberColumn(store.db.prepare('SELECT COUNT(*) as c FROM events').get(), 'c');
-  assert.equal(count, 4, 'old events must survive migration');
+  assert.equal(count, 5, '4 old events + schema-migrated event must survive migration');
   store.db.exec("INSERT INTO events (command, at) VALUES ('imported', datetime('now'))");
   const countAfter = numberColumn(store.db.prepare('SELECT COUNT(*) as c FROM events').get(), 'c');
-  assert.equal(countAfter, 5);
+  assert.equal(countAfter, 6);
   store.close();
 });
 
@@ -225,4 +225,65 @@ test('schema migration refuses while a foreign live lease exists', async () => {
   const after = new DatabaseSync(dbPath);
   assert.equal(numberColumn(after.prepare('PRAGMA user_version').get(), 'user_version'), 1);
   after.close();
+});
+
+test('auto-migration of an older live store is refused off the default branch without the explicit flag', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-branch-gate-'));
+  execFileSync('git', ['-c', 'init.defaultBranch=main', 'init'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
+  execFileSync('git', ['checkout', '-b', 'feature/test-mig'], { cwd: root });
+
+  openStore(root).close();
+  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA user_version = 7');
+  db.close();
+
+  assert.throws(
+    () => { openStore(root); },
+    /migration refused/,
+  );
+
+  execFileSync('git', ['checkout', 'main'], { cwd: root });
+  const db2 = new DatabaseSync(dbPath);
+  db2.exec('PRAGMA user_version = 7');
+  db2.close();
+  assert.doesNotThrow(() => {
+    const s = openStore(root);
+    assert.equal(numberColumn(s.db.prepare('PRAGMA user_version').get(), 'user_version'), SCHEMA_VERSION);
+    s.close();
+  });
+
+  execFileSync('git', ['checkout', 'feature/test-mig'], { cwd: root });
+  const db3 = new DatabaseSync(dbPath);
+  db3.exec('PRAGMA user_version = 7');
+  db3.close();
+  assert.doesNotThrow(() => {
+    const s = openStore(root, { migrateLive: true });
+    assert.equal(numberColumn(s.db.prepare('PRAGMA user_version').get(), 'user_version'), SCHEMA_VERSION);
+    s.close();
+  });
+});
+
+test('bypass via migrateLive is evented (writes a schema-migrated event)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-bypass-event-'));
+  execFileSync('git', ['-c', 'init.defaultBranch=main', 'init'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
+  execFileSync('git', ['checkout', '-b', 'feature/bypass-test'], { cwd: root });
+
+  openStore(root).close();
+  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA user_version = 7');
+  db.close();
+
+  const store = openStore(root, { migrateLive: true });
+  assert.equal(numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version'), SCHEMA_VERSION);
+
+  const eventCount = numberColumn(
+    store.db.prepare('SELECT COUNT(*) AS c FROM events WHERE command = ?').get(EVENT_SCHEMA_MIGRATED),
+    'c',
+  );
+  assert.equal(eventCount, 1, 'bypass via migrateLive must write a schema-migrated event');
+  store.close();
 });
