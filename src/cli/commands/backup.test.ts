@@ -59,7 +59,7 @@ test('restore state replaces the current store from a backup file', async () => 
     await writeFile(join(root, '.svp', 'playbook.sqlite'), 'not sqlite');
 
     const restoreIo = fakeIo();
-    assert.equal(await main(['restore', 'state', '--file', backupPath], restoreIo), EXIT.OK, restoreIo.errLines.join('\n'));
+    assert.equal(await main(['restore', 'state', '--file', backupPath, '--confirm-destructive'], restoreIo), EXIT.OK, restoreIo.errLines.join('\n'));
     const store = openStore(root);
     store.close();
     assert.ok(restoreIo.outLines.some((line) => line.includes('restored:')));
