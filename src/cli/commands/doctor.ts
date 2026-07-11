@@ -84,7 +84,7 @@ function leasesCheck(repoRoot: string): CheckResult {
   }
 }
 
-function backupCheck(repoRoot: string): CheckResult {
+export function backupCheck(repoRoot: string): CheckResult {
   const config = loadConfig(repoRoot);
   if (!config.backup.enabled) {
     return { label: DOCTOR_LABEL.BACKUP, status: DOCTOR_STATUS.OK, detail: DOCTOR_DETAIL.BACKUP_DISABLED };
