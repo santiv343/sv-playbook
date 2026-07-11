@@ -7,6 +7,9 @@ export const DEFAULTS: PlaybookConfig = {
   tier: 'TIER-2',
   verifyCommand: 'npm run verify',
   autonomy: 'strict',
+  operatingModel: 'founder-led',
+  entryRole: 'orchestrator',
+  pipeline: 'assist',
   maxConcurrentWorkers: 3,
   backup: {
     enabled: true,

@@ -6,9 +6,13 @@ import { DEFAULTS } from '../config.constants.js';
 
 const tierValues = ['TIER-1', 'TIER-2', 'TIER-3'] as const;
 const autonomyValues = ['strict', 'standard', 'high'] as const;
+const operatingModelValues = ['solo', 'founder-led', 'enterprise'] as const;
+const pipelineValues = ['off', 'assist', 'full'] as const;
 
 export const TierSchema = s.enu(tierValues);
 export const AutonomySchema = s.enu(autonomyValues);
+export const OperatingModelSchema = s.enu(operatingModelValues);
+export const PipelineSchema = s.enu(pipelineValues);
 export const BackupEventSchema = s.enu([
   BACKUP_EVENT.DONE,
   BACKUP_EVENT.FORCE_TAKEOVER,
@@ -45,6 +49,9 @@ export const PlaybookConfigSchema = s.object({
   tier: TierSchema,
   verifyCommand: s.string(),
   autonomy: AutonomySchema,
+  operatingModel: OperatingModelSchema,
+  entryRole: s.string(),
+  pipeline: PipelineSchema,
   maxConcurrentWorkers: s.positiveInteger(),
   backup: BackupConfigSchema,
   baseline: s.optional(BaselineConfigSchema),
@@ -69,6 +76,9 @@ function mergeDefaults(raw: Record<string, unknown>): Record<string, unknown> {
     tier: raw.tier ?? DEFAULTS.tier,
     verifyCommand: raw.verifyCommand ?? DEFAULTS.verifyCommand,
     autonomy: raw.autonomy ?? DEFAULTS.autonomy,
+    operatingModel: raw.operatingModel ?? DEFAULTS.operatingModel,
+    entryRole: raw.entryRole ?? DEFAULTS.entryRole,
+    pipeline: raw.pipeline ?? DEFAULTS.pipeline,
     maxConcurrentWorkers: raw.maxConcurrentWorkers ?? DEFAULTS.maxConcurrentWorkers,
     backup: mergeNested(raw.backup, DEFAULTS.backup),
     gates: mergeNested(raw.gates, DEFAULTS.gates),

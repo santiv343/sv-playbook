@@ -45,6 +45,34 @@ test('handoff prompt includes the role pointer and the live board snapshot', asy
   });
 });
 
+test('configured entry role replaces orchestrator as the default startup role', async () => {
+  await inTempRepo(async () => {
+    await writeFile('playbook.config.json', JSON.stringify({
+      productName: 'fixture',
+      tier: 'TIER-3',
+      verifyCommand: 'npm run verify',
+      chatLanguage: 'en',
+      autonomy: 'strict',
+      operatingModel: 'founder-led',
+      entryRole: 'founder-interface',
+      pipeline: 'assist',
+    }));
+    await writeFile('body.md', 'Do it.\n');
+    const setupIo = fakeIo();
+    await main(
+      ['task', 'create', '--id', 'ENTRY-ROLE-001', '--title', 'Entry Role Test', '--write', 'src/**', '--body-file', 'body.md'],
+      setupIo,
+    );
+    await main(['task', 'move', 'ENTRY-ROLE-001', 'ready'], setupIo);
+
+    const io = fakeIo();
+    assert.equal(await main(['handoff'], io), EXIT.OK, io.errLines.join('\n'));
+    const output = io.outLines.join('\n');
+    assert.ok(output.includes('docs roles/founder-interface'), 'output must use configured entry role founder-interface');
+    assert.ok(!output.includes('docs roles/orchestrator'), 'output must NOT fall back to orchestrator');
+  });
+});
+
 test('handoff handles numeric event sequences for active packets', async () => {
   await inTempRepo(async () => {
     await writeFile('body.md', 'Do it.\n');

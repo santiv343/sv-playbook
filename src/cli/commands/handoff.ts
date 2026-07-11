@@ -7,7 +7,8 @@ import { commonRoot, openStore } from '../../db/store.js';
 import { readBoardStatus } from '../../status/status.js';
 import type { BoardStatus } from '../../status/status.types.js';
 import { numberColumn, stringColumn } from '../../db/rows.js';
-import { ATTENTION_STATUSES, HANDOFF_ROLE_DEFAULT, nextActionAndCounts, rolePointers } from './handoff.constants.js';
+import { loadConfig } from '../../config.js';
+import { ATTENTION_STATUSES, nextActionAndCounts, rolePointers } from './handoff.constants.js';
 
 const NO_PRS = 'open PRs: none';
 
@@ -93,12 +94,13 @@ export const command: Command = {
         args,
         strict: false,
         options: {
-          role: { type: 'string', default: HANDOFF_ROLE_DEFAULT },
+          role: { type: 'string' },
           force: { type: 'boolean', default: false },
         },
       });
 
       const repoRoot = commonRoot(process.cwd());
+      const config = loadConfig(repoRoot);
       const store = openStore(repoRoot);
       try {
         const stale = staleActivePackets(store);
@@ -116,7 +118,7 @@ export const command: Command = {
         }
 
         const status = readBoardStatus(store, repoRoot);
-        const role = String(parsed.values.role);
+        const role = typeof parsed.values.role === 'string' ? parsed.values.role : config.entryRole;
 
         const output: string[] = [];
         output.push(rolePointers(role));
