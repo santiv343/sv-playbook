@@ -1,0 +1,10 @@
+# RAIL FILES — founder approval required on any PR touching these.
+# These files define the gates agents are subject to; an agent PR must not
+# be able to weaken its own rails (see GATE-003 for the mechanized version).
+/playbook.config.json @santiv343
+/eslint.config.js @santiv343
+/tsconfig.json @santiv343
+/package.json @santiv343
+/package-lock.json @santiv343
+/.github/ @santiv343
+/opencode.json @santiv343
