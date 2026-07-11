@@ -70,3 +70,38 @@ least two concrete users.
 is a first-class design decision, not an afterthought. Ambiguous names are a
 review finding.
 **Date**: 2026-07-10
+
+### ENTRY-008: Schema change ⇒ version bump + migration
+**Scope**: store
+**Roles**: implementer, reviewer
+**Rationale**: Any change to SCHEMA content (column, table, or CHECK list)
+must bump SCHEMA_VERSION and add an openStore migration case. A
+CHECK-constrained enum on an existing table is NOT updated by
+`CREATE TABLE IF NOT EXISTS` — fresh test DBs pass while every real store
+breaks at runtime (PR #121 round-2 P0).
+**Date**: 2026-07-11
+
+### ENTRY-009: Stop conditions are grep-checkable; the reviewer runs the grep
+**Scope**: review
+**Roles**: reviewer
+**Rationale**: A packet's stop conditions are literal claims about the diff.
+Approving without grepping them let STORE-001 close done with 14 raw
+JSON.parse sites and a 2-file lint ban (BUG-007). Verdicts cite the grep
+output, not the implementer's summary.
+**Date**: 2026-07-11
+
+### ENTRY-010: Extend guards, never fork them
+**Scope**: store, gates
+**Roles**: implementer, reviewer
+**Rationale**: A new code path that needs an existing guard (backup-first,
+write_set check, overlap rule) calls the SAME single source. A second
+implementation drifts silently and weakens the rail (PR #124 F2).
+**Date**: 2026-07-11
+
+### ENTRY-011: Tests prove behavior on EXISTING state, not just fresh state
+**Scope**: store, migrations
+**Roles**: implementer, reviewer
+**Rationale**: Fixture DBs must include aged/real-shaped states (old schema
+versions, populated rows). A suite that only exercises freshly created state
+certifies nothing about the store users actually have.
+**Date**: 2026-07-11

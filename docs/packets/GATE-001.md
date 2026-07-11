@@ -3,7 +3,7 @@
 id: GATE-001
 title: destructive CLI actions require superior approval
 depends_on: []
-write_set: ["src/cli/commands/rebuild.ts","src/cli/commands/restore.ts","src/cli/commands/task.ts","src/cli/commands/task.test.ts","src/cli/registry*","src/cli/command.types.ts","src/redteam/**"]
+write_set: ["src/cli/commands/rebuild.ts","src/cli/commands/restore.ts","src/cli/commands/task.ts","src/cli/commands/task.test.ts","src/cli/registry*","src/cli/command.types.ts","src/cli/destructive-gate*","src/redteam/gate-001.test.ts"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]
 ---
