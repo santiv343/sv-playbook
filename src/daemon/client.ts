@@ -1,60 +1,24 @@
-import { request as httpRequest } from 'node:http';
-import type { DaemonExecResponse } from './daemon.types.js';
+import { spawnSync } from 'node:child_process';
 
-export function forwardToDaemon(argv: string[], token: string, port: number): Promise<number> {
-  return new Promise((resolve) => {
-    const body = JSON.stringify({ token, argv });
-    const bodyBuf = Buffer.from(body, 'utf8');
-    const req = httpRequest(
-      {
-        hostname: '127.0.0.1',
-        port,
-        method: 'POST',
-        path: '/api/v1/exec',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': bodyBuf.length,
-        },
-      },
-      (res) => {
-        let data = '';
-        res.setEncoding('utf8');
-        res.on('data', (chunk: string) => { data += chunk; });
-        res.on('end', () => {
-          const parsed = parseDaemonResponse(data);
-          if (parsed === null) { resolve(3); return; }
-          if (parsed.stdout) process.stdout.write(parsed.stdout);
-          if (parsed.stderr) process.stderr.write(parsed.stderr);
-          resolve(parsed.exitCode);
-        });
-      },
-    );
-    req.on('error', () => { resolve(3); });
-    req.write(bodyBuf);
-    req.end();
+const FORWARD_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 10000;
+
+// The forwarding transport runs in a child node process so it can be awaited
+// synchronously from module-load code (store.ts tryAutoForward). The child
+// POSTs the argv to the daemon, mirrors stdout/stderr, and exits with the
+// daemon-reported exit code (1 on any transport/parse failure).
+function buildForwardScript(body: string, port: number): string {
+  const bl = Buffer.byteLength(body);
+  return `const http=require('http');const b=${JSON.stringify(body)};const r=http.request({hostname:'127.0.0.1',port:${port},method:'POST',path:'/api/v1/exec',timeout:${REQUEST_TIMEOUT_MS},headers:{'Content-Type':'application/json','Content-Length':${bl}}},s=>{let d='';s.setEncoding('utf8');s.on('data',c=>{d+=c;});s.on('end',()=>{try{const p=JSON.parse(d);if(p.stdout)process.stdout.write(p.stdout);if(p.stderr)process.stderr.write(p.stderr);process.exit(typeof p.exitCode==='number'?p.exitCode:1);}catch{process.exit(1);}});});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1);});r.end(b);`;
+}
+
+// Single forwarding transport — used by production (store.ts auto-forward)
+// and exercised directly by the daemon tests.
+export function forwardToDaemonSync(argv: string[], token: string, port: number): number {
+  const body = JSON.stringify({ token, argv });
+  const result = spawnSync(process.execPath, ['-e', buildForwardScript(body, port)], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    timeout: FORWARD_TIMEOUT_MS,
   });
-}
-
-function getProp(obj: unknown, key: string): unknown {
-  if (typeof obj !== 'object' || obj === null) return undefined;
-  return Reflect.get(obj, key);
-}
-
-function parseDaemonResponse(data: string): DaemonExecResponse | null {
-  try {
-    const parsed: unknown = JSON.parse(data);
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    const exitCode: unknown = getProp(parsed, 'exitCode');
-    const stdout: unknown = getProp(parsed, 'stdout');
-    const stderr: unknown = getProp(parsed, 'stderr');
-    const daemonVersion: unknown = getProp(parsed, 'daemonVersion');
-    return {
-      exitCode: typeof exitCode === 'number' ? exitCode : 3,
-      stdout: typeof stdout === 'string' ? stdout : '',
-      stderr: typeof stderr === 'string' ? stderr : '',
-      daemonVersion: typeof daemonVersion === 'string' ? daemonVersion : '',
-    };
-  } catch {
-    return null;
-  }
+  return typeof result.status === 'number' ? result.status : 1;
 }

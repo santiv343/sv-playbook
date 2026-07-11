@@ -10,6 +10,8 @@ import { createStateBackup } from './backup.js';
 import { BACKUP_REASON } from './backup.constants.js';
 import type { BackupReason } from './backup.types.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
+import { DAEMON_DEFAULT_PORT, DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE } from '../daemon/daemon.constants.js';
+import { forwardToDaemonSync } from '../daemon/client.js';
 import type { Store } from './store.types.js';
 
 const GIT_COMMON_DIR_ARGS = ['rev-parse', '--git-common-dir'];
@@ -25,10 +27,6 @@ export function worktreeRoot(startDir: string): string {
 }
 
 // ── Daemon client (worktree → daemon forwarding) ──
-const DAEMON_LOCK_FILE = '.svp-daemon.lock';
-const DAEMON_TOKEN_FILE = '.svp-daemon-token';
-const DAEMON_DEFAULT_PORT = 4141;
-
 function execGitCommonDir(s: string): string {
   return execFileSync('git', GIT_COMMON_DIR_ARGS, { cwd: s, encoding: 'utf8' }).trim();
 }
@@ -37,8 +35,15 @@ function execGitTopLevel(s: string): string {
   return execFileSync('git', GIT_TOPLEVEL_ARGS, { cwd: s, encoding: 'utf8' }).trim();
 }
 
+// git prints forward-slash paths while node:path resolves to backslashes on
+// win32 — normalize both sides (separators and drive-letter case) before
+// comparing, or every repo root is misclassified as a worktree on Windows.
+function normalizePathForCompare(p: string): string {
+  return process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p);
+}
+
 export function isWorktree(s: string): boolean {
-  try { return dirname(resolve(s, execGitCommonDir(s))) !== execGitTopLevel(s); }
+  try { return normalizePathForCompare(dirname(resolve(s, execGitCommonDir(s)))) !== normalizePathForCompare(execGitTopLevel(s)); }
   catch { return false; }
 }
 
@@ -65,14 +70,15 @@ export function blessedRoot(s: string): string | null {
   catch { return null; }
 }
 
-function forwardToDaemonSync(argv: string[], token: string, port: number): number {
-  const body = JSON.stringify({ token, argv });
-  const bl = Buffer.byteLength(body);
-  const sc = `const http=require('http');const b=${JSON.stringify(body)};const r=http.request({hostname:'127.0.0.1',port:${port},method:'POST',path:'/api/v1/exec',timeout:10000,headers:{'Content-Type':'application/json','Content-Length':${bl}}},s=>{let d='';s.setEncoding('utf8');s.on('data',c=>{d+=c;});s.on('end',()=>{try{const p=JSON.parse(d);if(p.stdout)process.stdout.write(p.stdout);if(p.stderr)process.stderr.write(p.stderr);process.exit(typeof p.exitCode==='number'?p.exitCode:1);}catch{process.exit(1);}});});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1);});r.end(b);`;
+// The daemon lock file records `pid\nport\nstarted_at` — honor the port the
+// daemon actually bound (daemon --port N), falling back to the default.
+export function readDaemonPort(repoRoot: string): number {
+  const lockPath = join(repoRoot, SVP_DIR, DAEMON_LOCK_FILE);
   try {
-    execFileSync(process.execPath, ['-e', sc], { stdio: ['ignore', 'inherit', 'inherit'], timeout: 15000, env: { ...process.env, SV_PLAYBOOK_DAEMON: '1' } });
-    return 0;
-  } catch { return 1; }
+    const port = Number(readFileSync(lockPath, 'utf8').split('\n')[1]?.trim());
+    if (Number.isInteger(port) && port > 0 && port <= 65535) return port;
+  } catch { /* fall back to default */ }
+  return DAEMON_DEFAULT_PORT;
 }
 
 function tryAutoForward(): void {
@@ -90,7 +96,7 @@ function tryAutoForward(): void {
     }
     const token = readDaemonToken(br);
     if (token === null) return;
-    process.exit(forwardToDaemonSync(args, token, DAEMON_DEFAULT_PORT));
+    process.exit(forwardToDaemonSync(args, token, readDaemonPort(br)));
   } catch { /* proceed with direct mode */ }
 }
 

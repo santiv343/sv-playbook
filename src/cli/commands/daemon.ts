@@ -37,6 +37,14 @@ export const command: Command = {
       startDaemon(repoRoot, port).then((instance) => {
         io.out(`Daemon ready on 127.0.0.1:${port} — pid ${process.pid}, token ${instance.token.slice(0, 8)}...`);
         io.out('Press Ctrl+C to stop');
+        // Clean shutdown on Ctrl+C / kill: release the store and remove the
+        // lock and token files instead of leaving them behind.
+        const shutdown = (): void => {
+          instance.stop();
+          resolve(EXIT.OK);
+        };
+        process.once('SIGINT', shutdown);
+        process.once('SIGTERM', shutdown);
       }).catch((err: unknown) => {
         io.err(`Failed to start daemon: ${String(err)}`);
         resolve(EXIT.SYSTEM);

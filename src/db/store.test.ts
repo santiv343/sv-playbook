@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createServer as createNetServer } from 'node:net';
-import { openStore, migrateStore, worktreeRoot } from './store.js';
+import { openStore, migrateStore, readDaemonPort, worktreeRoot } from './store.js';
+import { DAEMON_DEFAULT_PORT } from '../daemon/daemon.constants.js';
 import { EVENT_SCHEMA_MIGRATED, SCHEMA_VERSION } from './store.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
 import { randomUUID } from 'node:crypto';
@@ -342,17 +343,37 @@ test('sync forward handles daemon dying mid-response without hanging (STORE-003)
   });
 
   try {
-    const body = JSON.stringify({ token: 't', argv: ['status'] });
-    const bl = Buffer.byteLength(body);
-    const sc = `const http=require('http');const b=${JSON.stringify(body)};const r=http.request({hostname:'127.0.0.1',port:${port},method:'POST',path:'/api/v1/exec',timeout:3000,headers:{'Content-Type':'application/json','Content-Length':${bl}}},s=>{let d='';s.setEncoding('utf8');s.on('data',c=>{d+=c;});s.on('end',()=>{try{const p=JSON.parse(d);if(p.stdout)process.stdout.write(p.stdout);if(p.stderr)process.stderr.write(p.stderr);process.exit(typeof p.exitCode==='number'?p.exitCode:1);}catch{process.exit(1);}});});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1);});r.end(b);`;
-
-    const result = spawnSync(process.execPath, ['-e', sc], {
-      encoding: 'utf8',
-      timeout: 8000,
+    // Exercises the exact shipped transport (client.js forwardToDaemonSync),
+    // run from a child process so this test's fake server stays responsive.
+    const clientUrl = new URL('../daemon/client.js', import.meta.url).href;
+    const script = `const { forwardToDaemonSync } = await import(${JSON.stringify(clientUrl)});process.exit(forwardToDaemonSync(['status'], 't', ${port}));`;
+    const code = await new Promise<number>((resolve) => {
+      const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'inherit', 'inherit'] });
+      child.on('exit', (c) => { resolve(c ?? 1); });
     });
-
-    assert.notEqual(result.status, 0, `sync forward must fail when daemon dies mid-response, got exit ${result.status}`);
+    assert.notEqual(code, 0, `sync forward must fail when daemon dies mid-response, got exit ${code}`);
   } finally {
     server.close();
   }
+});
+
+test('tryAutoForward targets the port recorded in the daemon lock file, not the default (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-lock-port-'));
+  const svpDir = join(root, '.svp');
+  await mkdir(svpDir, { recursive: true });
+
+  // No lock file → default port
+  assert.equal(readDaemonPort(root), DAEMON_DEFAULT_PORT);
+
+  // Lock file records pid\nport\nstarted_at → the recorded port wins
+  await writeFile(join(svpDir, '.svp-daemon.lock'), `${process.pid}\n5252\n${new Date().toISOString()}\n`);
+  assert.equal(readDaemonPort(root), 5252);
+
+  // Malformed port line → fall back to default
+  await writeFile(join(svpDir, '.svp-daemon.lock'), `${process.pid}\nnot-a-port\n`);
+  assert.equal(readDaemonPort(root), DAEMON_DEFAULT_PORT);
+
+  // Missing port line (legacy single-line lock) → fall back to default
+  await writeFile(join(svpDir, '.svp-daemon.lock'), `${process.pid}\n`);
+  assert.equal(readDaemonPort(root), DAEMON_DEFAULT_PORT);
 });

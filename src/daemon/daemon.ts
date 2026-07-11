@@ -36,7 +36,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 function jsonResponse(res: ServerResponse, code: number, body: unknown): void {
-  res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+  res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
 }
 

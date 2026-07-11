@@ -1,17 +1,29 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning } from '../db/store.js';
-import { forwardToDaemon } from './client.js';
 import { startDaemon } from './daemon.js';
 import { DAEMON_TOKEN_FILE } from './daemon.constants.js';
 import { EXIT } from '../cli/command.constants.js';
 import { SVP_DIR } from '../db/store.constants.js';
+
+// Run the shipped sync transport (client.js forwardToDaemonSync) from a child
+// process — exactly how production auto-forwarding uses it (worktree CLI
+// process → daemon process). It cannot be called in-process here: spawnSync
+// would block the event loop the in-process daemon needs to answer.
+const CLIENT_URL = new URL('./client.js', import.meta.url).href;
+function runForwardToDaemonSyncInChild(argv: string[], token: string, port: number): Promise<number> {
+  const script = `const { forwardToDaemonSync } = await import(${JSON.stringify(CLIENT_URL)});process.exit(forwardToDaemonSync(${JSON.stringify(argv)}, ${JSON.stringify(token)}, ${port}));`;
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'inherit', 'inherit'] });
+    child.on('exit', (code) => { resolve(code ?? 1); });
+  });
+}
 
 function freePort(): Promise<number> {
   return new Promise((resolve) => {
@@ -52,8 +64,9 @@ test('a worktree CLI cannot open the live store directly and is served through t
       assert.ok(isDaemonRunning(root));
 
       // 1. Forward a CLI command through the daemon — the daemon executes it with
-      //    its own code, not the worktree's code, preventing version skew
-      const forwardCode = await forwardToDaemon(['--help'], daemon.token, port);
+      //    its own code, not the worktree's code, preventing version skew.
+      //    Uses the same transport production auto-forwarding ships with.
+      const forwardCode = await runForwardToDaemonSyncInChild(['--help'], daemon.token, port);
       assert.equal(forwardCode, EXIT.USAGE, `forward should succeed, got code ${forwardCode}`);
 
       // 2. The daemon's version is returned in the response — verified via the health endpoint
