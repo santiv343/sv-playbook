@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -190,5 +190,72 @@ test('task list and show json expose the full definition including write_set and
     assert.deepStrictEqual(arrayColumn(showData, 'depends_on'), ['DEP-001']);
     assert.strictEqual(stringColumn(showData, 'body'), 'Do it.\n');
     assert.deepStrictEqual(arrayColumn(showData, 'evidence_required'), ['red-test-output', 'verify-root', 'final-sha']);
+  });
+});
+
+test('import refuses an unknown packet id prefix', async () => {
+  await inTempRepo(async () => {
+    await mkdir(join('docs', 'packets'), { recursive: true });
+    const content = [
+      '---',
+      'id: UNKNOWN-001',
+      'title: No Prefix',
+      'depends_on: []',
+      'write_set: ["src/**"]',
+      'requirements: []',
+      'evidence_required: ["final-sha"]',
+      '---',
+      '',
+      'No recognized prefix.',
+    ].join('\n');
+    await writeFile(join('docs', 'packets', 'UNKNOWN-001.md'), content, 'utf8');
+    const io = fakeIo();
+    assert.notEqual(await taskCommand.run(['import', 'UNKNOWN-001'], io), 0);
+    assert.ok(io.errLines.some((l) => l.includes('unknown packet id prefix')), io.errLines.join('\n'));
+  });
+});
+
+test('an existing packet file can be imported into the DB through the CLI and never via SQL', async () => {
+  await inTempRepo(async () => {
+    await mkdir(join('docs', 'packets'), { recursive: true });
+    const content = [
+      '---',
+      'id: FLOW-IMP-001',
+      'title: Imported Packet',
+      'depends_on: []',
+      'write_set: ["src/**"]',
+      'requirements: []',
+      'evidence_required: ["final-sha"]',
+      '---',
+      '',
+      'This packet was imported.',
+    ].join('\n');
+    await writeFile(join('docs', 'packets', 'FLOW-IMP-001.md'), content, 'utf8');
+
+    const io = fakeIo();
+    assert.equal(await taskCommand.run(['import', 'FLOW-IMP-001'], io), 0);
+    assert.ok(io.outLines.some((l) => l.includes('imported FLOW-IMP-001')));
+
+    const { openStore } = await import('../../db/store.js');
+    const store = openStore(process.cwd());
+    try {
+      const row = store.db.prepare('SELECT status, body FROM packets WHERE id = ?').get('FLOW-IMP-001');
+      assert.ok(row !== undefined, 'packet must exist in DB');
+      assert.equal(stringColumn(row, 'status'), 'draft');
+      assert.equal(stringColumn(row, 'body'), 'This packet was imported.');
+
+      const event = store.db.prepare("SELECT command, detail FROM events WHERE packet_id = ? AND command = 'imported' AND detail LIKE '%imported%'").get('FLOW-IMP-001');
+      assert.ok(event !== undefined, 'imported event must exist');
+      assert.ok(stringColumn(event, 'detail').includes('FLOW-IMP-001.md'));
+
+      const fileAfter = await readFile(join('docs', 'packets', 'FLOW-IMP-001.md'), 'utf8');
+      assert.equal(fileAfter, content);
+
+      const io2 = fakeIo();
+      assert.notEqual(await taskCommand.run(['import', 'FLOW-IMP-001'], io2), 0);
+      assert.ok(io2.errLines.some((l) => l.includes('amend')), 're-import must hint at amend');
+    } finally {
+      store.close();
+    }
   });
 });
