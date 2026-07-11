@@ -66,7 +66,7 @@ test('rebuild failure leaves the live database intact', async () => {
     await writeFile(join(root, 'docs', 'packets', 'BROKEN.md'), 'not valid packet markdown\n', 'utf8');
 
     const io = fakeIo();
-    const code = await main(['rebuild', '--force'], io);
+    const code = await main(['rebuild', '--force', '--confirm-destructive'], io);
 
     assert.equal(code, EXIT.GATE_FAIL);
     assert.equal(packetStatus(root, 'REBUILD-SAFE-001'), STATUS.DONE);
@@ -92,7 +92,7 @@ test('rebuild derives packet types from the id prefix instead of leaving them em
     await writeFile(join(root, 'docs', 'packets', 'BUG-777.md'), doc, 'utf8');
 
     const io = fakeIo();
-    const code = await main(['rebuild', '--force'], io);
+    const code = await main(['rebuild', '--force', '--confirm-destructive'], io);
 
     assert.equal(code, EXIT.OK);
     const store = openStore(root);
@@ -111,7 +111,7 @@ test('rebuild refuses to replace terminal live state with reconstructed drafts',
     seedDonePacket(root, 'REBUILD-LOSS-001');
 
     const io = fakeIo();
-    const code = await main(['rebuild', '--force'], io);
+    const code = await main(['rebuild', '--force', '--confirm-destructive'], io);
 
     assert.equal(code, EXIT.GATE_FAIL);
     assert.match(io.errLines.join('\n'), /terminal packet/);

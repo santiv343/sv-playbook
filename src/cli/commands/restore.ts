@@ -9,7 +9,9 @@ import { loadConfig } from '../../config.js';
 export const command: Command = {
   name: 'restore',
   summary: 'Restore local SQLite state from a snapshot',
+  destructive: true,
   run(args, io): Promise<number> {
+    const repoRoot = commonRoot(process.cwd());
     const [sub, ...rest] = args;
     if (sub !== STATE_SUBCOMMAND) {
       io.err(RESTORE_USAGE);
@@ -21,7 +23,6 @@ export const command: Command = {
       return Promise.resolve(EXIT.USAGE);
     }
     try {
-      const repoRoot = commonRoot(process.cwd());
       const config = loadConfig(repoRoot);
       const report = restoreStateBackup(repoRoot, parsed.values.file, parsed.values.force === true, config.backup.retention);
       openStore(repoRoot).close();

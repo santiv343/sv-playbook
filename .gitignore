@@ -2,6 +2,8 @@ node_modules/
 dist/
 .svp/
 .svp-session
+.svp-session-role
+.svp-destructive-events.log
 .worktrees/
 scripts/
 *.tgz

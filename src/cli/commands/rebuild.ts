@@ -150,7 +150,9 @@ function replaceLiveDb(candidatePath: string, livePath: string): void {
 export const command: Command = {
   name: 'rebuild',
   summary: 'Reconstruct operational DB from git packet exports',
+  destructive: true,
   run(args, io): Promise<number> {
+    const repoRoot = commonRoot(process.cwd());
     const parsed = parseArgs({ args, allowPositionals: true, options: { force: { type: 'boolean' } } });
     if (parsed.positionals.length > 0) {
       io.err('Usage: sv-playbook rebuild [--force]');
@@ -158,7 +160,6 @@ export const command: Command = {
     }
 
     try {
-      const repoRoot = commonRoot(process.cwd());
       const svpDir = join(repoRoot, SVP_DIR);
       const dbPath = join(svpDir, DB_FILE);
 
