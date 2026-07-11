@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { openStore, migrateStore, worktreeRoot } from './store.js';
-import { SCHEMA_VERSION } from './store.constants.js';
+import { EVENT_SCHEMA_MIGRATED, SCHEMA_VERSION } from './store.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
 import { randomUUID } from 'node:crypto';
 
@@ -229,7 +229,7 @@ test('schema migration refuses while a foreign live lease exists', async () => {
 
 test('auto-migration of an older live store is refused off the default branch without the explicit flag', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-branch-gate-'));
-  execFileSync('git', ['init'], { cwd: root });
+  execFileSync('git', ['-c', 'init.defaultBranch=main', 'init'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/test-mig'], { cwd: root });
 
@@ -263,4 +263,27 @@ test('auto-migration of an older live store is refused off the default branch wi
     assert.equal(numberColumn(s.db.prepare('PRAGMA user_version').get(), 'user_version'), SCHEMA_VERSION);
     s.close();
   });
+});
+
+test('bypass via migrateLive is evented (writes a schema-migrated event)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-bypass-event-'));
+  execFileSync('git', ['-c', 'init.defaultBranch=main', 'init'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
+  execFileSync('git', ['checkout', '-b', 'feature/bypass-test'], { cwd: root });
+
+  openStore(root).close();
+  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA user_version = 7');
+  db.close();
+
+  const store = openStore(root, { migrateLive: true });
+  assert.equal(numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version'), SCHEMA_VERSION);
+
+  const eventCount = numberColumn(
+    store.db.prepare('SELECT COUNT(*) AS c FROM events WHERE command = ?').get(EVENT_SCHEMA_MIGRATED),
+    'c',
+  );
+  assert.equal(eventCount, 1, 'bypass via migrateLive must write a schema-migrated event');
+  store.close();
 });

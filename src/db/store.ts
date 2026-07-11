@@ -4,10 +4,11 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { numberColumn, stringColumn } from './rows.js';
-import { DB_FILE, EVENT_COMMANDS, SCHEMA, SCHEMA_VERSION, SVP_DIR, sqlInList } from './store.constants.js';
+import { DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SVP_DIR, sqlInList } from './store.constants.js';
 import { StoreVersionError } from './store.errors.js';
 import { createStateBackup } from './backup.js';
 import { BACKUP_REASON } from './backup.constants.js';
+import type { BackupReason } from './backup.types.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import type { Store } from './store.types.js';
 
@@ -182,12 +183,44 @@ function runVersionMigration(db: DatabaseSync, fromVersion: number): void {
 
 function emitSchemaMigrated(db: DatabaseSync): void {
   try {
-    db.prepare('INSERT INTO events (command, at) VALUES (?, ?)').run('schema-migrated', new Date().toISOString());
-  } catch { }
+    db.prepare('INSERT INTO events (command, at) VALUES (?, ?)').run(EVENT_SCHEMA_MIGRATED, new Date().toISOString());
+  } catch (err) {
+    console.error(`failed to emit schema-migrated event: ${String(err)}`);
+  }
+}
+
+function createVerifiedBackup(repoRoot: string, reason: BackupReason): void {
+  const backup = createStateBackup(repoRoot, { reason, allowFreshLeases: true });
+  const expectedSha = backup.sha256;
+  const actualSha = createHash('sha256').update(readFileSync(backup.sqlitePath)).digest('hex');
+  if (actualSha !== expectedSha) {
+    throw new Error('pre-migration backup verification failed (sha256 mismatch)');
+  }
+  const vacDb = new DatabaseSync(backup.sqlitePath);
+  const integrityRow = vacDb.prepare('PRAGMA integrity_check').get();
+  const integrityCheck = stringColumn(integrityRow, 'integrity_check');
+  vacDb.close();
+  if (integrityCheck !== 'ok') {
+    throw new Error('pre-migration backup verification failed (integrity check)');
+  }
 }
 
 const TOO_NEW_TEXT = (currentVersion: number): string =>
   `store unusable (schema v${currentVersion} does not match v${SCHEMA_VERSION}): a migration PR is likely open or just merged — git pull and retry. Restore a verified backup with 'restore state --file <snap>' (primary), or 'rebuild' from git (last resort) — never delete .svp`;
+
+function performMigration(db: DatabaseSync, repoRoot: string, currentVersion: number, options?: OpenStoreOptions): void {
+  if (!isOnDefaultBranch(repoRoot)) {
+    if (options?.migrateLive) {
+      console.error(`bypassing branch guard: migrating live from "${getCurrentBranch(repoRoot)}"`);
+    } else {
+      db.close();
+      throw new StoreVersionError(MIGRATION_REFUSED_TEXT(getCurrentBranch(repoRoot)));
+    }
+  }
+  createVerifiedBackup(repoRoot, BACKUP_REASON.STORE_OPEN);
+  runVersionMigration(db, currentVersion);
+  emitSchemaMigrated(db);
+}
 
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   const dir = join(repoRoot, SVP_DIR);
@@ -204,13 +237,7 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
     const currentVersion = numberColumn(row, 'user_version');
 
     if (currentVersion >= 3 && currentVersion < SCHEMA_VERSION) {
-      if (!isOnDefaultBranch(repoRoot) && !options?.migrateLive) {
-        db.close();
-        throw new StoreVersionError(MIGRATION_REFUSED_TEXT(getCurrentBranch(repoRoot)));
-      }
-      createStateBackup(repoRoot, { reason: BACKUP_REASON.STORE_OPEN, allowFreshLeases: true });
-      runVersionMigration(db, currentVersion);
-      emitSchemaMigrated(db);
+      performMigration(db, repoRoot, currentVersion, options);
     } else if (currentVersion !== SCHEMA_VERSION) {
       db.close();
       throw new StoreVersionError(TOO_NEW_TEXT(currentVersion));
@@ -248,24 +275,15 @@ function assertNoForeignLeases(dbPath: string, currentSessionId?: string): void 
 export function migrateStore(repoRoot: string, options?: MigrateStoreOptions): void {
   const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
 
-  if (!isOnDefaultBranch(repoRoot) && !options?.migrateLive) {
-    throw new StoreVersionError(MIGRATION_REFUSED_TEXT(getCurrentBranch(repoRoot)));
+  if (!isOnDefaultBranch(repoRoot)) {
+    if (options?.migrateLive) {
+      console.error(`bypassing branch guard: migrating live from "${getCurrentBranch(repoRoot)}"`);
+    } else {
+      throw new StoreVersionError(MIGRATION_REFUSED_TEXT(getCurrentBranch(repoRoot)));
+    }
   }
 
-  const backup = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL, allowFreshLeases: true });
-
-  const expectedSha = backup.sha256;
-  const actualSha = createHash('sha256').update(readFileSync(backup.sqlitePath)).digest('hex');
-  if (actualSha !== expectedSha) {
-    throw new Error('migration aborted: pre-migration backup verification failed (sha256 mismatch)');
-  }
-  const vacDb = new DatabaseSync(backup.sqlitePath);
-  const integrityRow = vacDb.prepare('PRAGMA integrity_check').get();
-  const integrityCheck = stringColumn(integrityRow, 'integrity_check');
-  vacDb.close();
-  if (integrityCheck !== 'ok') {
-    throw new Error('migration aborted: pre-migration backup verification failed (integrity check)');
-  }
+  createVerifiedBackup(repoRoot, BACKUP_REASON.MANUAL);
 
   assertNoForeignLeases(dbPath, options?.currentSessionId);
 
