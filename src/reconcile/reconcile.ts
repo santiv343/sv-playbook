@@ -17,6 +17,7 @@ function behindPrRows(openPrs: PrInfo[]): ReconcilerRow[] {
       safety: 'safe' as const,
       detail: `${pr.headRefName} is BEHIND ${pr.baseRefName}`,
       executed: false,
+      args: { pr: pr.number },
     }));
 }
 
@@ -30,6 +31,7 @@ function conflictPrRows(openPrs: PrInfo[]): ReconcilerRow[] {
       safety: 'unsafe' as const,
       detail: `PR #${pr.number} (${pr.headRefName}) has merge status ${pr.mergeStateStatus}`,
       executed: false,
+      args: { pr: pr.number },
     }));
 }
 
@@ -53,6 +55,7 @@ function reviewMergedRows(store: Store, gh: GhReader, reviewCheck: CheckResult):
         safety: 'safe' as const,
         detail: `PR #${prValue} merged, packet ${packetId} ready to close`,
         executed: false,
+        args: { packetId, pr: prValue },
       });
     }
   }
@@ -69,27 +72,15 @@ function backupRow(bupCheck: CheckResult): ReconcilerRow | undefined {
     safety: 'safe' as const,
     detail: bupCheck.detail,
     executed: false,
+    args: {},
   };
-}
-
-function updateBranchAction(row: ReconcilerRow, exec: ReconcilerExecutor): void {
-  const parts = row.command.split(' ');
-  const pr = parts[parts.length - 1];
-  if (pr !== undefined) exec.updateBranch(pr);
-}
-
-function taskCloseAction(row: ReconcilerRow, exec: ReconcilerExecutor): void {
-  const parts = row.command.split(' ');
-  const packetId = parts[2];
-  const prValue = parts[4];
-  if (packetId !== undefined && prValue !== undefined) exec.taskClose(packetId, prValue);
 }
 
 function dispatchAction(row: ReconcilerRow, exec: ReconcilerExecutor): void {
   if (row.command.startsWith('gh pr update-branch')) {
-    updateBranchAction(row, exec);
+    exec.updateBranch(row.args['pr'] ?? '');
   } else if (row.command.startsWith('task close')) {
-    taskCloseAction(row, exec);
+    exec.taskClose(row.args['packetId'] ?? '', row.args['pr'] ?? '');
   } else if (row.command === 'backup') {
     exec.createBackup();
   }
@@ -97,6 +88,15 @@ function dispatchAction(row: ReconcilerRow, exec: ReconcilerExecutor): void {
 
 function applyRow(row: ReconcilerRow, exec: ReconcilerExecutor, events: ReconcilerEvent[]): void {
   if (row.safety !== 'safe') return;
+
+  const hasEmptyArg = Object.values(row.args).some((v) => v === '');
+  if (hasEmptyArg) {
+    const event: ReconcilerEvent = { who: 'reconciler', what: `REFUSED: ${row.action} (partial args)`, before: JSON.stringify(row), after: JSON.stringify(row), at: now() };
+    events.push(event);
+    exec.recordEvent(event);
+    return;
+  }
+
   const before = JSON.stringify(row);
   dispatchAction(row, exec);
   row.executed = true;
