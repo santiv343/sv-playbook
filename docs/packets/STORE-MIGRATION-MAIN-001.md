@@ -3,7 +3,7 @@
 id: STORE-MIGRATION-MAIN-001
 title: live-store migrations only from main: workers use fixture DBs, shared .svp migrates post-merge (incident 2026-07-10)
 depends_on: []
-write_set: ["src/db/store.ts","src/db/store.test.ts","src/db/store.constants.ts"]
+write_set: ["src/db/store.ts","src/db/store.test.ts","src/db/store.constants.ts","src/redteam/redteam.test.ts"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]
 ---
