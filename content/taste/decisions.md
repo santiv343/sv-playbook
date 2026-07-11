@@ -70,3 +70,36 @@ mistake pattern (PRs #6 and #9).
 **Date**: 2026-07-10
 **Alternatives considered**: Implementer merges after approval (rejected:
 branches go stale, CI drifts); admin-only merge (rejected: bottleneck).
+
+### DEC-005: Machine-first — derivable work never goes to agents or humans
+**Scope**: global
+**Roles**: all
+**Rationale**: Constitution principle cf11bd51 (founder 2026-07-11). Anything
+deterministic and derivable by code is done by code (reconciler, merge queue,
+preflights). Chat agents doing bookkeeping is a defect. See FLOW-010/GATE-004.
+**Date**: 2026-07-11
+**Alternatives considered**: agent-operated convergence (rejected: 6/6 prompt
+rules violated in 24h; fragile and expensive).
+
+### DEC-006: Agents are semantic kernels without hands
+**Scope**: global
+**Roles**: all
+**Rationale**: Constitution principle 5634be06. Agents receive the mechanical
+results as input and contribute judgment only. Roles without iteration needs
+(reviewer) become function calls: context in, schema-validated verdict out —
+no shell, no process. Subtractive permissions leak; additive I/O surfaces
+cannot.
+**Date**: 2026-07-11
+**Alternatives considered**: operator-agents with subtracted permissions
+(rejected: every forgotten surface was found and used — 6 incidents).
+
+### DEC-007: The store is written by exactly one blessed process
+**Scope**: store
+**Roles**: all
+**Rationale**: STORE-003. Workers never open the live .svp: worktree CLIs are
+clients of the daemon running default-branch code. Version skew becomes
+structurally impossible. Interim regime until it lands: workers run zero
+board commands; the PM transitions on their behalf.
+**Date**: 2026-07-11
+**Alternatives considered**: per-agent discipline (rejected: violated 5/5);
+file permissions (rejected: not portable on Windows).
