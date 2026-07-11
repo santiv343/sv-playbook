@@ -3,7 +3,7 @@
 id: WORKTREE-HYGIENE-001
 title: higiene de worktrees: WIP cap (maxConcurrentWorkers) + .worktrees/ oculto + auto-cleanup al cerrar
 depends_on: []
-write_set: ["src/config.ts","src/config.types.ts","src/config.constants.ts","src/config.test.ts",".gitignore","content/dispatch/worker.md","content/dispatch/adapters.md","content/roles/orchestrator.md","content/roles/reviewer.md"]
+write_set: ["src/config.ts","src/config.types.ts","src/config.constants.ts","src/config.test.ts","src/schema/config.constants.ts",".gitignore","content/dispatch/worker.md","content/dispatch/adapters.md","content/roles/orchestrator.md","content/roles/reviewer.md"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]
 ---
