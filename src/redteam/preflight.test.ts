@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -57,6 +58,65 @@ test('review preflight aggregates the mechanical checks and a write_set violatio
   assert.equal(report2.overall, 'pass', 'overall should be PASS after fix');
   assert.ok(report2.checks.length >= 1, 'checks should be populated');
   assert.ok(report2.checks.every((c) => c.status !== 'unknown'), 'every check should be populated');
+
+  store.close();
+});
+
+test('F1: checkRedTest returns FAIL when RED test name not in any changed file diff', async () => {
+  const root = await setupPreflightRepo();
+  const store = openStore(root);
+
+  createPacket(store, root, def('GATE-004-TEST'), 'body');
+  await writeFile(
+    join(root, 'docs', 'packets', 'GATE-004-TEST.md'),
+    '## RED test\ndescribe(\'missing test\', () => {\n  // should be in diff but is not\n});\n\n## Other section\n',
+    'utf8',
+  );
+  movePacket(store, undefined, 'GATE-004-TEST', 'ready');
+  const session = ensureSession(store, root);
+  startPacket(store, session, root, 'GATE-004-TEST');
+
+  const report = runPreflight(store, 'GATE-004-TEST', root);
+
+  assert.equal(report.redTestFound, false, 'should report RED test not found');
+
+  const redCheck = report.checks.find((c) => c.name === 'red-test');
+  assert.ok(redCheck !== undefined, 'red-test check should exist');
+  assert.equal(redCheck.status, 'fail', 'red-test check should be FAIL when test not in diff');
+
+  store.close();
+});
+
+test('F4: verify step runs in a disposable worktree that is cleaned up', async () => {
+  const root = await setupPreflightRepo();
+  const store = openStore(root);
+
+  execFileSync('git', ['rm', 'outside/evil.ts'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'remove violation'], { cwd: root });
+
+  await writeFile(
+    join(root, 'playbook.config.json'),
+    JSON.stringify({ verifyCommand: 'node -e "console.log(\'verify ok\')"' }),
+    'utf8',
+  );
+  execFileSync('git', ['add', 'playbook.config.json'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'add config'], { cwd: root });
+
+  createPacket(store, root, def('GATE-004-TEST'), 'body');
+  movePacket(store, undefined, 'GATE-004-TEST', 'ready');
+  const session = ensureSession(store, root);
+  startPacket(store, session, root, 'GATE-004-TEST');
+
+  const reviewDir = join(root, '.worktrees', 'review');
+  const beforeEntries = existsSync(reviewDir) ? readdirSync(reviewDir) : [];
+
+  const report = runPreflight(store, 'GATE-004-TEST', root);
+
+  const v = report.checks.find((c) => c.name === 'verify');
+  assert.ok(v !== undefined, 'verify check should exist');
+
+  const afterEntries = existsSync(reviewDir) ? readdirSync(reviewDir) : [];
+  assert.equal(afterEntries.length, beforeEntries.length, 'disposable worktree should be cleaned up');
 
   store.close();
 });

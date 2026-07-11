@@ -1,5 +1,5 @@
 import { execFileSync, execSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from '../config.js';
 import { stringColumn } from '../db/rows.js';
@@ -7,6 +7,7 @@ import type { Store } from '../db/store.types.js';
 import { overlaps } from '../tasks/service.js';
 import { EVENT_EVIDENCE, INSERT_EVENT_SQL } from '../tasks/service.constants.js';
 import type { PreflightCheck, PreflightReport } from './preflight.types.js';
+import { REVIEW_WORKTREE_DIR } from '../cli/commands/review.constants.js';
 
 const CHK_PASS = 'pass' as const;
 const CHK_FAIL = 'fail' as const;
@@ -68,6 +69,19 @@ function checkHeadSha(worktree: string): string {
   }
 }
 
+const PR_SHA_TIMEOUT = 15_000;
+
+function fetchPrHeadSha(worktree: string, pr: string | undefined): string | undefined {
+  if (pr === undefined) return undefined;
+  try {
+    return execFileSync('gh', ['pr', 'view', pr, '--json', 'headRefOid', '--jq', '.headRefOid'], {
+      cwd: worktree, encoding: 'utf8', timeout: PR_SHA_TIMEOUT, stdio: 'pipe',
+    }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
 const _hsm = (s: PreflightCheck['status'], d: string): PreflightCheck => ({ name: 'head-sha-match', status: s, detail: d });
 
 function headShaMatchCheck(actualSha: string, prSha: string | undefined): PreflightCheck {
@@ -124,11 +138,26 @@ function checkVerify(worktree: string): PreflightCheck {
   if (config.verifyCommand.trim() === '') {
     return { name: 'verify', status: CHK_SKIP, detail: 'no verifyCommand configured' };
   }
+
+  const reviewDir = join(worktree, '.worktrees', REVIEW_WORKTREE_DIR);
+  const reviewWt = join(reviewDir, `verify-${Date.now()}`);
+
+  mkdirSync(reviewDir, { recursive: true });
   try {
-    execSync(config.verifyCommand, { cwd: worktree, timeout: 120_000, stdio: 'pipe' });
+    execFileSync('git', ['worktree', 'add', '--detach', reviewWt, 'HEAD'], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' });
+  } catch {
+    return { name: 'verify', status: CHK_UNKNOWN, detail: 'could not create review worktree' };
+  }
+
+  try {
+    execSync(config.verifyCommand, { cwd: reviewWt, timeout: 120_000, stdio: 'pipe' });
     return { name: 'verify', status: CHK_PASS, detail: `${config.verifyCommand} succeeded` };
   } catch {
     return { name: 'verify', status: CHK_FAIL, detail: `${config.verifyCommand} failed` };
+  } finally {
+    try {
+      execFileSync('git', ['worktree', 'remove', '--force', reviewWt], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' });
+    } catch { /* cleanup failure is non-fatal */ }
   }
 }
 
@@ -146,7 +175,10 @@ function readRedTestName(docRoot: string, packetId: string): string {
   }
 }
 
-function checkRedTest(writeSet: string[], docRoot: string, packetId: string, changedFiles: string[]): PreflightCheck {
+function checkRedTest(worktree: string, mergeBase: string | undefined, writeSet: string[], docRoot: string, packetId: string, changedFiles: string[]): PreflightCheck {
+  if (mergeBase === undefined) {
+    return { name: 'red-test', status: CHK_UNKNOWN, detail: 'could not determine merge base' };
+  }
   const redTestName = readRedTestName(docRoot, packetId);
   if (redTestName === '') {
     return { name: 'red-test', status: CHK_SKIP, detail: 'no RED test section in packet document' };
@@ -154,7 +186,7 @@ function checkRedTest(writeSet: string[], docRoot: string, packetId: string, cha
   for (const f of changedFiles) {
     if (!writeSet.some((g) => overlaps(g, f))) continue;
     try {
-      const diff = execFileSync('git', ['diff', f], { encoding: 'utf8', stdio: 'pipe' }).trim();
+      const diff = execFileSync('git', ['diff', `${mergeBase}...HEAD`, '--', f], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' }).trim();
       if (diff.includes(redTestName)) {
         return { name: 'red-test', status: CHK_PASS, detail: 'found test in diff' };
       }
@@ -228,7 +260,8 @@ export function runPreflight(
   checks.push(ws.check);
 
   const sha = checkHeadSha(worktree);
-  checks.push(headShaMatchCheck(sha, undefined));
+  const prSha = fetchPrHeadSha(worktree, options?.pr);
+  checks.push(headShaMatchCheck(sha, prSha));
 
   const ciChecks = checkCiStatus(worktree, options?.pr);
   checks.push(...ciChecks);
@@ -237,7 +270,7 @@ export function runPreflight(
   checks.push(verifyResult);
 
   const docRoot = getDocRoot(worktree);
-  const redTestResult = checkRedTest(writeSet, docRoot, packetId, changedFiles);
+  const redTestResult = checkRedTest(worktree, mergeBase, writeSet, docRoot, packetId, changedFiles);
   checks.push(redTestResult);
 
   const stopChecks = checkStopConditions(changedFiles);
