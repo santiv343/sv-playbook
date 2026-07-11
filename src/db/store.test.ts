@@ -5,7 +5,8 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { createServer as createNetServer } from 'node:net';
 import { openStore, migrateStore, worktreeRoot } from './store.js';
 import { EVENT_SCHEMA_MIGRATED, SCHEMA_VERSION } from './store.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
@@ -286,4 +287,72 @@ test('bypass via migrateLive is evented (writes a schema-migrated event)', async
   );
   assert.equal(eventCount, 1, 'bypass via migrateLive must write a schema-migrated event');
   store.close();
+});
+
+function freePort(): Promise<number> {
+  return new Promise((resolve) => {
+    const s = createNetServer();
+    s.listen(0, () => {
+      const addr = s.address();
+      let port = 0;
+      if (typeof addr === 'object' && addr !== null && 'port' in addr) {
+        port = addr.port;
+      }
+      s.close(() => { resolve(port); });
+    });
+  });
+}
+
+test('openStore from a worktree without daemon refuses with daemon guidance (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-store-wt-'));
+  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
+
+  const wtDir = join(root, 'wt');
+  execFileSync('git', ['branch', 'wt-branch'], { cwd: root });
+  execFileSync('git', ['worktree', 'add', wtDir, 'wt-branch'], { cwd: root });
+
+  const previousCwd = process.cwd();
+  const previousTestCtx = process.env.NODE_TEST_CONTEXT;
+  process.chdir(wtDir);
+  process.env.NODE_TEST_CONTEXT = '';
+  try {
+    assert.throws(
+      () => { openStore(root); },
+      /daemon/,
+    );
+  } finally {
+    process.env.NODE_TEST_CONTEXT = previousTestCtx;
+    process.chdir(previousCwd);
+  }
+});
+
+test('sync forward handles daemon dying mid-response without hanging (STORE-003)', async () => {
+  const port = await freePort();
+
+  const server = createNetServer((socket) => {
+    socket.once('data', () => {
+      socket.write('HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{"exi');
+      socket.destroySoon();
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.listen(port, '127.0.0.1', () => { resolve(); });
+    server.on('error', reject);
+  });
+
+  try {
+    const body = JSON.stringify({ token: 't', argv: ['status'] });
+    const bl = Buffer.byteLength(body);
+    const sc = `const http=require('http');const b=${JSON.stringify(body)};const r=http.request({hostname:'127.0.0.1',port:${port},method:'POST',path:'/api/v1/exec',timeout:3000,headers:{'Content-Type':'application/json','Content-Length':${bl}}},s=>{let d='';s.setEncoding('utf8');s.on('data',c=>{d+=c;});s.on('end',()=>{try{const p=JSON.parse(d);if(p.stdout)process.stdout.write(p.stdout);if(p.stderr)process.stderr.write(p.stderr);process.exit(typeof p.exitCode==='number'?p.exitCode:1);}catch{process.exit(1);}});});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1);});r.end(b);`;
+
+    const result = spawnSync(process.execPath, ['-e', sc], {
+      encoding: 'utf8',
+      timeout: 8000,
+    });
+
+    assert.notEqual(result.status, 0, `sync forward must fail when daemon dies mid-response, got exit ${result.status}`);
+  } finally {
+    server.close();
+  }
 });

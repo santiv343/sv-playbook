@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
-import { unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning } from '../db/store.js';
 import { main } from '../cli/main.js';
@@ -12,6 +12,18 @@ import type { DaemonInstance } from './daemon.types.js';
 
 function generateToken(): string {
   return createHash('sha256').update(randomUUID()).digest('hex').slice(0, 32);
+}
+
+// Atomically create the token file owner-only: never leave a window where the
+// token exists with default (group/world-readable) permissions.
+function writeTokenFileOwnerOnly(tokenPath: string, token: string): void {
+  try { unlinkSync(tokenPath); } catch { /* did not exist */ }
+  const fd = openSync(tokenPath, 'wx', 0o600);
+  try {
+    writeSync(fd, `${token}\n`);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -98,8 +110,11 @@ function handleExec(token: string, req: IncomingMessage, res: ServerResponse): v
 
 export function startDaemon(repoRoot: string, port: number): Promise<DaemonInstance> {
   return new Promise((resolve, reject) => {
-    const lockPath = join(repoRoot, SVP_DIR, DAEMON_LOCK_FILE);
-    const tokenPath = join(repoRoot, SVP_DIR, DAEMON_TOKEN_FILE);
+    const svpDir = join(repoRoot, SVP_DIR);
+    // Owner-only: the dir holds the daemon auth token. No-op if it already exists.
+    mkdirSync(svpDir, { recursive: true, mode: 0o700 });
+    const lockPath = join(svpDir, DAEMON_LOCK_FILE);
+    const tokenPath = join(svpDir, DAEMON_TOKEN_FILE);
 
     if (isDaemonRunning(repoRoot)) {
       reject(new Error('daemon is already running for this repo'));
@@ -119,7 +134,7 @@ export function startDaemon(repoRoot: string, port: number): Promise<DaemonInsta
     }
 
     writeFileSync(lockPath, `${process.pid}\n${port}\n${new Date().toISOString()}\n`);
-    writeFileSync(tokenPath, `${token}\n`);
+    writeTokenFileOwnerOnly(tokenPath, token);
 
     const server = createServer((req, res) => { handleRequest(token, req, res); });
 

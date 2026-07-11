@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { statSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -8,7 +9,9 @@ import { join } from 'node:path';
 import { openStore, isDaemonRunning } from '../db/store.js';
 import { forwardToDaemon } from './client.js';
 import { startDaemon } from './daemon.js';
+import { DAEMON_TOKEN_FILE } from './daemon.constants.js';
 import { EXIT } from '../cli/command.constants.js';
+import { SVP_DIR } from '../db/store.constants.js';
 
 function freePort(): Promise<number> {
   return new Promise((resolve) => {
@@ -90,6 +93,23 @@ test('a worktree CLI cannot open the live store directly and is served through t
         }
       `], { encoding: 'utf8', timeout: 10000 });
       assert.ok(subResult.includes('FAIL:'), `expected DatabaseSync open to fail, got: ${subResult}`);
+    } finally {
+      daemon.stop();
+    }
+  });
+});
+
+test('daemon auth token file is created owner-only (mode 0600)', { skip: process.platform === 'win32' }, async () => {
+  await inTempRepo(async (root) => {
+    openStore(root).close();
+
+    const port = await freePort();
+    const daemon = await startDaemon(root, port);
+
+    try {
+      const tokenPath = join(root, SVP_DIR, DAEMON_TOKEN_FILE);
+      const mode = statSync(tokenPath).mode & 0o777;
+      assert.equal(mode, 0o600, `token file must be owner-only, got 0${mode.toString(8)}`);
     } finally {
       daemon.stop();
     }

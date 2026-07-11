@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { numberColumn, stringColumn } from './rows.js';
-import { DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SVP_DIR, sqlInList } from './store.constants.js';
+import { DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT, sqlInList } from './store.constants.js';
 import { StoreVersionError } from './store.errors.js';
 import { createStateBackup } from './backup.js';
 import { BACKUP_REASON } from './backup.constants.js';
@@ -68,9 +68,9 @@ export function blessedRoot(s: string): string | null {
 function forwardToDaemonSync(argv: string[], token: string, port: number): number {
   const body = JSON.stringify({ token, argv });
   const bl = Buffer.byteLength(body);
-  const sc = `const http=require('http');const b=${JSON.stringify(body)};http.request({hostname:'127.0.0.1',port:${port},method:'POST',path:'/api/v1/exec',headers:{'Content-Type':'application/json','Content-Length':${bl}}},r=>{let d='';r.setEncoding('utf8');r.on('data',c=>{d+=c;});r.on('end',()=>{try{const p=JSON.parse(d);if(p.stdout)process.stdout.write(p.stdout);if(p.stderr)process.stderr.write(p.stderr);process.exit(typeof p.exitCode==='number'?p.exitCode:1);}catch{process.exit(1);}});}).on('error',()=>process.exit(1)).end(b);setTimeout(()=>{},30000);`;
+  const sc = `const http=require('http');const b=${JSON.stringify(body)};const r=http.request({hostname:'127.0.0.1',port:${port},method:'POST',path:'/api/v1/exec',timeout:10000,headers:{'Content-Type':'application/json','Content-Length':${bl}}},s=>{let d='';s.setEncoding('utf8');s.on('data',c=>{d+=c;});s.on('end',()=>{try{const p=JSON.parse(d);if(p.stdout)process.stdout.write(p.stdout);if(p.stderr)process.stderr.write(p.stderr);process.exit(typeof p.exitCode==='number'?p.exitCode:1);}catch{process.exit(1);}});});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1);});r.end(b);`;
   try {
-    execFileSync(process.execPath, ['-e', sc], { stdio: ['ignore', 'inherit', 'inherit'], timeout: 30000, env: { ...process.env, SV_PLAYBOOK_DAEMON: '1' } });
+    execFileSync(process.execPath, ['-e', sc], { stdio: ['ignore', 'inherit', 'inherit'], timeout: 15000, env: { ...process.env, SV_PLAYBOOK_DAEMON: '1' } });
     return 0;
   } catch { return 1; }
 }
@@ -81,16 +81,20 @@ function tryAutoForward(): void {
     if (!isWorktree(cwd)) return;
     const br = blessedRoot(cwd);
     if (br === null) return;
-    if (!isDaemonRunning(br)) return;
-    const token = readDaemonToken(br);
-    if (token === null) return;
     const args = process.argv.slice(2);
     if (args[0] === 'daemon') return;
+    if (!isDaemonRunning(br)) {
+      console.error(WORKTREE_DAEMON_REQUIRED_TEXT);
+      process.exit(1);
+      return;
+    }
+    const token = readDaemonToken(br);
+    if (token === null) return;
     process.exit(forwardToDaemonSync(args, token, DAEMON_DEFAULT_PORT));
   } catch { /* proceed with direct mode */ }
 }
 
-if (!process.env.SV_PLAYBOOK_DAEMON && process.env.NODE_TEST_CONTEXT !== 'test') {
+if (!process.env.SV_PLAYBOOK_DAEMON && !process.env.NODE_TEST_CONTEXT) {
   tryAutoForward();
 }
 
@@ -292,12 +296,35 @@ function performMigration(db: DatabaseSync, repoRoot: string, currentVersion: nu
   emitSchemaMigrated(db);
 }
 
-export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
-  if (!process.env.SV_PLAYBOOK_DAEMON && isDaemonRunning(repoRoot)) {
+function assertStoreNotHeldByDaemon(repoRoot: string): void {
+  if (process.env.SV_PLAYBOOK_DAEMON) return;
+  if (isDaemonRunning(repoRoot)) {
     throw new StoreVersionError(
       `store is held by the daemon — run commands from the blessed root or start the daemon with \`sv-playbook daemon\``,
     );
   }
+  if (!process.env.NODE_TEST_CONTEXT && isWorktree(process.cwd())) {
+    const br = blessedRoot(process.cwd());
+    if (br !== null && !isDaemonRunning(br)) {
+      throw new StoreVersionError(WORKTREE_DAEMON_REQUIRED_TEXT);
+    }
+  }
+}
+
+function checkVersionAndMigrate(db: DatabaseSync, repoRoot: string, options?: OpenStoreOptions): void {
+  const row = db.prepare('PRAGMA user_version').get();
+  const currentVersion = numberColumn(row, 'user_version');
+
+  if (currentVersion >= 3 && currentVersion < SCHEMA_VERSION) {
+    performMigration(db, repoRoot, currentVersion, options);
+  } else if (currentVersion !== SCHEMA_VERSION) {
+    db.close();
+    throw new StoreVersionError(TOO_NEW_TEXT(currentVersion));
+  }
+}
+
+export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
+  assertStoreNotHeldByDaemon(repoRoot);
   const dir = join(repoRoot, SVP_DIR);
   mkdirSync(dir, { recursive: true });
   const dbPath = join(dir, DB_FILE);
@@ -308,15 +335,7 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   if (isNew) {
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   } else if (!options?.skipVersionCheck) {
-    const row = db.prepare('PRAGMA user_version').get();
-    const currentVersion = numberColumn(row, 'user_version');
-
-    if (currentVersion >= 3 && currentVersion < SCHEMA_VERSION) {
-      performMigration(db, repoRoot, currentVersion, options);
-    } else if (currentVersion !== SCHEMA_VERSION) {
-      db.close();
-      throw new StoreVersionError(TOO_NEW_TEXT(currentVersion));
-    }
+    checkVersionAndMigrate(db, repoRoot, options);
   }
   migratePrColumn(db);
   return { db, dir, close: () => { db.close(); } };
