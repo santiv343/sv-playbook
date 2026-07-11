@@ -13,7 +13,10 @@ import { RECONCILE_USAGE } from './reconcile.constants.js';
 
 function strEntry(raw: object, key: string): string | undefined {
   for (const [k, v] of Object.entries(raw)) {
-    if (k === key && typeof v === 'string') return v;
+    if (k === key) {
+      if (typeof v === 'string') return v;
+      if (typeof v === 'number') return String(v);
+    }
   }
   return undefined;
 }

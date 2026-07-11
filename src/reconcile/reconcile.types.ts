@@ -14,6 +14,7 @@ export interface ReconcilerRow {
   safety: 'safe' | 'unsafe';
   detail: string;
   executed: boolean;
+  args: Record<string, string>;
 }
 
 export interface ReconcilerEvent {

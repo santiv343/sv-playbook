@@ -8,7 +8,9 @@ import { openStore } from '../db/store.js';
 import { createStateBackup } from '../db/backup.js';
 import { BACKUP_REASON } from '../db/backup.constants.js';
 import { reconcile } from './reconcile.js';
-import type { GhReader, ReconcilerExecutor, ReconcilerEvent } from './reconcile.types.js';
+import type { GhReader, ReconcilerExecutor, ReconcilerEvent, ReconcilerRow } from './reconcile.types.js';
+
+interface CallCapture { method: string; args: readonly unknown[] }
 
 function inTempRepo<T>(fn: () => Promise<T>): Promise<T> {
   return mkdtemp(join(tmpdir(), 'svp-reconcile-')).then(async (root) => {
@@ -112,5 +114,66 @@ test('reconcile computes divergences as an action table and applies only the saf
     assert.ok(events.length >= 3, `expected >=3 events, got ${events.length}`);
     assert.ok(events.every((e) => e.who === 'reconciler'), 'all events must have who=reconciler');
     assert.ok(apply.rows.every((r) => r.executed === (r.safety === 'safe')), 'executed flag mismatch');
+  });
+});
+
+test('apply builds the exact argv for each safe action and refuses partial commands', async () => {
+  await inTempRepo(async () => {
+    insertPacket('REVIEW-001', 'review', '42');
+
+    const validPr = {
+      number: '129', state: 'OPEN' as const,
+      mergeStateStatus: 'BEHIND' as const,
+      headRefName: 'feature/fix', baseRefName: 'main', isDraft: false,
+    };
+    const corruptPr = {
+      number: '', state: 'OPEN' as const,
+      mergeStateStatus: 'BEHIND' as const,
+      headRefName: 'feature/corrupt', baseRefName: 'main', isDraft: false,
+    };
+    const conflictPr = {
+      number: '130', state: 'OPEN' as const,
+      mergeStateStatus: 'DIRTY' as const,
+      headRefName: 'feature/conflict', baseRefName: 'main', isDraft: false,
+    };
+
+    const stubGh: GhReader = {
+      listOpenPrs: () => [validPr, corruptPr, conflictPr],
+      prState: (pr: string) => pr === '42' ? 'MERGED' : 'OPEN',
+    };
+
+    const calls: CallCapture[] = [];
+    const stubExec: ReconcilerExecutor = {
+      updateBranch: (pr: string) => { calls.push({ method: 'updateBranch', args: [pr] }); },
+      taskClose: (packetId: string, pr: string) => { calls.push({ method: 'taskClose', args: [packetId, pr] }); },
+      createBackup: () => { calls.push({ method: 'createBackup', args: [] }); },
+      recordEvent: () => {},
+    };
+
+    await writeFile('playbook.config.json', JSON.stringify({ productName: 'test', backup: { enabled: false } }));
+
+    const store = openStore(process.cwd());
+    try {
+      const result = reconcile(store, process.cwd(), stubGh, stubExec, { dryRun: false });
+
+      const upd = calls.find((c) => c.method === 'updateBranch');
+      assert.ok(upd, 'updateBranch must be called for valid PR');
+      assert.deepEqual(upd.args, ['129']);
+
+      const close = calls.find((c) => c.method === 'taskClose');
+      assert.ok(close, 'taskClose must be called for merged review PR');
+      assert.deepEqual(close.args, ['REVIEW-001', '42']);
+
+      assert.equal(calls.length, 2, `expected 2 calls, got ${calls.length}: ${JSON.stringify(calls)} — corrupt PR must be refused`);
+
+      const behindRows = result.rows.filter((r: ReconcilerRow) => r.command.startsWith('gh pr update-branch'));
+      assert.equal(behindRows.length, 2, 'expected 2 behind-PR rows in result');
+      const refusedRow = behindRows.find((r: ReconcilerRow) => !r.executed);
+      assert.ok(refusedRow, 'corrupt behind row must be refused (not executed)');
+      const validRow = behindRows.find((r: ReconcilerRow) => r.executed);
+      assert.ok(validRow, 'valid behind row must be executed');
+    } finally {
+      store.close();
+    }
   });
 });
