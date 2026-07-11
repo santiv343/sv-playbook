@@ -7,7 +7,8 @@ export const DB_FILE = 'playbook.sqlite';
 export const sqlString = (value: string): string => `'${value.replaceAll("'", "''")}'`;
 export const sqlInList = (values: readonly string[]): string => values.map(sqlString).join(', ');
 const TRANSITION_STATUSES = ['none', ...PACKET_STATUSES];
-export const EVENT_COMMANDS = [EVENT_TRANSITION, EVENT_NOTE, EVENT_TAKEOVER, EVENT_EVIDENCE, EVENT_IMPORTED];
+export const EVENT_SCHEMA_MIGRATED = 'schema-migrated';
+export const EVENT_COMMANDS = [EVENT_TRANSITION, EVENT_NOTE, EVENT_TAKEOVER, EVENT_EVIDENCE, EVENT_IMPORTED, EVENT_SCHEMA_MIGRATED];
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS packets (

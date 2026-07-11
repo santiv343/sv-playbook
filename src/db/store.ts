@@ -23,6 +23,23 @@ export function worktreeRoot(startDir: string): string {
   return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: startDir, encoding: 'utf8' }).trim();
 }
 
+function getCurrentBranch(repoRoot: string): string {
+  try {
+    return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function isOnDefaultBranch(repoRoot: string): boolean {
+  const branch = getCurrentBranch(repoRoot);
+  if (branch === '' || branch === 'main' || branch === 'master') return true;
+  try {
+    const remoteRef = execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
+    return branch === remoteRef.replace('refs/remotes/origin/', '');
+  } catch { return false; }
+}
+
 function applyPragmas(db: DatabaseSync): void {
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec('PRAGMA journal_mode = WAL;');
@@ -31,7 +48,11 @@ function applyPragmas(db: DatabaseSync): void {
 
 interface OpenStoreOptions {
   skipVersionCheck?: boolean;
+  migrateLive?: boolean;
 }
+
+const MIGRATION_REFUSED_TEXT = (branch: string): string =>
+  `migration refused: on branch "${branch}" which is not the default branch — switch to main or pass --migrate-live to migrate the live store from this branch`;
 
 function migrateBodyColumn(db: DatabaseSync): void {
   const cols = db.prepare("SELECT name FROM pragma_table_info('packets') WHERE name = 'body'").all();
@@ -126,6 +147,48 @@ function migrateSprintsTables(db: DatabaseSync): void {
   }
 }
 
+function runVersionMigration(db: DatabaseSync, fromVersion: number): void {
+  if (fromVersion === 3) {
+    migrateBodyColumn(db);
+    db.exec('PRAGMA user_version = 4');
+    migrateTypeColumn(db);
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  } else if (fromVersion === 4) {
+    migrateTypeColumn(db);
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  } else if (fromVersion === 5) {
+    migrateConstitutionTables(db);
+    migrateSprintsTables(db);
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  } else if (fromVersion === 6) {
+    migrateSprintsTables(db);
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  } else if (fromVersion === 7) {
+    const eventCheck = `command TEXT NOT NULL CHECK (command IN (${sqlInList(EVENT_COMMANDS)}))`;
+    db.exec(`CREATE TABLE events_new (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT,
+      packet_id TEXT,
+      ${eventCheck},
+      detail TEXT,
+      at TEXT NOT NULL
+    )`);
+    db.exec('INSERT INTO events_new (seq, session_id, packet_id, command, detail, at) SELECT seq, session_id, packet_id, command, detail, at FROM events');
+    db.exec('DROP TABLE events');
+    db.exec('ALTER TABLE events_new RENAME TO events');
+    db.exec('PRAGMA user_version = 8');
+  }
+}
+
+function emitSchemaMigrated(db: DatabaseSync): void {
+  try {
+    db.prepare('INSERT INTO events (command, at) VALUES (?, ?)').run('schema-migrated', new Date().toISOString());
+  } catch { }
+}
+
+const TOO_NEW_TEXT = (currentVersion: number): string =>
+  `store unusable (schema v${currentVersion} does not match v${SCHEMA_VERSION}): a migration PR is likely open or just merged — git pull and retry. Restore a verified backup with 'restore state --file <snap>' (primary), or 'rebuild' from git (last resort) — never delete .svp`;
+
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   const dir = join(repoRoot, SVP_DIR);
   mkdirSync(dir, { recursive: true });
@@ -139,40 +202,18 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   } else if (!options?.skipVersionCheck) {
     const row = db.prepare('PRAGMA user_version').get();
     const currentVersion = numberColumn(row, 'user_version');
-    if (currentVersion === 3) {
-      migrateBodyColumn(db);
-      db.exec('PRAGMA user_version = 4');
-      migrateTypeColumn(db);
-      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-    } else if (currentVersion === 4) {
-      migrateTypeColumn(db);
-      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-    } else if (currentVersion === 5) {
-      migrateConstitutionTables(db);
-      migrateSprintsTables(db);
-      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-    } else if (currentVersion === 6) {
-      migrateSprintsTables(db);
-      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-    } else if (currentVersion === 7) {
-      const eventCheck = `command TEXT NOT NULL CHECK (command IN (${sqlInList(EVENT_COMMANDS)}))`;
-      db.exec(`CREATE TABLE events_new (
-        seq INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT,
-        packet_id TEXT,
-        ${eventCheck},
-        detail TEXT,
-        at TEXT NOT NULL
-      )`);
-      db.exec('INSERT INTO events_new (seq, session_id, packet_id, command, detail, at) SELECT seq, session_id, packet_id, command, detail, at FROM events');
-      db.exec('DROP TABLE events');
-      db.exec('ALTER TABLE events_new RENAME TO events');
-      db.exec('PRAGMA user_version = 8');
+
+    if (currentVersion >= 3 && currentVersion < SCHEMA_VERSION) {
+      if (!isOnDefaultBranch(repoRoot) && !options?.migrateLive) {
+        db.close();
+        throw new StoreVersionError(MIGRATION_REFUSED_TEXT(getCurrentBranch(repoRoot)));
+      }
+      createStateBackup(repoRoot, { reason: BACKUP_REASON.STORE_OPEN, allowFreshLeases: true });
+      runVersionMigration(db, currentVersion);
+      emitSchemaMigrated(db);
     } else if (currentVersion !== SCHEMA_VERSION) {
       db.close();
-      throw new StoreVersionError(
-        `store unusable (schema v${currentVersion} does not match v${SCHEMA_VERSION}): restore a verified backup with 'restore state --file <snap>' (primary), or 'rebuild' from git (last resort) — never delete .svp`,
-      );
+      throw new StoreVersionError(TOO_NEW_TEXT(currentVersion));
     }
   }
   migratePrColumn(db);
@@ -181,10 +222,36 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
 
 interface MigrateStoreOptions {
   currentSessionId?: string;
+  migrateLive?: boolean;
+}
+
+function assertNoForeignLeases(dbPath: string, currentSessionId?: string): void {
+  const liveDb = new DatabaseSync(dbPath);
+  const leaseRows = liveDb.prepare('SELECT session_id, heartbeat_at FROM leases').all();
+  liveDb.close();
+  let foreignCount = 0;
+  for (const row of leaseRows) {
+    const sid = stringColumn(row, 'session_id');
+    if (currentSessionId !== undefined && sid === currentSessionId) continue;
+    const hb = stringColumn(row, 'heartbeat_at');
+    if (Date.now() - Date.parse(hb) <= LEASE_TTL_MS) {
+      foreignCount++;
+    }
+  }
+  if (foreignCount > 0) {
+    throw new Error(
+      `migration blocked: ${foreignCount} other worktree/session(s) are live on the shared store — pause them or isolate state per worktree before migrating`,
+    );
+  }
 }
 
 export function migrateStore(repoRoot: string, options?: MigrateStoreOptions): void {
   const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
+
+  if (!isOnDefaultBranch(repoRoot) && !options?.migrateLive) {
+    throw new StoreVersionError(MIGRATION_REFUSED_TEXT(getCurrentBranch(repoRoot)));
+  }
+
   const backup = createStateBackup(repoRoot, { reason: BACKUP_REASON.MANUAL, allowFreshLeases: true });
 
   const expectedSha = backup.sha256;
@@ -200,26 +267,10 @@ export function migrateStore(repoRoot: string, options?: MigrateStoreOptions): v
     throw new Error('migration aborted: pre-migration backup verification failed (integrity check)');
   }
 
-  const liveDb = new DatabaseSync(dbPath);
-  const leaseRows = liveDb.prepare('SELECT session_id, heartbeat_at FROM leases').all();
-  liveDb.close();
-  const currentSessionId = options?.currentSessionId;
-  let foreignCount = 0;
-  for (const row of leaseRows) {
-    const sid = stringColumn(row, 'session_id');
-    if (currentSessionId !== undefined && sid === currentSessionId) continue;
-    const hb = stringColumn(row, 'heartbeat_at');
-    if (Date.now() - Date.parse(hb) <= LEASE_TTL_MS) {
-      foreignCount++;
-    }
-  }
-  if (foreignCount > 0) {
-    throw new Error(
-      `migration blocked: ${foreignCount} other worktree/session(s) are live on the shared store — pause them or isolate state per worktree before migrating`,
-    );
-  }
+  assertNoForeignLeases(dbPath, options?.currentSessionId);
 
   const db = new DatabaseSync(dbPath);
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  emitSchemaMigrated(db);
   db.close();
 }
