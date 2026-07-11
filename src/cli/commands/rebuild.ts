@@ -13,6 +13,7 @@ import type { PacketDefinition } from '../../packets/document.types.js';
 import { EVENT_TRANSITION, EXISTS_SQL, INSERT_EVENT_SQL, INSERT_PACKET_SQL, LEASE_TTL_MS, PACKETS_DOCS_DIR, PACKETS_DIR, STATUS, TASK_TYPE_PREFIX } from '../../tasks/service.constants.js';
 import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
+import { checkDestructiveGate, queryDestructiveCounts } from '../destructive-gate.js';
 
 const now = (): string => new Date().toISOString();
 
@@ -150,7 +151,16 @@ function replaceLiveDb(candidatePath: string, livePath: string): void {
 export const command: Command = {
   name: 'rebuild',
   summary: 'Reconstruct operational DB from git packet exports',
+  destructive: true,
   run(args, io): Promise<number> {
+    const CONFIRM_FLAG = '--confirm-destructive';
+    const hasConfirm = args.includes(CONFIRM_FLAG);
+    if (hasConfirm) args = args.filter((a) => a !== CONFIRM_FLAG);
+
+    const repoRoot = commonRoot(process.cwd());
+    const gateResult = checkDestructiveGate(io, 'rebuild', repoRoot, hasConfirm, queryDestructiveCounts(repoRoot));
+    if (gateResult !== undefined) return gateResult;
+
     const parsed = parseArgs({ args, allowPositionals: true, options: { force: { type: 'boolean' } } });
     if (parsed.positionals.length > 0) {
       io.err('Usage: sv-playbook rebuild [--force]');
@@ -158,7 +168,6 @@ export const command: Command = {
     }
 
     try {
-      const repoRoot = commonRoot(process.cwd());
       const svpDir = join(repoRoot, SVP_DIR);
       const dbPath = join(svpDir, DB_FILE);
 

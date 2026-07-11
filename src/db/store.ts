@@ -54,6 +54,13 @@ function migrateTypeColumn(db: DatabaseSync): void {
   }
 }
 
+function migrateSessionRoleColumn(db: DatabaseSync): void {
+  const cols = db.prepare("SELECT name FROM pragma_table_info('sessions') WHERE name = 'role'").all();
+  if (cols.length === 0) {
+    db.exec("ALTER TABLE sessions ADD COLUMN role TEXT");
+  }
+}
+
 const TABLES_SQL = "SELECT name FROM sqlite_master WHERE type='table'";
 
 function migrateConstitutionTables(db: DatabaseSync): void {
@@ -168,6 +175,21 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
       db.exec('DROP TABLE events');
       db.exec('ALTER TABLE events_new RENAME TO events');
       db.exec('PRAGMA user_version = 8');
+    } else if (currentVersion === 8) {
+      migrateSessionRoleColumn(db);
+      const eventCheck = `command TEXT NOT NULL CHECK (command IN (${sqlInList(EVENT_COMMANDS)}))`;
+      db.exec(`CREATE TABLE events_new (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        packet_id TEXT,
+        ${eventCheck},
+        detail TEXT,
+        at TEXT NOT NULL
+      )`);
+      db.exec('INSERT INTO events_new (seq, session_id, packet_id, command, detail, at) SELECT seq, session_id, packet_id, command, detail, at FROM events');
+      db.exec('DROP TABLE events');
+      db.exec('ALTER TABLE events_new RENAME TO events');
+      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     } else if (currentVersion !== SCHEMA_VERSION) {
       db.close();
       throw new StoreVersionError(
@@ -176,6 +198,7 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
     }
   }
   migratePrColumn(db);
+  migrateSessionRoleColumn(db);
   return { db, dir, close: () => { db.close(); } };
 }
 

@@ -25,6 +25,7 @@ export const EVENT_NOTE = 'note';
 export const EVENT_TAKEOVER = 'takeover';
 export const EVENT_EVIDENCE = 'evidence';
 export const EVENT_IMPORTED = 'imported';
+export const EVENT_DESTRUCTIVE = 'destructive-gate';
 export const SESSION_FILE_NAME = '.svp-session';
 export const PACKETS_DOCS_DIR = 'docs';
 export const PACKETS_DIR = 'packets';

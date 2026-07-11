@@ -5,11 +5,21 @@ import { commonRoot, openStore } from '../../db/store.js';
 import { restoreStateBackup } from '../../db/backup.js';
 import { RESTORE_USAGE, STATE_SUBCOMMAND } from './backup.constants.js';
 import { loadConfig } from '../../config.js';
+import { checkDestructiveGate, queryDestructiveCounts } from '../destructive-gate.js';
 
 export const command: Command = {
   name: 'restore',
   summary: 'Restore local SQLite state from a snapshot',
+  destructive: true,
   run(args, io): Promise<number> {
+    const CONFIRM_FLAG = '--confirm-destructive';
+    const hasConfirm = args.includes(CONFIRM_FLAG);
+    if (hasConfirm) args = args.filter((a) => a !== CONFIRM_FLAG);
+
+    const repoRoot = commonRoot(process.cwd());
+    const gateResult = checkDestructiveGate(io, 'restore', repoRoot, hasConfirm, queryDestructiveCounts(repoRoot));
+    if (gateResult !== undefined) return gateResult;
+
     const [sub, ...rest] = args;
     if (sub !== STATE_SUBCOMMAND) {
       io.err(RESTORE_USAGE);

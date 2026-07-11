@@ -32,6 +32,7 @@ import {
 import { DEFAULT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, PACKET_STATUSES, STATUS } from '../../tasks/service.constants.js';
 import { LifecycleError } from '../../tasks/service.errors.js';
 import type { PacketStatus, RecoveryReport } from '../../tasks/service.types.js';
+import { checkDestructiveGate, queryDestructiveCounts } from '../destructive-gate.js';
 
 interface Subcommand {
   usage: string;
@@ -232,9 +233,20 @@ function handleShow(args: string[], io: Io): number {
 }
 
 function handleTakeover(args: string[], io: Io): number {
+  const CONFIRM_FLAG = '--confirm-destructive';
+  const hasConfirm = args.includes(CONFIRM_FLAG);
+  if (hasConfirm) args = args.filter((a) => a !== CONFIRM_FLAG);
+
   const parsed = parseArgs({ args, allowPositionals: true, options: { force: { type: 'boolean' } } });
   const [packetId] = parsed.positionals;
   if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('takeover requires <ID>');
+
+  if (parsed.values.force === true) {
+    const repoRoot = commonRoot(process.cwd());
+    const gateResult = checkDestructiveGate(io, 'task takeover --force', repoRoot, hasConfirm, queryDestructiveCounts(repoRoot));
+    if (gateResult !== undefined) return gateResult;
+  }
+
   return withStore((store, repoRoot) => {
     const sessionId = ensureSession(store, process.cwd());
     const report = takeoverPacket(store, sessionId, process.cwd(), packetId, parsed.values.force === true);
@@ -347,6 +359,7 @@ function handleTaskError(error: unknown, io: Io): number {
 export const command: Command = {
   name: 'task',
   summary: 'Create, list, start, move, inspect, and recover execution packets',
+  destructiveSubcommands: ['takeover'],
   run(args, io) {
     try {
       const [sub, ...rest] = args;
