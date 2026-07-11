@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { numberColumn, stringColumn } from './rows.js';
@@ -12,16 +12,86 @@ import type { BackupReason } from './backup.types.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import type { Store } from './store.types.js';
 
+const GIT_COMMON_DIR_ARGS = ['rev-parse', '--git-common-dir'];
+const GIT_TOPLEVEL_ARGS = ['rev-parse', '--show-toplevel'];
+
 export function commonRoot(startDir: string): string {
-  const out = execFileSync('git', ['rev-parse', '--git-common-dir'], {
-    cwd: startDir,
-    encoding: 'utf8',
-  }).trim();
+  const out = execFileSync('git', GIT_COMMON_DIR_ARGS, { cwd: startDir, encoding: 'utf8' }).trim();
   return dirname(resolve(startDir, out));
 }
 
 export function worktreeRoot(startDir: string): string {
-  return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: startDir, encoding: 'utf8' }).trim();
+  return execFileSync('git', GIT_TOPLEVEL_ARGS, { cwd: startDir, encoding: 'utf8' }).trim();
+}
+
+// ── Daemon client (worktree → daemon forwarding) ──
+const DAEMON_LOCK_FILE = '.svp-daemon.lock';
+const DAEMON_TOKEN_FILE = '.svp-daemon-token';
+const DAEMON_DEFAULT_PORT = 4141;
+
+function execGitCommonDir(s: string): string {
+  return execFileSync('git', GIT_COMMON_DIR_ARGS, { cwd: s, encoding: 'utf8' }).trim();
+}
+
+function execGitTopLevel(s: string): string {
+  return execFileSync('git', GIT_TOPLEVEL_ARGS, { cwd: s, encoding: 'utf8' }).trim();
+}
+
+export function isWorktree(s: string): boolean {
+  try { return dirname(resolve(s, execGitCommonDir(s))) !== execGitTopLevel(s); }
+  catch { return false; }
+}
+
+export function isDaemonRunning(repoRoot: string): boolean {
+  const lockPath = join(repoRoot, SVP_DIR, DAEMON_LOCK_FILE);
+  if (!existsSync(lockPath)) return false;
+  try {
+    const pid = Number(readFileSync(lockPath, 'utf8').trim().split('\n')[0]);
+    if (Number.isNaN(pid)) return false;
+    try { process.kill(pid, 0); return true; }
+    catch { unlinkSync(lockPath); return false; }
+  } catch { return false; }
+}
+
+export function readDaemonToken(repoRoot: string): string | null {
+  const p = join(repoRoot, SVP_DIR, DAEMON_TOKEN_FILE);
+  if (!existsSync(p)) return null;
+  try { return readFileSync(p, 'utf8').trim().split('\n')[0] ?? null; }
+  catch { return null; }
+}
+
+export function blessedRoot(s: string): string | null {
+  try { return dirname(resolve(s, execGitCommonDir(s))); }
+  catch { return null; }
+}
+
+function forwardToDaemonSync(argv: string[], token: string, port: number): number {
+  const body = JSON.stringify({ token, argv });
+  const bl = Buffer.byteLength(body);
+  const sc = `const http=require('http');const b=${JSON.stringify(body)};http.request({hostname:'127.0.0.1',port:${port},method:'POST',path:'/api/v1/exec',headers:{'Content-Type':'application/json','Content-Length':${bl}}},r=>{let d='';r.setEncoding('utf8');r.on('data',c=>{d+=c;});r.on('end',()=>{try{const p=JSON.parse(d);if(p.stdout)process.stdout.write(p.stdout);if(p.stderr)process.stderr.write(p.stderr);process.exit(typeof p.exitCode==='number'?p.exitCode:1);}catch{process.exit(1);}});}).on('error',()=>process.exit(1)).end(b);setTimeout(()=>{},30000);`;
+  try {
+    execFileSync(process.execPath, ['-e', sc], { stdio: ['ignore', 'inherit', 'inherit'], timeout: 30000, env: { ...process.env, SV_PLAYBOOK_DAEMON: '1' } });
+    return 0;
+  } catch { return 1; }
+}
+
+function tryAutoForward(): void {
+  try {
+    const cwd = process.cwd();
+    if (!isWorktree(cwd)) return;
+    const br = blessedRoot(cwd);
+    if (br === null) return;
+    if (!isDaemonRunning(br)) return;
+    const token = readDaemonToken(br);
+    if (token === null) return;
+    const args = process.argv.slice(2);
+    if (args[0] === 'daemon') return;
+    process.exit(forwardToDaemonSync(args, token, DAEMON_DEFAULT_PORT));
+  } catch { /* proceed with direct mode */ }
+}
+
+if (!process.env.SV_PLAYBOOK_DAEMON && process.env.NODE_TEST_CONTEXT !== 'test') {
+  tryAutoForward();
 }
 
 function getCurrentBranch(repoRoot: string): string {
@@ -223,6 +293,11 @@ function performMigration(db: DatabaseSync, repoRoot: string, currentVersion: nu
 }
 
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
+  if (!process.env.SV_PLAYBOOK_DAEMON && isDaemonRunning(repoRoot)) {
+    throw new StoreVersionError(
+      `store is held by the daemon — run commands from the blessed root or start the daemon with \`sv-playbook daemon\``,
+    );
+  }
   const dir = join(repoRoot, SVP_DIR);
   mkdirSync(dir, { recursive: true });
   const dbPath = join(dir, DB_FILE);

@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
+import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openStore } from '../db/store.js';
+import { openStore, isDaemonRunning } from '../db/store.js';
 import { stringColumn, numberColumn } from '../db/rows.js';
 import { DB_FILE, SVP_DIR } from '../db/store.constants.js';
+import { startDaemon } from '../daemon/daemon.js';
 import {
   createPacket,
   ensureSession,
@@ -338,4 +340,42 @@ test('red team: store fixture DB is used during migration, never the shared .svp
   assert.ok(existsSync(fixturePath), 'fixture DB must exist under fixture root');
   assert.ok(fixturePath.startsWith(root), 'fixture DB path must be under the test root');
   store.close();
+});
+
+// ---- CHEAT 14: Worktree direct store access while daemon holds exclusive lock ----
+test('red team: a worktree process cannot open the store directly while the daemon holds the exclusive lock (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-rt-daemon-'));
+  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
+
+  const wtDir = join(root, 'wt');
+  execFileSync('git', ['branch', 'wt-branch'], { cwd: root });
+  execFileSync('git', ['worktree', 'add', wtDir, 'wt-branch'], { cwd: root });
+
+  openStore(root).close();
+
+  const port = await new Promise<number>((resolve) => {
+    const s = createNetServer();
+    s.listen(0, () => {
+      const addr = s.address();
+      let p = 0;
+      if (typeof addr === 'object' && addr !== null && 'port' in addr) p = addr.port;
+      s.close(() => { resolve(p); });
+    });
+  });
+
+  const daemon = await startDaemon(root, port);
+
+  try {
+    assert.ok(isDaemonRunning(root));
+
+    // A worktree process attempting to open the live store directly is blocked
+    // with a clear error message naming the daemon.
+    assert.throws(
+      () => { openStore(root); },
+      /daemon/,
+    );
+  } finally {
+    daemon.stop();
+  }
 });
