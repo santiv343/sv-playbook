@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadConfig } from '../../config.js';
@@ -155,6 +155,38 @@ function activeWithoutLeaseCheck(repoRoot: string): CheckResult {
   }
 }
 
+function driftResult(store: Store, repoRoot: string): CheckResult {
+  const dbIds = new Set(
+    store.db.prepare('SELECT id FROM packets').all().map((row) => stringColumn(row, 'id')),
+  );
+  const packetsDir = join(repoRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
+  if (!existsSync(packetsDir)) {
+    return { label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.OK, detail: 'no packets directory' };
+  }
+  const drifted: string[] = [];
+  for (const entry of readdirSync(packetsDir)) {
+    if (!entry.endsWith('.md')) continue;
+    const id = entry.replace(/\.md$/, '');
+    if (!dbIds.has(id)) drifted.push(id);
+  }
+  if (drifted.length === 0) {
+    return { label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.OK, detail: 'all packet files in DB' };
+  }
+  return {
+    label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.WARN,
+    detail: `${drifted.length} packet file(s) in ${PACKETS_DOCS_DIR}/${PACKETS_DIR} not in DB: ${drifted.join(', ')} — use 'task import <id>' to import`,
+  };
+}
+
+function packetsDriftCheck(repoRoot: string): CheckResult {
+  try {
+    const store = openStore(repoRoot);
+    try { return driftResult(store, repoRoot); } finally { store.close(); }
+  } catch (error) {
+    return { label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.FAIL, detail: errorMessage(error) };
+  }
+}
+
 function collectChecks(): CheckResult[] {
   const checks = [nodeCheck()];
   try {
@@ -167,6 +199,7 @@ function collectChecks(): CheckResult[] {
       activeWithoutLeaseCheck(repoRoot),
       reviewMergedCheck(repoRoot),
       backupCheck(repoRoot),
+      packetsDriftCheck(repoRoot),
     );
   } catch (error) {
     checks.push(
@@ -176,6 +209,7 @@ function collectChecks(): CheckResult[] {
       { label: DOCTOR_LABEL.LEASES, status: DOCTOR_STATUS.FAIL, detail: DOCTOR_DETAIL.GIT_ROOT_UNAVAILABLE },
       { label: DOCTOR_LABEL.ACTIVE_LEASES, status: DOCTOR_STATUS.FAIL, detail: DOCTOR_DETAIL.GIT_ROOT_UNAVAILABLE },
       { label: DOCTOR_LABEL.BACKUP, status: DOCTOR_STATUS.FAIL, detail: DOCTOR_DETAIL.GIT_ROOT_UNAVAILABLE },
+      { label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.FAIL, detail: DOCTOR_DETAIL.GIT_ROOT_UNAVAILABLE },
     );
   }
   return checks;

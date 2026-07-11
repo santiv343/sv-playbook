@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { numberColumn, stringColumn } from './rows.js';
-import { DB_FILE, SCHEMA, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
+import { DB_FILE, EVENT_COMMANDS, SCHEMA, SCHEMA_VERSION, SVP_DIR, sqlInList } from './store.constants.js';
 import { StoreVersionError } from './store.errors.js';
 import { createStateBackup } from './backup.js';
 import { BACKUP_REASON } from './backup.constants.js';
@@ -154,6 +154,20 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
     } else if (currentVersion === 6) {
       migrateSprintsTables(db);
       db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    } else if (currentVersion === 7) {
+      const eventCheck = `command TEXT NOT NULL CHECK (command IN (${sqlInList(EVENT_COMMANDS)}))`;
+      db.exec(`CREATE TABLE events_new (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        packet_id TEXT,
+        ${eventCheck},
+        detail TEXT,
+        at TEXT NOT NULL
+      )`);
+      db.exec('INSERT INTO events_new (seq, session_id, packet_id, command, detail, at) SELECT seq, session_id, packet_id, command, detail, at FROM events');
+      db.exec('DROP TABLE events');
+      db.exec('ALTER TABLE events_new RENAME TO events');
+      db.exec('PRAGMA user_version = 8');
     } else if (currentVersion !== SCHEMA_VERSION) {
       db.close();
       throw new StoreVersionError(

@@ -178,11 +178,19 @@ test('demotion and rejection release the lease; release frees an own lease', asy
   assert.throws(() => { releaseLease(store, session, 'FLOW-LEASE-001'); }, /no lease/);
 });
 
-test('overlaps detects overlapping globs', () => {
+test('overlaps detects overlapping globs and wildcard semantics', () => {
   assert.equal(overlaps('src/**', 'src/cli/**'), true);
   assert.equal(overlaps('src/a/**', 'src/b/**'), false);
   assert.equal(overlaps('eslint.config.js', 'eslint.config.js'), true);
   assert.equal(overlaps('src/**', 'docs/**'), false);
+  assert.equal(overlaps('src/cli/commands/task*', 'src/cli/commands/task.ts'), true);
+  assert.equal(overlaps('src/cli/commands/task*', 'src/cli/commands/task.test.ts'), true);
+  assert.equal(overlaps('src/cli/commands/task*', 'src/cli/commands/task.help.ts'), true);
+  assert.equal(overlaps('src/cli/commands/doctor*', 'src/cli/commands/doctor.ts'), true);
+  assert.equal(overlaps('src/cli/commands/doctor*', 'src/cli/commands/doctor.constants.ts'), true);
+  assert.equal(overlaps('src/cli/commands/task*', 'src/cli/commands/doctor.ts'), false);
+  assert.equal(overlaps('src/*/commands/task*', 'src/cli/commands/task.test.ts'), true);
+  assert.equal(overlaps('src/*/commands/task*', 'src/api/commands/task.ts'), true); assert.equal(overlaps('src/*/commands/task*', 'src/cli/routes/task.ts'), false);
 });
 
 test('moving to ready is refused when the write_set conflicts with an in-flight packet', async () => {
@@ -232,12 +240,10 @@ test('importPackets imports a new packet from a valid .md file', async () => {
   assert.equal(result.imported, 1); assert.equal(result.updated, 0);
   const row = store.db.prepare('SELECT body, title, status FROM packets WHERE id = ?').get('IMP-001');
   assert.ok(row !== undefined);
-  assert.equal(stringColumn(row, 'body'), 'Imported body text.');
-  assert.equal(stringColumn(row, 'title'), 'Imported Packet');
+  assert.equal(stringColumn(row, 'body'), 'Imported body text.'); assert.equal(stringColumn(row, 'title'), 'Imported Packet');
   assert.equal(stringColumn(row, 'status'), 'draft');
   const deps = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all('IMP-001');
-  assert.equal(deps.length, 1);
-  assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-001');
+  assert.equal(deps.length, 1); assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-001');
   assert.equal(store.db.prepare('SELECT 1 FROM packets WHERE id = ?').get('README'), undefined);
 });
 
@@ -252,15 +258,13 @@ test('importPackets is idempotent and updates deps on re-run', async () => {
   const r1 = importPackets(store, root); assert.equal(r1.imported, 1); assert.equal(r1.updated, 0);
   const r2 = importPackets(store, root); assert.equal(r2.imported, 0); assert.equal(r2.updated, 1);
   let deps = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all('IMP-002');
-  assert.equal(deps.length, 1);
-  assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-A');
+  assert.equal(deps.length, 1); assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-A');
   await writeFile(join(root, 'docs', 'packets', 'IMP-002.md'), mkContent('Updated', ['DEP-C'], 'Updated body.', ['src/b/**']), 'utf8');
   const r3 = importPackets(store, root); assert.equal(r3.imported, 0); assert.equal(r3.updated, 1);
   const row = store.db.prepare('SELECT body, title, write_set FROM packets WHERE id = ?').get('IMP-002');
   assert.equal(stringColumn(row, 'body'), 'Updated body.'); assert.equal(stringColumn(row, 'title'), 'Updated');
   deps = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all('IMP-002');
-  assert.equal(deps.length, 1);
-  assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-C');
+  assert.equal(deps.length, 1); assert.equal(stringColumn(deps[0], 'depends_on_id'), 'DEP-C');
   store.db.prepare("UPDATE packets SET status = 'ready' WHERE id = ?").run('IMP-002');
   importPackets(store, root);
   assert.equal(stringColumn(store.db.prepare('SELECT status FROM packets WHERE id = ?').get('IMP-002'), 'status'), 'ready');
@@ -286,9 +290,7 @@ test('moving a packet never modifies its generated markdown export', async () =>
 
 test('importPackets returns zeros for a missing packets directory', async () => {
   const { store, root } = await setup();
-  const result = importPackets(store, root);
-  assert.equal(result.imported, 0);
-  assert.equal(result.updated, 0);
+  const { imported, updated } = importPackets(store, root); assert.equal(imported, 0); assert.equal(updated, 0);
 });
 test("task brief prepends the universal acceptance rubric to every worker prompt", async () => {
   const { root, store } = await setup();
@@ -322,8 +324,7 @@ test('task create --type feature auto-assigns sequential FEAT ids', async () => 
   assert.equal(generateIdFromType(store, 'feature'), 'FEAT-002');
   createPacket(store, root, def('FEAT-002'), 'Body 2.\n', 'feature');
   const rows = store.db.prepare('SELECT id, type FROM packets ORDER BY id').all();
-  assert.equal(stringColumn(rows[0], 'id'), 'FEAT-001');
-  assert.equal(stringColumn(rows[0], 'type'), 'feature');
+  assert.equal(stringColumn(rows[0], 'id'), 'FEAT-001'); assert.equal(stringColumn(rows[0], 'type'), 'feature');
 });
 
 test('amend updates the body and write_set in the DB and regenerates the export', async () => {
