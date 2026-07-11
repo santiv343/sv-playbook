@@ -44,3 +44,21 @@ test('handoff prompt includes the role pointer and the live board snapshot', asy
     assert.ok(output.includes('counts:'), 'output must include counts header');
   });
 });
+
+test('handoff handles numeric event sequences for active packets', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'Do it.\n');
+    const setupIo = fakeIo();
+    await main(
+      ['task', 'create', '--id', 'HANDOFF-NUM-001', '--title', 'Numeric Seq Test', '--write', 'src/**', '--body-file', 'body.md'],
+      setupIo,
+    );
+    await main(['task', 'move', 'HANDOFF-NUM-001', 'ready'], setupIo);
+    assert.equal(await main(['task', 'start', 'HANDOFF-NUM-001'], setupIo), EXIT.OK, setupIo.errLines.join('\n'));
+
+    const io = fakeIo();
+    assert.equal(await main(['handoff', '--force'], io), EXIT.OK, io.errLines.join('\n'));
+    const output = io.outLines.join('\n');
+    assert.ok(output.includes('counts:'), 'output must include counts header');
+  });
+});
