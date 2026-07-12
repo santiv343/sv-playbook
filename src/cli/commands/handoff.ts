@@ -6,7 +6,7 @@ import type { Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { readBoardStatus } from '../../status/status.js';
 import type { BoardStatus } from '../../status/status.types.js';
-import { stringColumn } from '../../db/rows.js';
+import { numberColumn, stringColumn } from '../../db/rows.js';
 import { ATTENTION_STATUSES, HANDOFF_ROLE_DEFAULT, nextActionAndCounts, rolePointers } from './handoff.constants.js';
 
 const NO_PRS = 'open PRs: none';
@@ -21,8 +21,8 @@ function staleActivePackets(store: { db: { prepare(sql: string): { all(): unknow
   `).all();
   const stale: string[] = [];
   for (const row of rows) {
-    const lastNote = Number(stringColumn(row, 'last_note_seq'));
-    const lastTransition = Number(stringColumn(row, 'last_transition_seq'));
+    const lastNote = numberColumn(row, 'last_note_seq');
+    const lastTransition = numberColumn(row, 'last_transition_seq');
     if (lastNote < lastTransition) {
       stale.push(stringColumn(row, 'id'));
     }
