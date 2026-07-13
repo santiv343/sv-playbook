@@ -1,9 +1,8 @@
 import { commonRoot } from '../db/store.js';
 import { commands } from './registry.js';
 import { EXIT } from './command.constants.js';
-import { setContext, getCwd } from '../runtime/context.js';
+import { getCwd } from '../runtime/context.js';
 import type { Command, Io } from './command.types.js';
-import type { ExecutionContext } from '../runtime/context.types.js';
 import { checkDestructiveGate, queryDestructiveCounts } from './destructive-gate.js';
 
 const CONFIRM_FLAG = '--confirm-destructive';
@@ -30,11 +29,7 @@ function gateCheckedArgs(command: Command, args: string[], io: Io): string[] | n
   return runArgs;
 }
 
-export async function main(argv: string[], io: Io = defaultIo, ctx?: ExecutionContext): Promise<number> {
-  if (ctx !== undefined) {
-    setContext(ctx);
-  }
-
+export async function main(argv: string[], io: Io = defaultIo): Promise<number> {
   const [name, ...args] = argv;
   if (name === undefined || name === '--help' || name === '-h') {
     usage(io);

@@ -8,12 +8,14 @@ import { DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.co
 import { EXIT } from '../cli/command.constants.js';
 import { SVP_DIR } from '../db/store.constants.js';
 import { runWithContext, createContext } from '../runtime/context.js';
+import { gitWorkspace } from '../runtime/workspace-git.js';
 import type { Store } from '../db/store.types.js';
 import type { DaemonInstance } from './daemon.types.js';
 
 const ERR_INVALID_JSON = 'invalid json';
 const ERR_INVALID_TOKEN = 'invalid token';
 const ERR_REQ_READ_FAILED = 'request read failed';
+const ERR_INVALID_CONTEXT = 'invalid context (missing or outside repo)';
 
 function generateToken(): string {
   return createHash('sha256').update(randomUUID()).digest('hex').slice(0, 32);
@@ -65,7 +67,7 @@ function buildExecIo(): { out: (l: string) => void; err: (l: string) => void; ou
   };
 }
 
-function handleRequest(token: string, req: IncomingMessage, res: ServerResponse, shutdown: () => void): void {
+function handleRequest(token: string, req: IncomingMessage, res: ServerResponse, shutdown: () => void, repoRoot: string): void {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
   if (req.method === 'GET' && url.pathname === '/api/v1/health') {
@@ -74,7 +76,7 @@ function handleRequest(token: string, req: IncomingMessage, res: ServerResponse,
   }
 
   if (req.method === 'POST' && url.pathname === '/api/v1/exec') {
-    handleExec(token, req, res);
+    handleExec(token, req, res, repoRoot);
     return;
   }
 
@@ -111,19 +113,18 @@ function handleShutdown(token: string, req: IncomingMessage, res: ServerResponse
   });
 }
 
-function contextFromPayload(parsed: object): ReturnType<typeof createContext> | undefined {
-  const parsedContext: unknown = Reflect.get(parsed, 'context');
-  if (typeof parsedContext === 'object' && parsedContext !== null && 'cwd' in parsedContext) {
-    const cwVal: unknown = Reflect.get(parsedContext, 'cwd');
-    if (typeof cwVal === 'string') {
-      const sidVal: unknown = Reflect.get(parsedContext, 'sessionId');
-      return createContext(cwVal, typeof sidVal === 'string' ? sidVal : '');
-    }
-  }
-  return undefined;
+function contextFromPayload(parsed: object, repoRoot: string): ReturnType<typeof createContext> | null {
+  const rawCtx: unknown = Reflect.get(parsed, 'context');
+  if (typeof rawCtx !== 'object' || rawCtx === null) return null;
+  const cwVal: unknown = Reflect.get(rawCtx, 'cwd');
+  if (typeof cwVal !== 'string' || cwVal.length === 0) return null;
+  const canonical = gitWorkspace.canonicalWorkspaceRoot(cwVal);
+  if (canonical === null) return null;
+  if (!gitWorkspace.sameWorkspace(canonical, repoRoot)) return null;
+  return createContext(canonical, '');
 }
 
-function parseExecRequest(raw: string, token: string, res: ServerResponse): { argv: string[]; ctx: ReturnType<typeof createContext> | undefined } | null {
+function parseExecRequest(raw: string, token: string, res: ServerResponse, repoRoot: string): { argv: string[]; ctx: ReturnType<typeof createContext> } | null {
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
   if (typeof parsed !== 'object' || parsed === null) { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
@@ -135,18 +136,20 @@ function parseExecRequest(raw: string, token: string, res: ServerResponse): { ar
   const argv = Array.isArray(parsedArgv) ? parsedArgv.filter((a): a is string => typeof a === 'string') : [];
   if (argv.length === 0) { jsonResponse(res, 400, { error: 'argv required' }); return null; }
 
-  return { argv, ctx: contextFromPayload(parsed) };
+  const ctx = contextFromPayload(parsed, repoRoot);
+  if (ctx === null) { jsonResponse(res, 400, { error: ERR_INVALID_CONTEXT }); return null; }
+
+  return { argv, ctx };
 }
 
-function handleExec(token: string, req: IncomingMessage, res: ServerResponse): void {
+function handleExec(token: string, req: IncomingMessage, res: ServerResponse, repoRoot: string): void {
   readBody(req).then((raw) => {
-    const parsed = parseExecRequest(raw, token, res);
+    const parsed = parseExecRequest(raw, token, res, repoRoot);
     if (parsed === null) return;
 
     const execIo = buildExecIo();
 
-    const p = parsed.ctx !== undefined ? runWithContext(parsed.ctx, () => main(parsed.argv, execIo)) : main(parsed.argv, execIo);
-    p.then((exitCode) => {
+    runWithContext(parsed.ctx, () => main(parsed.argv, execIo)).then((exitCode) => {
       const stdout = execIo.outLines.join('\n') + (execIo.outLines.length > 0 ? '\n' : '');
       const stderr = execIo.errLines.join('\n') + (execIo.errLines.length > 0 ? '\n' : '');
       jsonResponse(res, 200, { exitCode, stdout, stderr, daemonVersion: DAEMON_VERSION });
@@ -232,7 +235,7 @@ export function startDaemon(repoRoot: string, port: number): Promise<DaemonInsta
       try { unlinkSync(tokenPath); } catch { /* best-effort */ }
     };
 
-    const server = createServer((req, res) => { handleRequest(token, req, res, shutdown); });
+    const server = createServer((req, res) => { handleRequest(token, req, res, shutdown, repoRoot); });
 
     server.on('error', (err: NodeJS.ErrnoException) => {
       setDaemonStore(null);

@@ -1,6 +1,5 @@
 import { spawnSync } from 'node:child_process';
 import { DAEMON_CONNECT_TIMEOUT_MS_DEFAULT } from './daemon.constants.js';
-import type { ExecutionContext } from '../runtime/context.types.js';
 import { getContext } from '../runtime/context.js';
 
 // The forwarding transport runs in a child node process so it can be awaited
@@ -14,9 +13,9 @@ function buildForwardScript(body: string, port: number): string {
 
 // Single forwarding transport — used by production (store.ts auto-forward)
 // and exercised directly by the daemon tests.
-export function forwardToDaemonSync(argv: string[], token: string, port: number, ctx?: ExecutionContext): number {
-  const context = ctx ?? getContext() ?? { cwd: process.cwd(), sessionId: '' };
-  const body = JSON.stringify({ token, argv, context });
+export function forwardToDaemonSync(argv: string[], token: string, port: number): number {
+  const cwd = getContext()?.cwd ?? process.cwd();
+  const body = JSON.stringify({ token, argv, context: { cwd } });
   const result = spawnSync(process.execPath, ['-e', buildForwardScript(body, port)], {
     stdio: ['ignore', 'inherit', 'inherit'],
   });

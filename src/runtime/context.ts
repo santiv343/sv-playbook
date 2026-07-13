@@ -7,10 +7,6 @@ export function createContext(cwd: string, sessionId: string): ExecutionContext 
   return { cwd, sessionId };
 }
 
-export function setContext(ctx: ExecutionContext): void {
-  storage.enterWith(ctx);
-}
-
 export function getContext(): ExecutionContext | undefined {
   return storage.getStore();
 }
