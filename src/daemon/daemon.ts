@@ -117,6 +117,23 @@ function handleExec(token: string, req: IncomingMessage, res: ServerResponse): v
   });
 }
 
+function acquireLock(lockPath: string, pid: number, port: number): void {
+  try {
+    writeLockFileAtomically(lockPath, pid, port);
+  } catch (err: unknown) {
+    let msg: string;
+    if (err instanceof Error && 'code' in err) {
+      const c = Reflect.get(err, 'code');
+      msg = c === 'EEXIST'
+        ? 'daemon is already running for this repo (lock file race)'
+        : `failed to create lock file: ${String(err)}`;
+    } else {
+      msg = `failed to create lock file: ${String(err)}`;
+    }
+    throw new Error(msg);
+  }
+}
+
 export function startDaemon(repoRoot: string, port: number): Promise<DaemonInstance> {
   return new Promise((resolve, reject) => {
     const svpDir = join(repoRoot, SVP_DIR);
@@ -135,18 +152,9 @@ export function startDaemon(repoRoot: string, port: number): Promise<DaemonInsta
     // 1. Lock file FIRST — atomic single-daemon enforcement (closes TOCTOU
     //    window between isDaemonRunning check and exclusive resource access).
     try {
-      writeLockFileAtomically(lockPath, process.pid, port);
+      acquireLock(lockPath, process.pid, port);
     } catch (err: unknown) {
-      let msg: string;
-      if (err instanceof Error && 'code' in err) {
-        const c = Reflect.get(err, 'code');
-        msg = c === 'EEXIST'
-          ? 'daemon is already running for this repo (lock file race)'
-          : `failed to create lock file: ${String(err)}`;
-      } else {
-        msg = `failed to create lock file: ${String(err)}`;
-      }
-      reject(new Error(msg));
+      reject(err instanceof Error ? err : new Error(String(err)));
       return;
     }
 

@@ -140,24 +140,12 @@ interface OpenStoreOptions {
 const MIGRATION_REFUSED_TEXT = (branch: string): string =>
   `migration refused: on branch "${branch}" which is not the default branch — switch to main or pass --migrate-live to migrate the live store from this branch`;
 
-function migrateBodyColumn(db: DatabaseSync): void {
-  const cols = db.prepare("SELECT name FROM pragma_table_info('packets') WHERE name = 'body'").all();
+function migratePacketColumn(db: DatabaseSync, column: string, type: string, notNull: boolean, defaultValue?: string): void {
+  const cols = db.prepare(`SELECT name FROM pragma_table_info('packets') WHERE name = ?`).all(column);
   if (cols.length === 0) {
-    db.exec('ALTER TABLE packets ADD COLUMN body TEXT NOT NULL DEFAULT \'\'');
-  }
-}
-
-function migratePrColumn(db: DatabaseSync): void {
-  const cols = db.prepare("SELECT name FROM pragma_table_info('packets') WHERE name = 'pr'").all();
-  if (cols.length === 0) {
-    db.exec('ALTER TABLE packets ADD COLUMN pr TEXT');
-  }
-}
-
-function migrateTypeColumn(db: DatabaseSync): void {
-  const cols = db.prepare("SELECT name FROM pragma_table_info('packets') WHERE name = 'type'").all();
-  if (cols.length === 0) {
-    db.exec("ALTER TABLE packets ADD COLUMN type TEXT NOT NULL DEFAULT ''");
+    const def = defaultValue !== undefined ? ` DEFAULT ${defaultValue}` : '';
+    const nn = notNull ? ' NOT NULL' : '';
+    db.exec(`ALTER TABLE packets ADD COLUMN ${column} ${type}${nn}${def}`);
   }
 }
 
@@ -232,15 +220,14 @@ function migrateSprintsTables(db: DatabaseSync): void {
     `);
   }
 }
-
 function runVersionMigration(db: DatabaseSync, fromVersion: number): void {
   if (fromVersion === 3) {
-    migrateBodyColumn(db);
+    migratePacketColumn(db, 'body', 'TEXT', true, "''");
     db.exec('PRAGMA user_version = 4');
-    migrateTypeColumn(db);
+    migratePacketColumn(db, 'type', 'TEXT', true, "''");
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   } else if (fromVersion === 4) {
-    migrateTypeColumn(db);
+    migratePacketColumn(db, 'type', 'TEXT', true, "''");
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   } else if (fromVersion === 5) {
     migrateConstitutionTables(db);
@@ -265,25 +252,18 @@ function runVersionMigration(db: DatabaseSync, fromVersion: number): void {
     db.exec('PRAGMA user_version = 8');
   }
 }
-
 function emitSchemaMigrated(db: DatabaseSync): void {
-  try {
-    db.prepare('INSERT INTO events (command, at) VALUES (?, ?)').run(EVENT_SCHEMA_MIGRATED, new Date().toISOString());
-  } catch (err) {
-    console.error(`failed to emit schema-migrated event: ${String(err)}`);
-  }
+  try { db.prepare('INSERT INTO events (command, at) VALUES (?, ?)').run(EVENT_SCHEMA_MIGRATED, new Date().toISOString()); }
+  catch (err) { console.error(`failed to emit schema-migrated event: ${String(err)}`); }
 }
 
 function createVerifiedBackup(repoRoot: string, reason: BackupReason): void {
   const backup = createStateBackup(repoRoot, { reason, allowFreshLeases: true });
-  const expectedSha = backup.sha256;
-  const actualSha = createHash('sha256').update(readFileSync(backup.sqlitePath)).digest('hex');
-  if (actualSha !== expectedSha) {
+  if (backup.sha256 !== createHash('sha256').update(readFileSync(backup.sqlitePath)).digest('hex')) {
     throw new Error('pre-migration backup verification failed (sha256 mismatch)');
   }
   const vacDb = new DatabaseSync(backup.sqlitePath);
-  const integrityRow = vacDb.prepare('PRAGMA integrity_check').get();
-  const integrityCheck = stringColumn(integrityRow, 'integrity_check');
+  const integrityCheck = stringColumn(vacDb.prepare('PRAGMA integrity_check').get(), 'integrity_check');
   vacDb.close();
   if (integrityCheck !== 'ok') {
     throw new Error('pre-migration backup verification failed (integrity check)');
@@ -310,9 +290,7 @@ function performMigration(db: DatabaseSync, repoRoot: string, currentVersion: nu
 function assertStoreNotHeldByDaemon(repoRoot: string): void {
   if (process.argv[2] === 'daemon' || daemonStarting) return;
   if (isDaemonRunning(repoRoot)) {
-    throw new StoreVersionError(
-      `store is held by the daemon — run commands from the blessed root or start the daemon with \`sv-playbook daemon\``,
-    );
+    throw new StoreVersionError(`store is held by the daemon — run commands from the blessed root or start the daemon with \`sv-playbook daemon\``);
   }
   if (!process.env.NODE_TEST_CONTEXT && isWorktree(process.cwd())) {
     const br = blessedRoot(process.cwd());
@@ -335,15 +313,12 @@ function checkVersionAndMigrate(db: DatabaseSync, repoRoot: string, options?: Op
 }
 
 let daemonStore: Store | null = null;
-let realDaemonStore: Store | null = null;
 let daemonStarting = false;
 
 export function setDaemonStore(s: Store | null): void {
   if (s === null) {
     daemonStore = null;
-    realDaemonStore = null;
   } else {
-    realDaemonStore = s;
     daemonStore = {
       db: s.db,
       dir: s.dir,
@@ -377,7 +352,7 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   } else if (!options?.skipVersionCheck) {
     checkVersionAndMigrate(db, repoRoot, options);
   }
-  migratePrColumn(db);
+  migratePacketColumn(db, 'pr', 'TEXT', false);
   return { db, dir, close: () => { db.close(); } };
 }
 
@@ -394,33 +369,21 @@ function assertNoForeignLeases(dbPath: string, currentSessionId?: string): void 
   for (const row of leaseRows) {
     const sid = stringColumn(row, 'session_id');
     if (currentSessionId !== undefined && sid === currentSessionId) continue;
-    const hb = stringColumn(row, 'heartbeat_at');
-    if (Date.now() - Date.parse(hb) <= LEASE_TTL_MS) {
-      foreignCount++;
-    }
+    if (Date.now() - Date.parse(stringColumn(row, 'heartbeat_at')) <= LEASE_TTL_MS) foreignCount++;
   }
   if (foreignCount > 0) {
-    throw new Error(
-      `migration blocked: ${foreignCount} other worktree/session(s) are live on the shared store — pause them or isolate state per worktree before migrating`,
-    );
+    throw new Error(`migration blocked: ${foreignCount} other worktree/session(s) are live on the shared store — pause them or isolate state per worktree before migrating`);
   }
 }
 
 export function migrateStore(repoRoot: string, options?: MigrateStoreOptions): void {
   const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
-
   if (!isOnDefaultBranch(repoRoot)) {
-    if (options?.migrateLive) {
-      console.error(`bypassing branch guard: migrating live from "${getCurrentBranch(repoRoot)}"`);
-    } else {
-      throw new StoreVersionError(MIGRATION_REFUSED_TEXT(getCurrentBranch(repoRoot)));
-    }
+    if (options?.migrateLive) { console.error(`bypassing branch guard: migrating live from "${getCurrentBranch(repoRoot)}"`); }
+    else { throw new StoreVersionError(MIGRATION_REFUSED_TEXT(getCurrentBranch(repoRoot))); }
   }
-
   createVerifiedBackup(repoRoot, BACKUP_REASON.MANUAL);
-
   assertNoForeignLeases(dbPath, options?.currentSessionId);
-
   const db = new DatabaseSync(dbPath);
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   emitSchemaMigrated(db);

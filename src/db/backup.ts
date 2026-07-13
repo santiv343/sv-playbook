@@ -229,6 +229,12 @@ function vacuumInto(sourcePath: string, destPath: string): void {
   try { db.exec(`VACUUM INTO '${destPath.replace(/'/g, "''")}'`); } finally { db.close(); }
 }
 
+function atomicReplace(source: string, target: string): void {
+  const tmp = join(dirname(target), `.${basename(target)}.tmp`);
+  copyFileSync(source, tmp);
+  try { renameSync(tmp, target); } finally { if (existsSync(tmp)) rmSync(tmp); }
+}
+
 function rawPreRestoreBackup(repoRoot: string, retention?: number, resolvedDir?: string): BackupReport {
   const dir = resolvedDir ?? resolveBackupsDir(repoRoot);
   mkdirSync(dir, { recursive: true });
@@ -377,15 +383,7 @@ export function restoreStateBackup(repoRoot: string, backupPath: string, force: 
   validateBackup(backupPath);
 
   const target = liveDbPath;
-  const tempPath = join(dirname(target), `.${basename(target)}.tmp`);
-  copyFileSync(backupPath, tempPath);
-  try {
-    renameSync(tempPath, target);
-  } finally {
-    if (existsSync(tempPath)) {
-      rmSync(tempPath);
-    }
-  }
+  atomicReplace(backupPath, target);
 
   return { restoredFrom: backupPath, preRestoreBackup: preRestore };
 }
