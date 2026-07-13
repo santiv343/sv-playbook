@@ -25,11 +25,18 @@ export interface HttpServerFactoryPort {
   create(handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void): HttpServerPort;
 }
 
+export interface DaemonFilesystemPort {
+  mkdir(dir: string, options?: { recursive?: boolean; mode?: number }): void;
+  writeFileAtomic(path: string, content: string, mode?: number): void;
+  unlink(path: string): void;
+}
+
 export interface DaemonOptions {
   readonly workspaceIdentity: import('../runtime/workspace.types.js').WorkspacePort;
   readonly commandExecution: CommandExecutionPort;
   readonly httpServerFactory: HttpServerFactoryPort;
   readonly sessionBinding: SessionBindingPort;
+  readonly fileSystem: DaemonFilesystemPort;
   onFinalize?: () => void;
 }
 
