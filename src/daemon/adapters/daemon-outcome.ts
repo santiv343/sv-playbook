@@ -1,6 +1,6 @@
-import { EXIT } from './command.constants.js';
-import type { Io } from './command.types.js';
-import type { DaemonOutcome } from '../daemon/daemon.types.js';
+import { EXIT } from '../../cli/command.constants.js';
+import type { Io } from '../../cli/command.types.js';
+import type { DaemonOutcome } from '../daemon.types.js';
 
 export function daemonOutcomeToExitCode(outcome: DaemonOutcome, io: Io): number {
   if (outcome.kind === 'stopped') return EXIT.OK;

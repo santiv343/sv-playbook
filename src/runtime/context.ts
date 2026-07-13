@@ -3,8 +3,8 @@ import type { ExecutionContext } from './context.types.js';
 
 const storage = new AsyncLocalStorage<ExecutionContext>();
 
-export function createContext(cwd: string): ExecutionContext {
-  return { cwd };
+export function createContext(cwd: string, sessionId: string | null = null): ExecutionContext {
+  return { cwd, sessionId };
 }
 
 export function getContext(): ExecutionContext | undefined {

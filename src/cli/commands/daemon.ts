@@ -6,9 +6,10 @@ import { getCwd } from '../../runtime/context.js';
 import { gitWorkspace } from '../../runtime/workspace-git.js';
 import { DAEMON_DEFAULT_PORT } from '../../daemon/daemon.constants.js';
 import { startDaemon } from '../../daemon/daemon.js';
-import { createCliCommandExecutionPort } from '../daemon-adapter.js';
-import { createNodeHttpServerFactory } from '../http-server-adapter.js';
-import { daemonOutcomeToExitCode } from '../daemon-outcome.js';
+import { createCliCommandExecutionPort } from '../../daemon/adapters/cli-execution-port.js';
+import { createNodeHttpServerFactory } from '../../daemon/adapters/http-server-adapter.js';
+import { createNodeSignalSubscription } from '../../daemon/adapters/signal-adapter.js';
+import { daemonOutcomeToExitCode } from '../../daemon/adapters/daemon-outcome.js';
 
 const USAGE = 'Usage: sv-playbook daemon [--port <N>]';
 
@@ -40,18 +41,15 @@ export const command: Command = {
 
     const cliCommandPort = createCliCommandExecutionPort();
     const httpServerFactory = createNodeHttpServerFactory();
+    const signals = createNodeSignalSubscription();
     return new Promise((resolve) => {
       startDaemon(repoRoot, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory }).then((instance) => {
         io.out(`Daemon ready on 127.0.0.1:${port} — pid ${process.pid}, token ${instance.token.slice(0, 8)}...`);
         io.out('Press Ctrl+C to stop');
         const shutdown = (): void => { void instance.stop(); };
-        process.on('SIGINT', shutdown);
-        process.on('SIGTERM', shutdown);
-        process.on('SIGBREAK', shutdown);
+        signals.onShutdown(shutdown);
         void instance.done.then((outcome) => {
-          process.removeListener('SIGINT', shutdown);
-          process.removeListener('SIGTERM', shutdown);
-          process.removeListener('SIGBREAK', shutdown);
+          signals.removeShutdownHandler(shutdown);
           resolve(daemonOutcomeToExitCode(outcome, io));
         });
       }).catch((err: unknown) => {

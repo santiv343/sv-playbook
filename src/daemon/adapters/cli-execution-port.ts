@@ -1,5 +1,5 @@
-import { main } from './main.js';
-import type { CommandExecutionPort } from '../daemon/daemon.types.js';
+import { main } from '../../cli/main.js';
+import type { CommandExecutionPort } from '../daemon.types.js';
 
 export function createCliCommandExecutionPort(): CommandExecutionPort {
   return {

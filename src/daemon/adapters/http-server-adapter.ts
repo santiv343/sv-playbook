@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import type { HttpServerFactoryPort } from '../daemon/daemon.types.js';
+import type { HttpServerFactoryPort } from '../daemon.types.js';
 
 export function createNodeHttpServerFactory(): HttpServerFactoryPort {
   return {

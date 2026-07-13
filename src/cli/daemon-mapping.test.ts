@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EXIT } from './command.constants.js';
-import { daemonOutcomeToExitCode } from './daemon-outcome.js';
+import { daemonOutcomeToExitCode } from '../daemon/adapters/daemon-outcome.js';
 import type { Io } from './command.types.js';
 
 

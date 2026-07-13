@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { closeSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
-import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting } from '../db/store.js';
+import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting, getDaemonStore } from '../db/store.js';
 import { DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
 import { SVP_DIR } from '../db/store.constants.js';
 import { runWithContext, createContext } from '../runtime/context.js';
@@ -61,7 +61,7 @@ function contextFromPayload(parsed: object, repoRoot: string, ws: import('../run
   return createContext(canonical);
 }
 
-function parseExecRequest(raw: string, token: string, res: ServerResponse, repoRoot: string, opts: DaemonOptions): { argv: string[]; ctx: ReturnType<typeof createContext> } | null {
+function parseExecRequest(raw: string, token: string, res: ServerResponse, repoRoot: string, opts: DaemonOptions): { argv: string[]; ctx: ReturnType<typeof createContext>; clientSessionId: unknown } | null {
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
   if (typeof parsed !== 'object' || parsed === null) { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
@@ -76,7 +76,10 @@ function parseExecRequest(raw: string, token: string, res: ServerResponse, repoR
   const ctx = contextFromPayload(parsed, repoRoot, opts.workspaceIdentity);
   if (ctx === null) { jsonResponse(res, 400, { error: ERR_INVALID_CONTEXT }); return null; }
 
-  return { argv, ctx };
+  const rawCtx: unknown = Reflect.get(parsed, 'context');
+  const clientSessionId: unknown = typeof rawCtx === 'object' && rawCtx !== null ? Reflect.get(rawCtx, 'sessionId') : undefined;
+
+  return { argv, ctx, clientSessionId };
 }
 
 function handleExec(token: string, req: IncomingMessage, res: ServerResponse, repoRoot: string, opts: DaemonOptions): void {
@@ -84,10 +87,32 @@ function handleExec(token: string, req: IncomingMessage, res: ServerResponse, re
     const parsed = parseExecRequest(raw, token, res, repoRoot, opts);
     if (parsed === null) return;
 
+    // Derive session from canonical workspace — client sessionId is advisory
+    const store = getDaemonStore();
+    if (store !== null) {
+      const worktree = parsed.ctx.cwd;
+      const row = store.db.prepare('SELECT id FROM sessions WHERE worktree = ?').get(worktree);
+      if (row !== undefined) {
+        const sid = String(Reflect.get(row, 'id'));
+        // Client-claimed sessionId must match the canonical binding
+        const clientSid: unknown = parsed.clientSessionId;
+        if (clientSid !== undefined && clientSid !== null && String(clientSid) !== sid) {
+          jsonResponse(res, 400, { error: ERR_INVALID_CONTEXT });
+          return;
+        }
+        parsed.ctx = createContext(parsed.ctx.cwd, sid);
+      } else {
+        // First-use: create session binding
+        const sid = randomUUID();
+        store.db.prepare('INSERT INTO sessions (id, worktree, started_at) VALUES (?, ?, ?)').run(sid, worktree, new Date().toISOString());
+        parsed.ctx = createContext(parsed.ctx.cwd, sid);
+      }
+    }
+
     runWithContext(parsed.ctx, () => opts.commandExecution.execute({ argv: parsed.argv, cwd: parsed.ctx.cwd })).then((result) => {
       jsonResponse(res, 200, { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, daemonVersion: DAEMON_VERSION });
-    }).catch((err: unknown) => {
-      jsonResponse(res, 500, { error: ERR_EXEC_REJECTED, detail: String(err) });
+    }).catch(() => {
+      jsonResponse(res, 500, { error: ERR_EXEC_REJECTED });
     });
   }).catch(() => {
     jsonResponse(res, 400, { error: ERR_REQ_READ_FAILED });
@@ -188,9 +213,14 @@ export function startDaemon(repoRoot: string, port: number, opts: DaemonOptions)
       }
       terminationStarted = true;
       terminationOutcome = outcome;
-      if (!startSettled) reject(outcome.kind === 'failed' ? outcome.error : new Error('daemon terminated before start'));
-      const done = (): void => { daemonState = 'stopped'; finalize(); opts.onFinalize?.(); lifecycleComplete?.(terminationOutcome); };
-      void listener.close().then(done, done);
+      const done = (): void => {
+        daemonState = 'stopped';
+        try { finalize(); } catch { /* finalize errors are secondary — causal outcome preserved */ }
+        try { opts.onFinalize?.(); } catch { /* onFinalize errors are secondary */ }
+        if (!startSettled) reject(outcome.kind === 'failed' ? outcome.error : new Error('daemon terminated before start'));
+        lifecycleComplete?.(terminationOutcome);
+      };
+      void listener.close().then(done, () => { done(); /* close rejection is secondary — proceed with finalize */ });
     };
 
     listener = opts.httpServerFactory.create((req, res) => { routeRequest(token, req, res, repoRoot, opts, shutdown, getState); });

@@ -10,6 +10,7 @@ import { LifecycleError } from './service.errors.js';
 import { contentDir } from '../content.js';
 import { loadConfig } from '../config.js';
 import { getActiveCount, sprintWipLimit, taskSprintId } from '../sprints/service.js';
+import { getContext } from '../runtime/context.js';
 import {
   ALLOWED,
   DELETE_LEASE_SQL,
@@ -128,6 +129,9 @@ export function listPackets(store: Store): Array<{ id: string; title: string; st
   return store.db.prepare('SELECT id, title, status, priority, updated_at FROM packets ORDER BY priority, id').all().map((row) => ({ id: stringColumn(row, 'id'), title: stringColumn(row, 'title'), status: stringColumn(row, 'status'), priority: numberColumn(row, 'priority'), updatedAt: stringColumn(row, 'updated_at') }));
 }
 export function ensureSession(store: Store, worktree: string): string {
+  // Prefer the execution context's sessionId (set by daemon on exec dispatch)
+  const ctx = getContext();
+  if (ctx?.sessionId) return ctx.sessionId;
   const file = join(worktree, SESSION_FILE_NAME);
   if (existsSync(file)) { const id = readFileSync(file, 'utf8').trim(); if (store.db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(id) !== undefined) return id; }
   const id = randomUUID();

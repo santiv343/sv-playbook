@@ -32,6 +32,11 @@ export interface DaemonOptions {
   onFinalize?: () => void;
 }
 
+export interface SignalSubscriptionPort {
+  onShutdown(handler: () => void): void;
+  removeShutdownHandler(handler: () => void): void;
+}
+
 export interface DaemonInstance {
   port: number;
   token: string;
