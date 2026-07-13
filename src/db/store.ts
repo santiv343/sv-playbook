@@ -303,6 +303,7 @@ function performMigration(db: DatabaseSync, repoRoot: string, currentVersion: nu
 }
 
 function assertStoreNotHeldByDaemon(repoRoot: string): void {
+  if (process.argv[2] === 'daemon') return;
   if (isDaemonRunning(repoRoot)) {
     throw new StoreVersionError(
       `store is held by the daemon — run commands from the blessed root or start the daemon with \`sv-playbook daemon\``,
