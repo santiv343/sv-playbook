@@ -3,6 +3,7 @@ import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
 import { blessedRoot, commonRoot, isDaemonRunning } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
+import { gitWorkspace } from '../../runtime/workspace-git.js';
 import { DAEMON_DEFAULT_PORT } from '../../daemon/daemon.constants.js';
 import { startDaemon } from '../../daemon/daemon.js';
 
@@ -35,15 +36,10 @@ export const command: Command = {
     }
 
     return new Promise((resolve) => {
-      startDaemon(repoRoot, port).then((instance) => {
+      startDaemon(repoRoot, port, gitWorkspace).then((instance) => {
         io.out(`Daemon ready on 127.0.0.1:${port} — pid ${process.pid}, token ${instance.token.slice(0, 8)}...`);
         io.out('Press Ctrl+C to stop');
-        // Clean shutdown on Ctrl+C / kill: release the store and remove the
-        // lock and token files instead of leaving them behind.
-        const shutdown = (): void => {
-          instance.stop();
-          resolve(EXIT.OK);
-        };
+        const shutdown = (): void => { void instance.stop().then(() => { resolve(EXIT.OK); }); };
         process.once('SIGINT', shutdown);
         process.once('SIGTERM', shutdown);
         process.once('SIGBREAK', shutdown);

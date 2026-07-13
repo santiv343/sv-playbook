@@ -1,16 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { realpathSync, mkdirSync, symlinkSync, openSync, closeSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gitWorkspace } from './workspace-git.js';
+import type { WorkspacePort } from './workspace.types.js';
 
 function initRepo(root: string): void {
   execFileSync('git', ['init', '-b', 'main'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
 }
+
+function fakePort(known: string): WorkspacePort {
+  return {
+    canonicalWorkspaceRoot(cwd: string): string | null { return cwd === known ? known : null; },
+    workspaceIdentity(): string | null { return known; },
+    sameWorkspace(a: string, b: string): boolean { return a === known && b === known; },
+  };
+}
+
+test('fake port canonicalWorkspaceRoot returns known path for matching cwd', () => {
+  const fp = fakePort('/repo');
+  assert.equal(fp.canonicalWorkspaceRoot('/repo'), '/repo');
+  assert.equal(fp.canonicalWorkspaceRoot('/other'), null);
+});
+
+test('fake port sameWorkspace rejects different paths', () => {
+  const fp = fakePort('/repo');
+  assert.ok(fp.sameWorkspace('/repo', '/repo'));
+  assert.ok(!fp.sameWorkspace('/repo', '/different'));
+});
 
 test('workspace identity is stable for the same repo', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-ws-id-'));
@@ -48,4 +69,51 @@ test('sameWorkspace returns false for paths in different repos', async () => {
   initRepo(a);
   initRepo(b);
   assert.ok(!gitWorkspace.sameWorkspace(a, b));
+});
+
+test('RED: nested independent repo is rejected by sameWorkspace', async () => {
+  const outer = await mkdtemp(join(tmpdir(), 'svp-red-nest-outer-'));
+  const inner = join(outer, 'inner');
+  initRepo(outer); mkdirSync(inner); initRepo(inner);
+  assert.ok(gitWorkspace.canonicalWorkspaceRoot(inner) !== null);
+  assert.ok(!gitWorkspace.sameWorkspace(outer, inner), 'nested repo must not match outer');
+});
+
+test('RED: prefix-collision repo names are not the same workspace', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'svp-red-prefix-'));
+  const a = join(parent, 'my-repo'); mkdirSync(a); initRepo(a);
+  const b = join(parent, 'my-repo-evil'); mkdirSync(b); initRepo(b);
+  assert.ok(!gitWorkspace.sameWorkspace(a, b), 'prefix-collision repos must not match');
+});
+
+function canSymlink(): boolean {
+  try {
+    const d = mkdtempSync(join(tmpdir(), 'svp-symprobe-'));
+    const l = join(d, 'link'); const t = join(d, 'target');
+    writeFileSync(t, ''); symlinkSync(t, l, 'file'); const r = realpathSync(l); closeSync(openSync(r, 'r'));
+    return true;
+  } catch { return false; }
+}
+
+test('RED: same-repo symlink alias accepted by canonicalWorkspaceRoot', { skip: !canSymlink() }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-red-sym-acc-'));
+  initRepo(root); const target = join(root, 'sub'); mkdirSync(target);
+  const link = join(root, 'alias');
+  symlinkSync(target, link, 'junction');
+  const canonical = gitWorkspace.canonicalWorkspaceRoot(link);
+  assert.ok(canonical !== null, 'same-repo symlink must resolve to a workspace');
+  assert.equal(realpathSync(canonical).toLowerCase(), realpathSync(root).toLowerCase(), 'same-repo symlink must resolve to the repo root');
+});
+
+test('RED: symlink escape to different repo is rejected by sameWorkspace', { skip: !canSymlink() }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-red-sym-rej-'));
+  initRepo(root);
+  const outside = await mkdtemp(join(tmpdir(), 'svp-red-sym-rej-out-'));
+  initRepo(outside);
+  const link = join(root, 'escape');
+  symlinkSync(outside, link, 'junction');
+  const canonical = gitWorkspace.canonicalWorkspaceRoot(link);
+  assert.ok(canonical !== null, 'symlink to different repo still resolves to a workspace');
+  assert.ok(!gitWorkspace.sameWorkspace(canonical, root),
+    'symlink escape must not match the bound repo');
 });

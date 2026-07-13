@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { openStore, isDaemonRunning } from '../db/store.js';
 import { startDaemon } from '../daemon/daemon.js';
+import { gitWorkspace } from '../runtime/workspace-git.js';
 
 function realCliEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -115,7 +116,7 @@ test('red team: a worktree process cannot open the store directly while the daem
     });
   });
 
-  const daemon = await startDaemon(root, port);
+  const daemon = await startDaemon(root, port, gitWorkspace);
 
   try {
     assert.ok(isDaemonRunning(root));
@@ -141,7 +142,7 @@ test('red team: a worktree process cannot open the store directly while the daem
     `], { encoding: 'utf8', timeout: 10000 });
     assert.ok(childResult.includes('FAIL:'), 'child process must be blocked by exclusive lock');
   } finally {
-    daemon.stop();
+    await daemon.stop();
   }
 });
 

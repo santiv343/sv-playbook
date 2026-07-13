@@ -11,7 +11,8 @@ const gitWorkspace: WorkspacePort = {
   canonicalWorkspaceRoot(cwd: string): string | null {
     try {
       const real = realpathSync(cwd);
-      return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: real, encoding: 'utf8' }).trim();
+      const toplevel = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: real, encoding: 'utf8' }).trim();
+      return realpathSync(toplevel);
     } catch { return null; }
   },
 

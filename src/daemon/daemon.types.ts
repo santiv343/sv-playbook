@@ -1,7 +1,7 @@
 export interface DaemonInstance {
   port: number;
   token: string;
-  stop(): void;
+  stop(): Promise<void>;
 }
 
 export interface DaemonExecResponse {
