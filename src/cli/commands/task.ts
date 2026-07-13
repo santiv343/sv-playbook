@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore, worktreeRoot } from '../../db/store.js';
+import { getCwd } from '../../runtime/context.js';
 import { createStateBackup, latestStateBackupAgeHours } from '../../db/backup.js';
 import { BACKUP_EVENT, BACKUP_REASON } from '../../db/backup.constants.js';
 import type { Store } from '../../db/store.types.js';
@@ -58,7 +59,7 @@ function isPacketStatus(value: string): value is PacketStatus {
 }
 
 function withStore<T>(fn: (store: Store, repoRoot: string) => T): T {
-  const repoRoot = commonRoot(process.cwd());
+  const repoRoot = commonRoot(getCwd());
   const store = openStore(repoRoot);
   try {
     return fn(store, repoRoot);
@@ -94,7 +95,7 @@ function handleCreate(args: string[], io: Io): number {
   const requirements = stringValues(parsed.values.req);
   const evidenceRequired = stringValues(parsed.values.evidence);
   if (evidenceRequired.length === 0) evidenceRequired.push(...DEFAULT_EVIDENCE);
-  const docRoot = worktreeRoot(process.cwd());
+  const docRoot = worktreeRoot(getCwd());
   const type = parsed.values.type; const explicitId = parsed.values.id;
   if (type !== undefined && explicitId !== undefined) throw new UsageError('--id is not allowed with --type; use --id only for import/rebuild paths');
   return withStore((store) => {
@@ -123,7 +124,7 @@ function handleAmend(args: string[], io: Io): number {
   if (parsed.values.evidence !== undefined) updates.evidenceRequired = stringValues(parsed.values.evidence);
   if (Object.keys(updates).length === 0) throw new UsageError('amend requires at least one flag');
   return withStore((store) => {
-    amendPacket(store, worktreeRoot(process.cwd()), packetId, updates);
+    amendPacket(store, worktreeRoot(getCwd()), packetId, updates);
     io.out(`amended ${packetId}`);
     return EXIT.OK;
   });
@@ -185,9 +186,9 @@ function handleStart(args: string[], io: Io): number {
   const [packetId] = args;
   if (args.length !== 1 || packetId === undefined) throw new UsageError('start requires <ID>');
   return withStore((store) => {
-    const sessionId = ensureSession(store, process.cwd());
+    const sessionId = ensureSession(store, getCwd());
     const existing = leaseOf(store, packetId);
-    startPacket(store, sessionId, process.cwd(), packetId);
+    startPacket(store, sessionId, getCwd(), packetId);
     io.out(existing !== undefined && existing.sessionId === sessionId
       ? `started ${packetId}: already held by this session`
       : `started ${packetId}: ready -> active, lease acquired`);
@@ -200,7 +201,7 @@ function handleMove(args: string[], io: Io): number {
   if (packetId === undefined || status === undefined || args.length !== 2) throw new UsageError('move requires <ID> <status>');
   if (!isPacketStatus(status)) throw new UsageError(`unknown status: ${status}`);
   return withStore((store, repoRoot) => {
-    const from = movePacket(store, ensureSession(store, process.cwd()), packetId, status);
+    const from = movePacket(store, ensureSession(store, getCwd()), packetId, status);
     if (status === STATUS.DONE) backupForEvent(repoRoot, BACKUP_EVENT.DONE, BACKUP_REASON.AUTO_DONE);
     io.out(`moved ${packetId}: ${from} -> ${status}`);
     return EXIT.OK;
@@ -244,14 +245,14 @@ function handleTakeover(args: string[], io: Io): number {
   if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('takeover requires <ID>');
 
   if (hasForce) {
-    const repoRoot = commonRoot(process.cwd());
+    const repoRoot = commonRoot(getCwd());
     const gateResult = checkDestructiveGate(io, 'task takeover --force', repoRoot, hasConfirm, queryDestructiveCounts(repoRoot));
     if (gateResult !== undefined) return gateResult;
   }
 
   return withStore((store, repoRoot) => {
-    const sessionId = ensureSession(store, process.cwd());
-    const report = takeoverPacket(store, sessionId, process.cwd(), packetId, parsed.values.force === true);
+    const sessionId = ensureSession(store, getCwd());
+    const report = takeoverPacket(store, sessionId, getCwd(), packetId, parsed.values.force === true);
     if (parsed.values.force === true) backupForEvent(repoRoot, BACKUP_EVENT.FORCE_TAKEOVER, BACKUP_REASON.FORCE_TAKEOVER, true);
     io.out(`takeover ${packetId}: lease transferred`);
     renderReport(report, io);
@@ -263,7 +264,7 @@ function handleRelease(args: string[], io: Io): number {
   const [packetId] = args;
   if (args.length !== 1 || packetId === undefined) throw new UsageError('release requires <ID>');
   return withStore((store) => {
-    releaseLease(store, ensureSession(store, process.cwd()), packetId);
+    releaseLease(store, ensureSession(store, getCwd()), packetId);
     io.out(`released ${packetId}`);
     io.out(`warning: ${packetId} stays active without a lease; the next owner must run task takeover ${packetId}`);
     return EXIT.OK;
@@ -274,7 +275,7 @@ function handleNote(args: string[], io: Io): number {
   const [packetId, ...parts] = args;
   if (packetId === undefined || parts.length === 0) throw new UsageError('note requires <ID> <text...>');
   return withStore((store) => {
-    notePacket(store, ensureSession(store, process.cwd()), packetId, parts.join(' '));
+    notePacket(store, ensureSession(store, getCwd()), packetId, parts.join(' '));
     io.out(`noted ${packetId}`);
     return EXIT.OK;
   });
@@ -301,7 +302,7 @@ function handleClose(args: string[], io: Io): number {
   const prState = prStateOrThrow(pr);
   if (prState !== 'MERGED') throw new LifecycleError(`PR #${pr} is not merged (state: ${prState || 'unknown'}) — close requires a merged PR`);
   return withStore((store, repoRoot) => {
-    const sessionId = ensureSession(store, process.cwd());
+    const sessionId = ensureSession(store, getCwd());
     store.db.prepare('UPDATE packets SET pr = ? WHERE id = ?').run(pr, packetId);
     const from = movePacket(store, sessionId, packetId, STATUS.DONE);
     backupForEvent(repoRoot, BACKUP_EVENT.DONE, BACKUP_REASON.AUTO_DONE);
@@ -320,7 +321,7 @@ function handleImport(args: string[], io: Io): number {
   const [pathOrId] = args;
   if (args.length !== 1 || pathOrId === undefined) throw new UsageError('import requires <path|ID>');
   return withStore((store) => {
-    const docRoot = worktreeRoot(process.cwd());
+    const docRoot = worktreeRoot(getCwd());
     const packetId = importPacketFile(store, docRoot, pathOrId);
     io.out(`imported ${packetId}`);
     return EXIT.OK;

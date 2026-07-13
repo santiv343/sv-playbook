@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
+import { getCwd } from '../../runtime/context.js';
 import { parsePacketDocument } from '../../packets/document.js';
 import { contentDir } from '../../content.js';
 import { loadConfig } from '../../config.js';
@@ -143,7 +144,7 @@ export const command: Command = {
   name: 'check',
     summary: 'Validate authored artifacts (structure, instructions drift)',
     async run(args, io) {
-      const root = process.cwd();
+      const root = getCwd();
       const targets = args.length === 0 ? Object.keys(TARGETS) : args;
       let hasViolations = false;
 

@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
+import { getCwd } from '../../runtime/context.js';
 import {
   formatCountsHeader,
   formatFooter,
@@ -33,7 +34,7 @@ export const command: Command = {
         io.err(USAGE);
         return Promise.resolve(EXIT.USAGE);
       }
-      const repoRoot = commonRoot(process.cwd());
+      const repoRoot = commonRoot(getCwd());
       const store = openStore(repoRoot);
       try {
         const status = readBoardStatus(store, repoRoot);

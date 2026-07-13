@@ -4,6 +4,7 @@ import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { readBoardStatus } from '../../status/status.js';
+import { getCwd } from '../../runtime/context.js';
 
 const USAGE = 'Usage: sv-playbook serve [--port <N>]';
 const DEFAULT_PORT = 3131;
@@ -118,7 +119,7 @@ export const command: Command = {
     }
 
     return new Promise((resolve) => {
-      const repoRoot = commonRoot(process.cwd());
+      const repoRoot = commonRoot(getCwd());
       const storeFactory = () => ({ store: openStore(repoRoot) });
 
       const server = createServer((req, res) => { handleRequest(repoRoot, storeFactory, req, res); });

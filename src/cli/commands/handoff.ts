@@ -4,6 +4,7 @@ import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
 import type { Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
+import { getCwd } from '../../runtime/context.js';
 import { readBoardStatus } from '../../status/status.js';
 import type { BoardStatus } from '../../status/status.types.js';
 import { numberColumn, stringColumn } from '../../db/rows.js';
@@ -98,7 +99,7 @@ export const command: Command = {
         },
       });
 
-      const repoRoot = commonRoot(process.cwd());
+      const repoRoot = commonRoot(getCwd());
       const store = openStore(repoRoot);
       try {
         const stale = staleActivePackets(store);

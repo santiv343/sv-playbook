@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
+import { getCwd } from '../../runtime/context.js';
 import { runPreflight } from '../../review/preflight.js';
 import type { PreflightReport } from '../../review/preflight.types.js';
 
@@ -59,10 +60,10 @@ function handlePreflight(args: string[], io: Io): number {
     throw new UsageError(REVIEW_PREFLIGHT_USAGE);
   }
 
-  const repoRoot = commonRoot(process.cwd());
+  const repoRoot = commonRoot(getCwd());
   const store = openStore(repoRoot);
   try {
-    const report = runPreflight(store, packetId, process.cwd(), { pr: parsed.values.pr });
+    const report = runPreflight(store, packetId, getCwd(), { pr: parsed.values.pr });
     if (parsed.values.json === true) io.out(JSON.stringify(report));
     else renderPreflightTable(report, io);
     return report.overall === 'pass' ? EXIT.OK : EXIT.GATE_FAIL;

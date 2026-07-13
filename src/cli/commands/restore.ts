@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
+import { getCwd } from '../../runtime/context.js';
 import { restoreStateBackup } from '../../db/backup.js';
 import { RESTORE_USAGE, STATE_SUBCOMMAND } from './backup.constants.js';
 import { loadConfig } from '../../config.js';
@@ -11,7 +12,7 @@ export const command: Command = {
   summary: 'Restore local SQLite state from a snapshot',
   destructive: true,
   run(args, io): Promise<number> {
-    const repoRoot = commonRoot(process.cwd());
+    const repoRoot = commonRoot(getCwd());
     const [sub, ...rest] = args;
     if (sub !== STATE_SUBCOMMAND) {
       io.err(RESTORE_USAGE);

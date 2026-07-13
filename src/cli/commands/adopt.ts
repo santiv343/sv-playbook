@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
+import { getCwd } from '../../runtime/context.js';
 import { inventoryRepo } from '../../adopt/inventory.js';
 import { analyzeGaps } from '../../adopt/gap.js';
 import { scaffold } from '../../adopt/scaffold.js';
@@ -34,7 +35,7 @@ function resolveTargetDir(positionals: (string | undefined)[]): string {
   if (positionals.length > 0 && positionals[0]) {
     return resolve(positionals[0]);
   }
-  return commonRoot(process.cwd());
+  return commonRoot(getCwd());
 }
 
 export const command: Command = {

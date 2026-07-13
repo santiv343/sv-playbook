@@ -61,7 +61,7 @@ function buildExecIo(): { out: (l: string) => void; err: (l: string) => void; ou
   };
 }
 
-function handleRequest(token: string, req: IncomingMessage, res: ServerResponse): void {
+function handleRequest(token: string, req: IncomingMessage, res: ServerResponse, shutdown: () => void): void {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
   if (req.method === 'GET' && url.pathname === '/api/v1/health') {
@@ -74,8 +74,37 @@ function handleRequest(token: string, req: IncomingMessage, res: ServerResponse)
     return;
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/v1/shutdown') {
+    handleShutdown(token, req, res, shutdown);
+    return;
+  }
+
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'not found' }));
+}
+
+function handleShutdown(token: string, req: IncomingMessage, res: ServerResponse, cleanup: () => void): void {
+  readBody(req).then((raw) => {
+    let parsedToken: unknown;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed === 'object' && parsed !== null) {
+        parsedToken = Reflect.get(parsed, 'token');
+      }
+    } catch {
+      jsonResponse(res, 400, { error: 'invalid json' });
+      return;
+    }
+    if (parsedToken !== token) {
+      jsonResponse(res, 403, { error: 'invalid token' });
+      return;
+    }
+    jsonResponse(res, 200, { status: 'shutdown' });
+    cleanup();
+    setImmediate(() => process.exit(0));
+  }).catch(() => {
+    jsonResponse(res, 400, { error: 'request read failed' });
+  });
 }
 
 function handleExec(token: string, req: IncomingMessage, res: ServerResponse): void {
@@ -195,7 +224,15 @@ export function startDaemon(repoRoot: string, port: number): Promise<DaemonInsta
 
     writeTokenFileOwnerOnly(tokenPath, token);
 
-    const server = createServer((req, res) => { handleRequest(token, req, res); });
+    const shutdown = (): void => {
+      server.close();
+      setDaemonStore(null);
+      store.close();
+      try { unlinkSync(lockPath); } catch { /* best-effort */ }
+      try { unlinkSync(tokenPath); } catch { /* best-effort */ }
+    };
+
+    const server = createServer((req, res) => { handleRequest(token, req, res, shutdown); });
 
     server.on('error', (err: NodeJS.ErrnoException) => {
       setDaemonStore(null);
@@ -204,17 +241,7 @@ export function startDaemon(repoRoot: string, port: number): Promise<DaemonInsta
     });
 
     server.listen(port, '127.0.0.1', () => {
-      resolve({
-        port,
-        token,
-        stop: () => {
-          server.close();
-          setDaemonStore(null);
-          store.close();
-          try { unlinkSync(lockPath); } catch { /* best-effort */ }
-          try { unlinkSync(tokenPath); } catch { /* best-effort */ }
-        },
-      });
+      resolve({ port, token, stop: shutdown });
     });
   });
 }

@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
 import { commonRoot } from '../../db/store.js';
+import { getCwd } from '../../runtime/context.js';
 import { createStateBackup } from '../../db/backup.js';
 import { BACKUP_REASON } from '../../db/backup.constants.js';
 import { BACKUP_USAGE, STATE_SUBCOMMAND } from './backup.constants.js';
@@ -22,7 +23,7 @@ export const command: Command = {
       return Promise.resolve(EXIT.USAGE);
     }
     try {
-      const repoRoot = commonRoot(process.cwd());
+      const repoRoot = commonRoot(getCwd());
       const config = loadConfig(repoRoot);
       const report = createStateBackup(repoRoot, {
         reason: BACKUP_REASON.MANUAL,

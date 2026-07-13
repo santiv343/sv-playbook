@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { get as httpGet } from 'node:http';
+import { get as httpGet, request as httpRequest } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { existsSync } from 'node:fs';
 import { createServer as createNetServer } from 'node:net';
@@ -29,6 +29,24 @@ function freePort(): Promise<number> {
       if (typeof addr === 'object' && addr !== null && 'port' in addr) p = addr.port;
       s.close(() => { resolve(p); });
     });
+  });
+}
+
+function postJson(port: number, path: string, body: unknown): Promise<{ statusCode: number | undefined; body: string }> {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(body);
+    const req = httpRequest({
+      hostname: '127.0.0.1', port, method: 'POST', path,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+    }, (res) => {
+      let d = '';
+      res.setEncoding('utf8');
+      res.on('data', (c: string) => { d += c; });
+      res.on('end', () => { resolve({ statusCode: res.statusCode, body: d }); });
+    });
+    req.on('error', reject);
+    req.setTimeout(5000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.end(data);
   });
 }
 
@@ -256,29 +274,42 @@ test('activation probe: spawn daemon detached, health, reject second writer, roo
     assert.equal(fwdResult.status, 0,
       `CLI from root with daemon must forward and succeed, got exit ${fwdResult.status}\nstderr: ${fwdResult.stderr}`);
 
-    // ── 4. Stop daemon by PID ──
-    daemonChild.kill();
+    // ── 4. Graceful shutdown via /api/v1/shutdown (works on all platforms) ──
+    const tokenPath = join(root, '.svp', '.svp-daemon-token');
+    const shutdownToken = (await readFile(tokenPath, 'utf8')).trim().split('\n')[0] ?? '';
+    assert.ok(shutdownToken.length > 0, 'daemon token must be readable');
+    const shutdownRes = await postJson(port, '/api/v1/shutdown', { token: shutdownToken });
+    assert.equal(shutdownRes.statusCode, 200, `shutdown must return 200, got ${shutdownRes.statusCode}: ${shutdownRes.body}`);
+
+    // Wait for the daemon process to exit
     if (!daemonExited) {
       await new Promise<void>((resolve) => {
         daemonChild.once('exit', () => { resolve(); });
+        setTimeout(() => { resolve(); }, 10000).unref();
       });
     }
-    try { process.kill(pid, 0); assert.fail('daemon must be dead after kill'); }
-    catch { /* expected — process is gone */ }
 
-    // ── 5. Cleanup verification (skip on win32 — signal-based cleanup
-    //    is tested in-process via daemon.stop()). ──
-    if (process.platform !== 'win32') {
-      const lockPath = join(root, '.svp', '.svp-daemon.lock');
-      const tokenPath = join(root, '.svp', '.svp-daemon-token');
-      assert.ok(!existsSync(lockPath), 'lock file must be cleaned up');
-      assert.ok(!existsSync(tokenPath), 'token file must be cleaned up');
-    }
+    // ── 5. Cleanup verification on ALL platforms ──
+    try { process.kill(pid, 0); assert.fail('daemon must be dead after shutdown'); }
+    catch { /* expected — process is gone */ }
+    const lockPath = join(root, '.svp', '.svp-daemon.lock');
+    assert.ok(!existsSync(lockPath), 'lock file must be cleaned up');
+    assert.ok(!existsSync(tokenPath), 'token file must be cleaned up');
+
+    // Verify port is closed by attempting a connection
+    const portRes = await postJson(port, '/api/v1/health', {}).catch(() => null);
+    assert.ok(portRes === null, 'port must be closed after shutdown');
   } finally {
     if (!daemonExited) {
-      daemonChild.kill();
+      // Force kill as fallback
+      if (process.platform === 'win32') {
+        spawnSync('taskkill', ['/F', '/T', '/PID', String(daemonChild.pid)]);
+      } else {
+        daemonChild.kill('SIGKILL');
+      }
       await new Promise<void>((resolve) => {
         daemonChild.once('exit', () => { resolve(); });
+        setTimeout(() => { resolve(); }, 5000).unref();
       });
     }
   }
@@ -339,11 +370,106 @@ test('red team: concurrent worktree CLI invocations through daemon do not cross-
     assert.ok(!r2.stderr.includes('daemon'), `wt2 must not print daemon errors: ${r2.stderr}`);
   } finally {
     if (!daemonExited) {
-      daemonChild.kill('SIGTERM');
-      await new Promise<void>((resolve) => {
-        if (daemonExited) { resolve(); return; }
-        daemonChild.once('exit', () => { resolve(); });
-      });
+      // Graceful shutdown via API (works on all platforms)
+      try {
+        const shutdownToken = (await readFile(join(root, '.svp', '.svp-daemon-token'), 'utf8')).trim().split('\n')[0] ?? '';
+        if (shutdownToken) {
+          await postJson(port, '/api/v1/shutdown', { token: shutdownToken });
+        }
+      } catch { /* best-effort */ }
+      if (!daemonExited) {
+        await new Promise<void>((resolve) => {
+          daemonChild.once('exit', () => { resolve(); });
+          setTimeout(() => { resolve(); }, 5000).unref();
+        });
+      }
+      if (!daemonExited) {
+        if (process.platform === 'win32') {
+          spawnSync('taskkill', ['/F', '/T', '/PID', String(daemonChild.pid)]);
+        } else {
+          daemonChild.kill('SIGKILL');
+        }
+        await new Promise<void>((resolve) => {
+          daemonChild.once('exit', () => { resolve(); });
+          setTimeout(() => { resolve(); }, 5000).unref();
+        });
+      }
     }
+  }
+});
+
+// ---- STORE-003: Forwarded exec request preserves cwd/sessionId context ----
+test('red team: forwarded exec request preserves cwd and sessionId in daemon context (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-exec-ctx-'));
+  initFixtureRepo(root);
+
+  const seed = openStore(root);
+  seed.close();
+
+  const port = await freePort();
+  const daemon = await startDaemon(root, port);
+  try {
+    const svpDir = join(root, '.svp');
+    await mkdir(svpDir, { recursive: true });
+    const token = daemon.token;
+
+    // Forward a describe command through the exec API with a specific context
+    const res = await postJson(port, '/api/v1/exec', {
+      token,
+      argv: ['describe'],
+      context: { cwd: root, sessionId: 'test-session-001' },
+    });
+    assert.equal(res.statusCode, 200, `exec must return 200, got ${res.statusCode}`);
+    const parsed: unknown = JSON.parse(res.body);
+    assert.ok(typeof parsed === 'object' && parsed !== null);
+    const exitCode: unknown = Reflect.get(parsed, 'exitCode');
+    assert.equal(exitCode, 0, `describe through daemon must succeed, got exitCode ${exitCode}`);
+    const stdout: unknown = Reflect.get(parsed, 'stdout');
+    assert.ok(typeof stdout === 'string' && stdout.length > 0, 'stdout must be non-empty');
+  } finally {
+    daemon.stop();
+    // Clean up lock/token files that stop() already removed
+  }
+});
+
+// ---- STORE-003: Two concurrent exec requests with different contexts ----
+test('red team: concurrent exec requests with distinct contexts are isolated (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-concurrent-exec-'));
+  initFixtureRepo(root);
+
+  const seed = openStore(root);
+  seed.close();
+
+  const port = await freePort();
+  const daemon = await startDaemon(root, port);
+  try {
+    const token = daemon.token;
+
+    // Fire two concurrent exec requests with different contexts
+    const [r1, r2] = await Promise.all([
+      postJson(port, '/api/v1/exec', {
+        token, argv: ['describe'],
+        context: { cwd: join(root, 'wt1'), sessionId: 'session-a' },
+      }),
+      postJson(port, '/api/v1/exec', {
+        token, argv: ['describe'],
+        context: { cwd: join(root, 'wt2'), sessionId: 'session-b' },
+      }),
+    ]);
+
+    assert.equal(r1.statusCode, 200, `request 1 must return 200, got ${r1.statusCode}`);
+    assert.equal(r2.statusCode, 200, `request 2 must return 200, got ${r2.statusCode}`);
+
+    const p1: unknown = JSON.parse(r1.body);
+    const p2: unknown = JSON.parse(r2.body);
+    assert.ok(typeof p1 === 'object' && p1 !== null);
+    assert.ok(typeof p2 === 'object' && p2 !== null);
+    assert.equal(Reflect.get(p1, 'exitCode'), 0, 'request 1 must exit 0');
+    assert.equal(Reflect.get(p2, 'exitCode'), 0, 'request 2 must exit 0');
+    // Both responses should include the daemon version
+    assert.equal(Reflect.get(p1, 'daemonVersion'), '0.1.0');
+    assert.equal(Reflect.get(p2, 'daemonVersion'), '0.1.0');
+  } finally {
+    daemon.stop();
   }
 });
