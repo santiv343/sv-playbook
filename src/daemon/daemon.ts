@@ -11,6 +11,10 @@ import { runWithContext, createContext } from '../runtime/context.js';
 import type { Store } from '../db/store.types.js';
 import type { DaemonInstance } from './daemon.types.js';
 
+const ERR_INVALID_JSON = 'invalid json';
+const ERR_INVALID_TOKEN = 'invalid token';
+const ERR_REQ_READ_FAILED = 'request read failed';
+
 function generateToken(): string {
   return createHash('sha256').update(randomUUID()).digest('hex').slice(0, 32);
 }
@@ -92,60 +96,56 @@ function handleShutdown(token: string, req: IncomingMessage, res: ServerResponse
         parsedToken = Reflect.get(parsed, 'token');
       }
     } catch {
-      jsonResponse(res, 400, { error: 'invalid json' });
+      jsonResponse(res, 400, { error: ERR_INVALID_JSON });
       return;
     }
     if (parsedToken !== token) {
-      jsonResponse(res, 403, { error: 'invalid token' });
+      jsonResponse(res, 403, { error: ERR_INVALID_TOKEN });
       return;
     }
     jsonResponse(res, 200, { status: 'shutdown' });
     cleanup();
     setImmediate(() => process.exit(0));
   }).catch(() => {
-    jsonResponse(res, 400, { error: 'request read failed' });
+    jsonResponse(res, 400, { error: ERR_REQ_READ_FAILED });
   });
+}
+
+function contextFromPayload(parsed: object): ReturnType<typeof createContext> | undefined {
+  const parsedContext: unknown = Reflect.get(parsed, 'context');
+  if (typeof parsedContext === 'object' && parsedContext !== null && 'cwd' in parsedContext) {
+    const cwVal: unknown = Reflect.get(parsedContext, 'cwd');
+    if (typeof cwVal === 'string') {
+      const sidVal: unknown = Reflect.get(parsedContext, 'sessionId');
+      return createContext(cwVal, typeof sidVal === 'string' ? sidVal : '');
+    }
+  }
+  return undefined;
+}
+
+function parseExecRequest(raw: string, token: string, res: ServerResponse): { argv: string[]; ctx: ReturnType<typeof createContext> | undefined } | null {
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
+  if (typeof parsed !== 'object' || parsed === null) { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
+
+  const parsedToken: unknown = Reflect.get(parsed, 'token');
+  if (parsedToken !== token) { jsonResponse(res, 403, { error: ERR_INVALID_TOKEN }); return null; }
+
+  const parsedArgv: unknown = Reflect.get(parsed, 'argv');
+  const argv = Array.isArray(parsedArgv) ? parsedArgv.filter((a): a is string => typeof a === 'string') : [];
+  if (argv.length === 0) { jsonResponse(res, 400, { error: 'argv required' }); return null; }
+
+  return { argv, ctx: contextFromPayload(parsed) };
 }
 
 function handleExec(token: string, req: IncomingMessage, res: ServerResponse): void {
   readBody(req).then((raw) => {
-    let parsedToken: unknown;
-    let parsedArgv: unknown;
-    let parsedContext: unknown;
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed === 'object' && parsed !== null) {
-        parsedToken = Reflect.get(parsed, 'token');
-        parsedArgv = Reflect.get(parsed, 'argv');
-        parsedContext = Reflect.get(parsed, 'context');
-      }
-    } catch {
-      jsonResponse(res, 400, { error: 'invalid json' });
-      return;
-    }
-
-    if (parsedToken !== token) {
-      jsonResponse(res, 403, { error: 'invalid token' });
-      return;
-    }
-
-    const argv = Array.isArray(parsedArgv) ? parsedArgv.filter((a): a is string => typeof a === 'string') : [];
-    if (argv.length === 0) {
-      jsonResponse(res, 400, { error: 'argv required' });
-      return;
-    }
-
-    const ctx = typeof parsedContext === 'object' && parsedContext !== null
-      ? (() => {
-          const cw = Reflect.get(parsedContext, 'cwd');
-          const sid = Reflect.get(parsedContext, 'sessionId');
-          return typeof cw === 'string' ? createContext(cw, typeof sid === 'string' ? sid : '') : undefined;
-        })()
-      : undefined;
+    const parsed = parseExecRequest(raw, token, res);
+    if (parsed === null) return;
 
     const execIo = buildExecIo();
 
-    const p = ctx !== undefined ? runWithContext(ctx, () => main(argv, execIo)) : main(argv, execIo);
+    const p = parsed.ctx !== undefined ? runWithContext(parsed.ctx, () => main(parsed.argv, execIo)) : main(parsed.argv, execIo);
     p.then((exitCode) => {
       const stdout = execIo.outLines.join('\n') + (execIo.outLines.length > 0 ? '\n' : '');
       const stderr = execIo.errLines.join('\n') + (execIo.errLines.length > 0 ? '\n' : '');
@@ -154,7 +154,7 @@ function handleExec(token: string, req: IncomingMessage, res: ServerResponse): v
       jsonResponse(res, 200, { exitCode: EXIT.SYSTEM, stdout: '', stderr: String(err), daemonVersion: DAEMON_VERSION });
     });
   }).catch(() => {
-    jsonResponse(res, 400, { error: 'request read failed' });
+    jsonResponse(res, 400, { error: ERR_REQ_READ_FAILED });
   });
 }
 

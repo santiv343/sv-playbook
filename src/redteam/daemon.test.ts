@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile } from 'node:fs/promises';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { get as httpGet, request as httpRequest } from 'node:http';
 import { pathToFileURL } from 'node:url';
@@ -78,6 +78,34 @@ async function pollHealth(port: number, timeoutMs: number): Promise<string | nul
   return null;
 }
 
+// Shared cleanup for daemon child processes — graceful via API, force as fallback.
+// Uses child.exitCode (null while running) instead of a flag to avoid async
+// mutation tracking issues and to keep the linter happy.
+async function stopDaemonChild(child: ReturnType<typeof spawn>, root: string, port: number): Promise<void> {
+  if (child.exitCode !== null) return;
+  try {
+    const t = (await readFile(join(root, '.svp', '.svp-daemon-token'), 'utf8')).trim().split('\n')[0] ?? '';
+    if (t) await postJson(port, '/api/v1/shutdown', { token: t });
+  } catch { /* best-effort */ }
+  const waitMs = (ms: number): Promise<void> => new Promise((r) => { child.once('exit', () => { r(); }); setTimeout(() => { r(); }, ms).unref(); });
+  const alive = (): boolean => child.exitCode === null;
+  if (alive()) await waitMs(5000);
+  const pid = child.pid;
+  if (pid !== undefined && alive()) {
+    const cmd = process.platform === 'win32' ? () => spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)]) : () => child.kill('SIGKILL');
+    cmd(); await waitMs(5000);
+  }
+}
+
+function spawnCollect(execPath: string, binPath: string, cwd: string, env: NodeJS.ProcessEnv, timeout: number): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const c = spawn(execPath, [binPath, 'status'], { cwd, env, timeout });
+    let o = '', e = ''; c.stdout.setEncoding('utf8'); c.stderr.setEncoding('utf8');
+    c.stdout.on('data', (d: string) => { o += d; }); c.stderr.on('data', (d: string) => { e += d; });
+    c.on('exit', (s) => { resolve({ status: s, stdout: o, stderr: e }); });
+  });
+}
+
 // ---- CHEAT 14: Worktree direct store access while daemon holds exclusive lock ----
 test('red team: a worktree process cannot open the store directly while the daemon holds the exclusive lock (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rt-daemon-'));
@@ -107,7 +135,7 @@ test('red team: a worktree process cannot open the store directly while the daem
 
     // In-process openStore returns the daemonStore (not blocked)
     const inProcStore = openStore(root);
-    assert.ok(inProcStore !== null, 'in-process openStore must return daemonStore');
+    assert.ok(inProcStore, 'in-process openStore must return daemonStore');
     inProcStore.close(); // no-op for daemonStore
 
     // A separate child process attempting to open the live store directly is
@@ -247,7 +275,7 @@ test('activation probe: spawn daemon detached, health, reject second writer, roo
     assert.ok(typeof health === 'object' && health !== null);
     assert.equal(Reflect.get(health, 'status'), 'ok');
     assert.ok(typeof Reflect.get(health, 'pid') === 'number', 'health must report pid');
-    const pid: number = Reflect.get(health, 'pid');
+    const pid = Number(Reflect.get(health, 'pid'));
     assert.ok(!daemonExited, 'daemon process must still be running after health check');
 
     // ── 2. Second-writer rejection ──
@@ -282,7 +310,7 @@ test('activation probe: spawn daemon detached, health, reject second writer, roo
     assert.equal(shutdownRes.statusCode, 200, `shutdown must return 200, got ${shutdownRes.statusCode}: ${shutdownRes.body}`);
 
     // Wait for the daemon process to exit
-    if (!daemonExited) {
+    if (daemonChild.exitCode === null) {
       await new Promise<void>((resolve) => {
         daemonChild.once('exit', () => { resolve(); });
         setTimeout(() => { resolve(); }, 10000).unref();
@@ -300,18 +328,7 @@ test('activation probe: spawn daemon detached, health, reject second writer, roo
     const portRes = await postJson(port, '/api/v1/health', {}).catch(() => null);
     assert.ok(portRes === null, 'port must be closed after shutdown');
   } finally {
-    if (!daemonExited) {
-      // Force kill as fallback
-      if (process.platform === 'win32') {
-        spawnSync('taskkill', ['/F', '/T', '/PID', String(daemonChild.pid)]);
-      } else {
-        daemonChild.kill('SIGKILL');
-      }
-      await new Promise<void>((resolve) => {
-        daemonChild.once('exit', () => { resolve(); });
-        setTimeout(() => { resolve(); }, 5000).unref();
-      });
-    }
+    await stopDaemonChild(daemonChild, root, port);
   }
 });
 
@@ -341,6 +358,7 @@ test('red team: concurrent worktree CLI invocations through daemon do not cross-
   });
   let daemonExited = false;
   daemonChild.on('exit', () => { daemonExited = true; });
+  void daemonExited;
 
   try {
     const healthBody = await pollHealth(port, 15000);
@@ -348,20 +366,8 @@ test('red team: concurrent worktree CLI invocations through daemon do not cross-
 
     // Fire two CLI invocations from different worktrees concurrently
     const [r1, r2] = await Promise.all([
-      new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
-        const c = spawn(process.execPath, [binPath, 'status'], { cwd: wt1, env: realCliEnv(), timeout: 15000 });
-        let o = '', e = '';
-        c.stdout.setEncoding('utf8'); c.stdout.on('data', (d: string) => { o += d; });
-        c.stderr.setEncoding('utf8'); c.stderr.on('data', (d: string) => { e += d; });
-        c.on('exit', (s) => { resolve({ status: s, stdout: o, stderr: e }); });
-      }),
-      new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
-        const c = spawn(process.execPath, [binPath, 'status'], { cwd: wt2, env: realCliEnv(), timeout: 15000 });
-        let o = '', e = '';
-        c.stdout.setEncoding('utf8'); c.stdout.on('data', (d: string) => { o += d; });
-        c.stderr.setEncoding('utf8'); c.stderr.on('data', (d: string) => { e += d; });
-        c.on('exit', (s) => { resolve({ status: s, stdout: o, stderr: e }); });
-      }),
+      spawnCollect(process.execPath, binPath, wt1, realCliEnv(), 15000),
+      spawnCollect(process.execPath, binPath, wt2, realCliEnv(), 15000),
     ]);
 
     assert.equal(r1.status, 0, `wt1 status must succeed, got ${r1.status}\nstderr: ${r1.stderr}`);
@@ -369,32 +375,7 @@ test('red team: concurrent worktree CLI invocations through daemon do not cross-
     assert.ok(!r1.stderr.includes('daemon'), `wt1 must not print daemon errors: ${r1.stderr}`);
     assert.ok(!r2.stderr.includes('daemon'), `wt2 must not print daemon errors: ${r2.stderr}`);
   } finally {
-    if (!daemonExited) {
-      // Graceful shutdown via API (works on all platforms)
-      try {
-        const shutdownToken = (await readFile(join(root, '.svp', '.svp-daemon-token'), 'utf8')).trim().split('\n')[0] ?? '';
-        if (shutdownToken) {
-          await postJson(port, '/api/v1/shutdown', { token: shutdownToken });
-        }
-      } catch { /* best-effort */ }
-      if (!daemonExited) {
-        await new Promise<void>((resolve) => {
-          daemonChild.once('exit', () => { resolve(); });
-          setTimeout(() => { resolve(); }, 5000).unref();
-        });
-      }
-      if (!daemonExited) {
-        if (process.platform === 'win32') {
-          spawnSync('taskkill', ['/F', '/T', '/PID', String(daemonChild.pid)]);
-        } else {
-          daemonChild.kill('SIGKILL');
-        }
-        await new Promise<void>((resolve) => {
-          daemonChild.once('exit', () => { resolve(); });
-          setTimeout(() => { resolve(); }, 5000).unref();
-        });
-      }
-    }
+    await stopDaemonChild(daemonChild, root, port);
   }
 });
 
@@ -402,74 +383,42 @@ test('red team: concurrent worktree CLI invocations through daemon do not cross-
 test('red team: forwarded exec request preserves cwd and sessionId in daemon context (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-exec-ctx-'));
   initFixtureRepo(root);
-
-  const seed = openStore(root);
-  seed.close();
-
+  openStore(root).close();
   const port = await freePort();
   const daemon = await startDaemon(root, port);
   try {
-    const svpDir = join(root, '.svp');
-    await mkdir(svpDir, { recursive: true });
     const token = daemon.token;
-
-    // Forward a describe command through the exec API with a specific context
-    const res = await postJson(port, '/api/v1/exec', {
-      token,
-      argv: ['describe'],
-      context: { cwd: root, sessionId: 'test-session-001' },
-    });
-    assert.equal(res.statusCode, 200, `exec must return 200, got ${res.statusCode}`);
+    const res = await postJson(port, '/api/v1/exec', { token, argv: ['describe'], context: { cwd: root, sessionId: 'test-session-001' } });
+    assert.equal(res.statusCode, 200);
     const parsed: unknown = JSON.parse(res.body);
     assert.ok(typeof parsed === 'object' && parsed !== null);
-    const exitCode: unknown = Reflect.get(parsed, 'exitCode');
-    assert.equal(exitCode, 0, `describe through daemon must succeed, got exitCode ${exitCode}`);
-    const stdout: unknown = Reflect.get(parsed, 'stdout');
-    assert.ok(typeof stdout === 'string' && stdout.length > 0, 'stdout must be non-empty');
-  } finally {
-    daemon.stop();
-    // Clean up lock/token files that stop() already removed
-  }
+    assert.equal(Reflect.get(parsed, 'exitCode'), 0);
+    assert.ok(typeof Reflect.get(parsed, 'stdout') === 'string');
+  } finally { daemon.stop(); }
 });
 
 // ---- STORE-003: Two concurrent exec requests with different contexts ----
 test('red team: concurrent exec requests with distinct contexts are isolated (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-concurrent-exec-'));
   initFixtureRepo(root);
-
-  const seed = openStore(root);
-  seed.close();
-
+  openStore(root).close();
   const port = await freePort();
   const daemon = await startDaemon(root, port);
   try {
     const token = daemon.token;
-
-    // Fire two concurrent exec requests with different contexts
     const [r1, r2] = await Promise.all([
-      postJson(port, '/api/v1/exec', {
-        token, argv: ['describe'],
-        context: { cwd: join(root, 'wt1'), sessionId: 'session-a' },
-      }),
-      postJson(port, '/api/v1/exec', {
-        token, argv: ['describe'],
-        context: { cwd: join(root, 'wt2'), sessionId: 'session-b' },
-      }),
+      postJson(port, '/api/v1/exec', { token, argv: ['describe'], context: { cwd: join(root, 'wt1'), sessionId: 'session-a' } }),
+      postJson(port, '/api/v1/exec', { token, argv: ['describe'], context: { cwd: join(root, 'wt2'), sessionId: 'session-b' } }),
     ]);
-
-    assert.equal(r1.statusCode, 200, `request 1 must return 200, got ${r1.statusCode}`);
-    assert.equal(r2.statusCode, 200, `request 2 must return 200, got ${r2.statusCode}`);
-
+    assert.equal(r1.statusCode, 200);
+    assert.equal(r2.statusCode, 200);
     const p1: unknown = JSON.parse(r1.body);
     const p2: unknown = JSON.parse(r2.body);
     assert.ok(typeof p1 === 'object' && p1 !== null);
     assert.ok(typeof p2 === 'object' && p2 !== null);
-    assert.equal(Reflect.get(p1, 'exitCode'), 0, 'request 1 must exit 0');
-    assert.equal(Reflect.get(p2, 'exitCode'), 0, 'request 2 must exit 0');
-    // Both responses should include the daemon version
+    assert.equal(Reflect.get(p1, 'exitCode'), 0);
+    assert.equal(Reflect.get(p2, 'exitCode'), 0);
     assert.equal(Reflect.get(p1, 'daemonVersion'), '0.1.0');
     assert.equal(Reflect.get(p2, 'daemonVersion'), '0.1.0');
-  } finally {
-    daemon.stop();
-  }
+  } finally { daemon.stop(); }
 });

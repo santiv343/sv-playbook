@@ -87,7 +87,7 @@ test('a worktree CLI cannot open the live store directly and is served through t
 
       // 3. In-process openStore returns the daemonStore (not blocked)
       const inProcStore = openStore(root);
-      assert.ok(inProcStore !== null, 'in-process openStore must return daemonStore');
+      assert.ok(inProcStore, 'in-process openStore must return daemonStore');
       inProcStore.close(); // no-op for daemonStore
 
       // 4. A separate child process cannot open the DB at all — the

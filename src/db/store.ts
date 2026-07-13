@@ -4,8 +4,8 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { numberColumn, stringColumn } from './rows.js';
-import { getCwd } from '../runtime/context.js';
 import { DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT, sqlInList } from './store.constants.js';
+import { getCwd } from '../runtime/context.js';
 import { StoreVersionError } from './store.errors.js';
 import { createStateBackup } from './backup.js';
 import { BACKUP_REASON } from './backup.constants.js';
@@ -348,8 +348,7 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
     return daemonStore;
   }
   assertStoreNotHeldByDaemon(repoRoot);
-  const dir = join(repoRoot, SVP_DIR);
-  mkdirSync(dir, { recursive: true });
+  const dir = join(repoRoot, SVP_DIR); mkdirSync(dir, { recursive: true });
   const dbPath = join(dir, DB_FILE);
   const isNew = !existsSync(dbPath);
   const db = new DatabaseSync(dbPath);

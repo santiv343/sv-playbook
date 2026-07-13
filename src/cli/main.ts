@@ -1,7 +1,7 @@
 import { commonRoot } from '../db/store.js';
 import { commands } from './registry.js';
 import { EXIT } from './command.constants.js';
-import { setContext, createContext, getCwd } from '../runtime/context.js';
+import { setContext, getCwd } from '../runtime/context.js';
 import type { Command, Io } from './command.types.js';
 import type { ExecutionContext } from '../runtime/context.types.js';
 import { checkDestructiveGate, queryDestructiveCounts } from './destructive-gate.js';
