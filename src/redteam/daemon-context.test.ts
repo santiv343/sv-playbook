@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { get as httpGet, request as httpRequest } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -50,7 +51,10 @@ function spawnCollect(execPath: string, binPath: string, cwd: string): Promise<{
 
 function forceKillProcess(pid: number): void {
   if (process.platform === 'win32') { spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)]); return; }
-  try { process.kill(pid, 'SIGKILL'); } catch { /* process may have already exited */ }
+  try {
+    try { process.kill(pid, 0); } catch { return; }
+    process.kill(pid, 'SIGKILL');
+  } catch { /* process may have already exited */ }
 }
 
 async function stopDaemonChild(child: ReturnType<typeof spawn>, root: string, port: number): Promise<void> {
@@ -61,7 +65,12 @@ async function stopDaemonChild(child: ReturnType<typeof spawn>, root: string, po
   } catch { /* best-effort */ }
   const waitMs = (ms: number): Promise<void> => new Promise((r) => { child.once('exit', () => { r(); }); setTimeout(() => { r(); }, ms).unref(); });
   await waitMs(5000);
-  if (child.pid !== undefined) { forceKillProcess(child.pid); await waitMs(5000); }
+  /* child.exitCode can be set by the exit event during the async wait
+   * above, re-checking it is a deliberate runtime-safety guard that TS's
+   * narrowed type cannot account for. */
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  const childAlive = child.exitCode === null;
+  if (childAlive && child.pid !== undefined) { forceKillProcess(child.pid); await waitMs(5000); }
 }
 
 async function pollDaemon(port: number): Promise<void> {
@@ -209,36 +218,99 @@ test('red team: exec with mixed-type argv is rejected before any side effect (ST
   } finally { await daemon.stop(); }
 });
 
-// ---- STORE-003: ALS isolation through session identity ----
-test('red team: exec from different worktrees with session-creating command produces distinct sessions (STORE-003)', async () => {
+// ---- STORE-003: Concurrent session binding with distinct packets, no swap ----
+test('red team: concurrent session binding — two distinct packets, event-to-session binding, no swap (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-als-${++daemonIndex}`));
   initFixtureRepo(root);
   const wt1 = join(root, 'wt1'); const wt2 = join(root, 'wt2');
   execFileSync('git', ['worktree', 'add', wt1, 'HEAD'], { cwd: root });
   execFileSync('git', ['worktree', 'add', wt2, 'HEAD'], { cwd: root });
-  // Pre-populate the store with a packet so task commands work
   const seed = openStore(root);
-  seed.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('ALS-S1', 'Session Test', '/tmp', 'ready', '[]', datetime('now'), datetime('now'))").run();
+  seed.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('ALS-S1', 'Session Test 1', '/tmp', 'ready', '[]', datetime('now'), datetime('now'))").run();
+  seed.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('ALS-S2', 'Session Test 2', '/tmp', 'ready', '[]', datetime('now'), datetime('now'))").run();
   seed.close();
   const port = await freePort();
   const daemon = await startDaemon(root, port, gitWorkspace);
   try {
     const ds = getDaemonStore(); assert.ok(ds);
-    const sessionRows = (): string[] =>
-      ds.db.prepare('SELECT DISTINCT worktree FROM sessions ORDER BY worktree').all().map((r) => String(Reflect.get(r, 'worktree'))).filter(Boolean);
 
-    // task start from wt1 — creates session for wt1
-    const r1 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['task', 'start', 'ALS-S1'], context: { cwd: wt1 } });
+    // Concurrent exec requests for two distinct packets from two worktrees
+    const [r1, r2] = await Promise.all([
+      postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['task', 'start', 'ALS-S1'], context: { cwd: wt1 } }),
+      postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['task', 'start', 'ALS-S2'], context: { cwd: wt2 } }),
+    ]);
     assert.equal(r1.statusCode, 200, `wt1 start must succeed, got ${r1.statusCode}: ${r1.body}`);
-    const s1 = sessionRows();
-    assert.equal(s1.length, 1, 'wt1 must create exactly one session');
-
-    // task start from wt2 — creates session for wt2
-    const r2 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['task', 'start', 'ALS-S1'], context: { cwd: wt2 } });
     assert.equal(r2.statusCode, 200, `wt2 start must succeed, got ${r2.statusCode}: ${r2.body}`);
-    const s2 = sessionRows();
-    assert.equal(s2.length, 2, 'wt2 must create a distinct second session');
+    const p1: unknown = JSON.parse(r1.body);
+    const p2: unknown = JSON.parse(r2.body);
+    assert.ok(typeof p1 === 'object' && p1 !== null);
+    assert.ok(typeof p2 === 'object' && p2 !== null);
+    assert.equal(Reflect.get(p1, 'exitCode'), 0, `wt1 exec must exit 0: ${r1.body}`);
+    assert.equal(Reflect.get(p2, 'exitCode'), 0, `wt2 exec must exit 0: ${r2.body}`);
+
+    // Exactly 2 session rows with canonical worktree values
+    const sessionRows = ds.db.prepare('SELECT id, worktree FROM sessions').all();
+    assert.equal(sessionRows.length, 2, 'must create exactly 2 sessions');
+    const sessionWorktrees = sessionRows.map((r: unknown) => {
+      assert.ok(typeof r === 'object' && r !== null);
+      return String(Reflect.get(r, 'worktree')).toLowerCase();
+    });
+    const canonicalWt1 = realpathSync(wt1).toLowerCase();
+    const canonicalWt2 = realpathSync(wt2).toLowerCase();
+    assert.ok(sessionWorktrees.includes(canonicalWt1), `wt1 (${canonicalWt1}) must be in session worktrees: [${sessionWorktrees.join(', ')}]`);
+    assert.ok(sessionWorktrees.includes(canonicalWt2), `wt2 (${canonicalWt2}) must be in session worktrees: [${sessionWorktrees.join(', ')}]`);
+
+    // Each transition has a distinct session (no swap)
+    const transitions = ds.db.prepare(
+      "SELECT t.session_id, t.packet_id FROM transitions t WHERE t.to_status = 'active' ORDER BY t.seq"
+    ).all();
+    const t0: unknown = transitions[0];
+    const t1: unknown = transitions[1];
+    assert.ok(t0 !== undefined && typeof t0 === 'object' && t0 !== null);
+    assert.ok(t1 !== undefined && typeof t1 === 'object' && t1 !== null);
+    assert.notEqual(Reflect.get(t0, 'packet_id'), Reflect.get(t1, 'packet_id'), 'must transition two distinct packets');
+    assert.notEqual(Reflect.get(t0, 'session_id'), Reflect.get(t1, 'session_id'), 'each packet must have a distinct session (no swap)');
   } finally { await daemon.stop(); }
+});
+
+// ---- STORE-003: Active-handler shutdown drain ----
+test('red team: stop drains in-flight exec handlers before resolving (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-drain-${++daemonIndex}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, gitWorkspace);
+  // Start exec request (don't await yet) — let it connect first
+  const execPromise = postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root } });
+  await new Promise((r) => setTimeout(r, 300)); // wait for TCP connect
+  // Call stop() while a request is in-flight — server.close must drain
+  await daemon.stop();
+  const execResponse = await execPromise;
+  assert.equal(execResponse.statusCode, 200, `exec must complete before stop resolves, got ${execResponse.statusCode}`);
+  const parsed: unknown = JSON.parse(execResponse.body);
+  assert.ok(typeof parsed === 'object' && parsed !== null);
+  assert.equal(Reflect.get(parsed, 'exitCode'), 0, `exec must succeed, got ${execResponse.body}`);
+});
+
+test('red team: exec requests are rejected with 503 or connection refused after stop (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-stop-rej-${++daemonIndex}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, gitWorkspace);
+
+  await daemon.stop();
+
+  // After stop(), the server either rejects via 503 (if the close callback
+  // hasn't fired yet) or the port is closed entirely (ECONNREFUSED).
+  // Either is observable, correct behavior — we test both paths by attempting
+  // an exec and accepting either outcome.
+  try {
+    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root } });
+    assert.ok(res.statusCode === 503, `after stop, exec must return 503, got ${res.statusCode}: ${res.body}`);
+    assert.ok(res.body.includes('unavailable'), `503 body must mention unavailable, got: ${res.body}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    assert.ok(msg.includes('ECONNREFUSED') || msg.includes('connection refused'), `after stop, exec must be refused or return 503, got: ${msg}`);
+  }
 });
 
 // ---- STORE-003: Context boundary enforcement ----
@@ -266,24 +338,28 @@ test('red team: context boundary — outside-repo spoof, missing context, no sto
   } finally { await daemon.stop(); }
 });
 
-// ---- STORE-003: Shutdown lifecycle ----
-test('red team: concurrent stop() calls return the same promise (STORE-003)', async () => {
+// ---- STORE-003: Shutdown lifecycle — state transitions + exactly-once ----
+test('red team: shutdown lifecycle transitions running→stopping→stopped; concurrent stop returns same promise (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-stop-con-${++daemonIndex}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   const daemon = await startDaemon(root, port, gitWorkspace);
-  const [s1, s2] = [daemon.stop(), daemon.stop()];
+  assert.equal(daemon.state(), 'running');
+
+  const s1 = daemon.stop();
+  assert.equal(daemon.state(), 'stopping');
+
+  const s2 = daemon.stop();
   assert.strictEqual(s1, s2, 'concurrent stop() must return identical promise');
+
   await s1;
+  assert.equal(daemon.state(), 'stopped');
+
   const ds = getDaemonStore();
   assert.ok(ds === null, 'daemon store must be null after stop');
-});
 
-test('red team: shutdown cleanup is exactly once — second stop resolves immediately (STORE-003)', async () => {
-  const root = await mkdtemp(join(tmpdir(), `svp-stop-once-${++daemonIndex}`));
-  initFixtureRepo(root); openStore(root).close();
-  const port = await freePort();
-  const daemon = await startDaemon(root, port, gitWorkspace);
-  await daemon.stop();
-  await daemon.stop(); // second stop resolves immediately
+  // Second stop after stopped resolves immediately
+  const s3 = daemon.stop();
+  assert.equal(daemon.state(), 'stopped');
+  await s3;
 });

@@ -43,6 +43,7 @@ export const command: Command = {
         process.once('SIGINT', shutdown);
         process.once('SIGTERM', shutdown);
         process.once('SIGBREAK', shutdown);
+        void instance.done.then(() => { resolve(EXIT.OK); });
       }).catch((err: unknown) => {
         io.err(`Failed to start daemon: ${String(err)}`);
         resolve(EXIT.SYSTEM);

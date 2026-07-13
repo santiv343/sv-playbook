@@ -210,6 +210,9 @@ export function startDaemon(repoRoot: string, port: number, ws: WorkspacePort): 
       finalizeOnce();
     });
 
-    server.listen(port, '127.0.0.1', () => { startSettled = true; resolve({ port, token, stop: shutdown }); });
+    server.listen(port, '127.0.0.1', () => { startSettled = true; resolve({
+      port, token, stop: shutdown, state: getState,
+      done: lifecyclePromise,
+    }); });
   });
 }
