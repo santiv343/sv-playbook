@@ -48,6 +48,11 @@ function spawnCollect(execPath: string, binPath: string, cwd: string): Promise<{
   });
 }
 
+function forceKillProcess(pid: number): void {
+  if (process.platform === 'win32') { spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)]); return; }
+  try { process.kill(pid, 'SIGKILL'); } catch { /* process may have already exited */ }
+}
+
 async function stopDaemonChild(child: ReturnType<typeof spawn>, root: string, port: number): Promise<void> {
   if (child.exitCode !== null) return;
   try {
@@ -56,10 +61,7 @@ async function stopDaemonChild(child: ReturnType<typeof spawn>, root: string, po
   } catch { /* best-effort */ }
   const waitMs = (ms: number): Promise<void> => new Promise((r) => { child.once('exit', () => { r(); }); setTimeout(() => { r(); }, ms).unref(); });
   await waitMs(5000);
-  if (child.pid !== undefined) {
-    const cmd = process.platform === 'win32' ? () => spawnSync('taskkill', ['/F', '/T', '/PID', String(child.pid)]) : () => child.kill('SIGKILL');
-    cmd(); await waitMs(5000);
-  }
+  if (child.pid !== undefined) { forceKillProcess(child.pid); await waitMs(5000); }
 }
 
 async function pollDaemon(port: number): Promise<void> {
@@ -194,8 +196,53 @@ test('red team: forwarded exec request preserves cwd in daemon context (STORE-00
   } finally { await daemon.stop(); }
 });
 
+// ---- STORE-003: Mixed-type argv rejection ----
+test('red team: exec with mixed-type argv is rejected before any side effect (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-argv-${++daemonIndex}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, gitWorkspace);
+  try {
+    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['valid', 123, null], context: { cwd: root } });
+    assert.equal(res.statusCode, 400);
+    assert.ok(res.body.includes('argv required'), `must reject mixed argv: ${res.body}`);
+  } finally { await daemon.stop(); }
+});
+
+// ---- STORE-003: ALS isolation through session identity ----
+test('red team: exec from different worktrees with session-creating command produces distinct sessions (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-als-${++daemonIndex}`));
+  initFixtureRepo(root);
+  const wt1 = join(root, 'wt1'); const wt2 = join(root, 'wt2');
+  execFileSync('git', ['worktree', 'add', wt1, 'HEAD'], { cwd: root });
+  execFileSync('git', ['worktree', 'add', wt2, 'HEAD'], { cwd: root });
+  // Pre-populate the store with a packet so task commands work
+  const seed = openStore(root);
+  seed.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('ALS-S1', 'Session Test', '/tmp', 'ready', '[]', datetime('now'), datetime('now'))").run();
+  seed.close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, gitWorkspace);
+  try {
+    const ds = getDaemonStore(); assert.ok(ds);
+    const sessionRows = (): string[] =>
+      ds.db.prepare('SELECT DISTINCT worktree FROM sessions ORDER BY worktree').all().map((r) => String(Reflect.get(r, 'worktree'))).filter(Boolean);
+
+    // task start from wt1 — creates session for wt1
+    const r1 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['task', 'start', 'ALS-S1'], context: { cwd: wt1 } });
+    assert.equal(r1.statusCode, 200, `wt1 start must succeed, got ${r1.statusCode}: ${r1.body}`);
+    const s1 = sessionRows();
+    assert.equal(s1.length, 1, 'wt1 must create exactly one session');
+
+    // task start from wt2 — creates session for wt2
+    const r2 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['task', 'start', 'ALS-S1'], context: { cwd: wt2 } });
+    assert.equal(r2.statusCode, 200, `wt2 start must succeed, got ${r2.statusCode}: ${r2.body}`);
+    const s2 = sessionRows();
+    assert.equal(s2.length, 2, 'wt2 must create a distinct second session');
+  } finally { await daemon.stop(); }
+});
+
 // ---- STORE-003: Context boundary enforcement ----
-test('red team: context boundary — outside-repo spoof, missing context, no store mutation on rejection (STORE-003)', async () => {
+test('red team: context boundary — outside-repo spoof, missing context, no store mutation on rejection, mixed argv (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-boundary-${++daemonIndex}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
@@ -217,4 +264,26 @@ test('red team: context boundary — outside-repo spoof, missing context, no sto
     assert.equal(noEffectRes.statusCode, 400);
     assert.equal(ec(ds.db.prepare('SELECT COUNT(*) AS c FROM events').get()), 0, 'no events after rejection');
   } finally { await daemon.stop(); }
+});
+
+// ---- STORE-003: Shutdown lifecycle ----
+test('red team: concurrent stop() calls return the same promise (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-stop-con-${++daemonIndex}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, gitWorkspace);
+  const [s1, s2] = [daemon.stop(), daemon.stop()];
+  assert.strictEqual(s1, s2, 'concurrent stop() must return identical promise');
+  await s1;
+  const ds = getDaemonStore();
+  assert.ok(ds === null, 'daemon store must be null after stop');
+});
+
+test('red team: shutdown cleanup is exactly once — second stop resolves immediately (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-stop-once-${++daemonIndex}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, gitWorkspace);
+  await daemon.stop();
+  await daemon.stop(); // second stop resolves immediately
 });

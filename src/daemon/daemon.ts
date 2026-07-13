@@ -185,20 +185,31 @@ export function startDaemon(repoRoot: string, port: number, ws: WorkspacePort): 
 
     let daemonState: 'running' | 'stopping' | 'stopped' = 'running';
     const getState = (): 'running' | 'stopping' | 'stopped' => daemonState;
-    let shutdownResolve: (() => void) | null = null;
-    const shutdownPromise = new Promise<void>((resolveShutdown) => { shutdownResolve = resolveShutdown; });
+    let lifecycleComplete: ((err?: Error) => void) | null = null;
+    const lifecyclePromise = new Promise<void>((resolveLifecycle) => { lifecycleComplete = () => { resolveLifecycle(); }; });
+    let startSettled = false;
+
+    const finalizeOnce = (): void => {
+      if (daemonState === 'stopped') return;
+      daemonState = 'stopped';
+      finalize();
+      lifecycleComplete?.();
+    };
 
     const shutdown = (): Promise<void> => {
-      if (daemonState !== 'running') return shutdownPromise;
+      if (daemonState !== 'running') return lifecyclePromise;
       daemonState = 'stopping';
-      server.close(() => { daemonState = 'stopped'; finalize(); shutdownResolve?.(); });
-      return shutdownPromise;
+      server.close(() => { finalizeOnce(); });
+      return lifecyclePromise;
     };
 
     const server = createServer((req, res) => { routeRequest(token, req, res, repoRoot, ws, shutdown, getState); });
 
-    server.on('error', (err: NodeJS.ErrnoException) => { daemonState = 'stopped'; finalize(); reject(err); });
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      if (!startSettled) { finalizeOnce(); reject(err); return; }
+      finalizeOnce();
+    });
 
-    server.listen(port, '127.0.0.1', () => { resolve({ port, token, stop: shutdown }); });
+    server.listen(port, '127.0.0.1', () => { startSettled = true; resolve({ port, token, stop: shutdown }); });
   });
 }

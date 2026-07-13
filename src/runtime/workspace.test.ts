@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { realpathSync, mkdirSync, symlinkSync, openSync, closeSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { realpathSync, mkdirSync, symlinkSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -86,16 +86,21 @@ test('RED: prefix-collision repo names are not the same workspace', async () => 
   assert.ok(!gitWorkspace.sameWorkspace(a, b), 'prefix-collision repos must not match');
 });
 
-function canSymlink(): boolean {
+function canSymlinkDir(): boolean {
+  let d = '';
   try {
-    const d = mkdtempSync(join(tmpdir(), 'svp-symprobe-'));
-    const l = join(d, 'link'); const t = join(d, 'target');
-    writeFileSync(t, ''); symlinkSync(t, l, 'file'); const r = realpathSync(l); closeSync(openSync(r, 'r'));
-    return true;
-  } catch { return false; }
+    d = mkdtempSync(join(tmpdir(), 'svp-symprobe-'));
+    const t = join(d, 'target'); mkdirSync(t);
+    const l = join(d, 'link');
+    symlinkSync(t, l, 'junction');
+    const r = realpathSync(l);
+    return r !== l;
+  } catch { return false; } finally { if (d) try { rmSync(d, { recursive: true, force: true }); } catch { } }
 }
 
-test('RED: same-repo symlink alias accepted by canonicalWorkspaceRoot', { skip: !canSymlink() }, async () => {
+const symSkip = process.platform === 'win32' ? 'Windows does not support symlinks without dev mode' : '';
+
+test('RED: same-repo directory junction alias accepted by canonicalWorkspaceRoot', { skip: !canSymlinkDir() && symSkip }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-red-sym-acc-'));
   initRepo(root); const target = join(root, 'sub'); mkdirSync(target);
   const link = join(root, 'alias');
@@ -105,7 +110,7 @@ test('RED: same-repo symlink alias accepted by canonicalWorkspaceRoot', { skip: 
   assert.equal(realpathSync(canonical).toLowerCase(), realpathSync(root).toLowerCase(), 'same-repo symlink must resolve to the repo root');
 });
 
-test('RED: symlink escape to different repo is rejected by sameWorkspace', { skip: !canSymlink() }, async () => {
+test('RED: symlink escape to different repo is rejected by sameWorkspace', { skip: !canSymlinkDir() && symSkip }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-red-sym-rej-'));
   initRepo(root);
   const outside = await mkdtemp(join(tmpdir(), 'svp-red-sym-rej-out-'));
