@@ -213,43 +213,56 @@ test('red team: exec port rejection returns HTTP 500 with stable error, no detai
   await d.stop();
 });
 
-// ---- 8. Shutdown via async child: no process.exit ──
+// ---- 8. Shutdown via async child: no process.exit ----
 test('red team: shutdown endpoint does not call process.exit — async child survival (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-shut-${nextIndex()}`));
   initFixtureRepo(root);
   const binPath = join(process.cwd(), 'bin', 'sv-playbook.js');
   const port = await freePort();
 
-  const child = spawn(process.execPath, [binPath, 'daemon', '--port', String(port)], {
-    cwd: root, env: realCliEnv(), stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000,
-  });
-  let childOut = '';
-  child.stdout.setEncoding('utf8');
-  child.stdout.on('data', (d: string) => { childOut += d; });
-  let childExit: number | null = null;
-  child.on('exit', (c) => { childExit = c; });
+  let child: ReturnType<typeof spawn> | null = null;
+  try {
+    child = spawn(process.execPath, [binPath, 'daemon', '--port', String(port)], {
+      cwd: root, env: realCliEnv(), stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000,
+    });
 
-  // Wait for daemon ready message
-  for (let i = 0; i < 50; i++) {
-    if (childOut.includes('ready') || childExit !== null) break;
-    await new Promise((r) => setTimeout(r, 200));
+    const childRef = child;
+    const ready = new Promise<void>((resolveReady) => {
+      let childOut = '';
+      childRef.stdout!.setEncoding('utf8');
+      childRef.stdout!.on('data', (d: string) => {
+        childOut += d;
+        if (childOut.includes('ready')) resolveReady();
+      });
+    });
+
+    const exited = new Promise<number | null>((resolveExit) => {
+      childRef.on('exit', (c) => { resolveExit(c); });
+    });
+
+    // bounded timeout: readiness failure = test failure, NOT silent pass
+    await Promise.race([
+      ready,
+      exited.then(() => { throw new Error('daemon exited before ready'); }),
+      new Promise<never>((_, reject) => { setTimeout(() => { reject(new Error('daemon not ready within 10s')); }, 10000); }),
+    ]);
+
+    const { readFile } = await import('node:fs/promises');
+    const token = (await readFile(join(root, '.svp', '.svp-daemon-token'), 'utf8')).trim().split('\n')[0] ?? '';
+    assert.ok(token.length > 0, 'daemon token must be readable');
+
+    const sr = await postJson(port, '/api/v1/shutdown', { token });
+    assert.equal(sr.statusCode, 200, 'shutdown must respond 200');
+    assert.ok(sr.body.includes('shutdown'), `body: ${sr.body}`);
+
+    const exitCode = await Promise.race([
+      exited,
+      new Promise<number | null>((_, reject) => { setTimeout(() => { reject(new Error('child did not exit within 10s')); }, 10000); }),
+    ]);
+    assert.equal(exitCode, 0, 'child must exit 0 after shutdown');
+  } finally {
+    if (child !== null && child.exitCode === null) { child.kill(); }
   }
-  if (childExit !== null) return; // daemon failed to start
-
-  const { readFile } = await import('node:fs/promises');
-  let token = '';
-  try { token = (await readFile(join(root, '.svp', '.svp-daemon-token'), 'utf8')).trim().split('\n')[0] ?? ''; } catch { return; }
-  if (!token) return;
-
-  // Send shutdown — handleShutdown no longer calls process.exit
-  const sr = await postJson(port, '/api/v1/shutdown', { token }).catch(() => ({ statusCode: 0, body: '' }));
-  assert.equal(sr.statusCode, 200, 'shutdown must respond 200');
-  assert.ok(sr.body.includes('shutdown'), `body: ${sr.body}`);
-
-  // Child exits naturally via bin shim
-  for (let i = 0; i < 50; i++) { if (childExit !== null) break; await new Promise((r) => setTimeout(r, 200)); }
-  assert.ok(childExit === 0 || childExit === null, `child exit ${childExit}`);
-  if (childExit === null) child.kill();
 });
 
 // ---- 9. Real signal port register/unregister ──
