@@ -57,12 +57,16 @@ class ControllableServer implements HttpServerPort {
   induceError(err: Error) { this.errorHandler?.(err); }
 }
 
-function deadline<T>(ms: number, msg: string): { promise: Promise<T>; clear: () => void } {
+async function withDeadline<T>(promise: Promise<T>, ms: number, msg: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const promise = new Promise<T>((_, reject) => {
+  const timeout = new Promise<T>((_, reject) => {
     timer = setTimeout(() => reject(new Error(msg)), ms);
   });
-  return { promise, clear: () => { if (timer !== null) { clearTimeout(timer); timer = null; } } };
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== null) { clearTimeout(timer); timer = null; }
+  }
 }
 
 function cf(s: HttpServerPort): HttpServerFactoryPort { return { create: () => s }; }
@@ -229,8 +233,11 @@ test('red team: shutdown endpoint does not call process.exit — async child sur
   const port = await freePort();
 
   let child: ReturnType<typeof spawn> | null = null;
-  let exited: Promise<number | null> = Promise.resolve<number | null>(null);
+  let exited: Promise<number | null> | null = null;
+  let exitObserved = false;
+  let primaryError: Error | null = null;
   const cleanupErrors: string[] = [];
+
   try {
     child = spawn(process.execPath, [binPath, 'daemon', '--port', String(port)], {
       cwd: root, env: realCliEnv(), stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000,
@@ -247,12 +254,10 @@ test('red team: shutdown endpoint does not call process.exit — async child sur
     });
 
     exited = new Promise<number | null>((resolveExit) => {
-      childRef.on('exit', (c) => { resolveExit(c); });
+      childRef.on('exit', (c) => { exitObserved = true; resolveExit(c); });
     });
 
-    const rd = deadline<void>(10000, 'daemon not ready');
-    await Promise.race([ready, exited.then(() => { throw new Error('daemon exited before ready'); }), rd.promise]);
-    rd.clear();
+    await withDeadline(ready, 10000, 'daemon not ready');
 
     const { readFile } = await import('node:fs/promises');
     const token = (await readFile(join(root, '.svp', '.svp-daemon-token'), 'utf8')).trim().split('\n')[0] ?? '';
@@ -262,28 +267,37 @@ test('red team: shutdown endpoint does not call process.exit — async child sur
     assert.equal(sr.statusCode, 200, 'shutdown must respond 200');
     assert.ok(sr.body.includes('shutdown'), `body: ${sr.body}`);
 
-    const ed = deadline<number | null>(10000, 'child did not exit');
-    const exitCode = await Promise.race([exited, ed.promise]);
-    ed.clear();
+    const exitCode = await withDeadline(exited, 10000, 'child did not exit');
     assert.equal(exitCode, 0, 'child must exit 0 after shutdown');
+  } catch (e: unknown) {
+    primaryError = e instanceof Error ? e : new Error(String(e));
   } finally {
-    if (child !== null && child.exitCode === null) {
+    if (child !== null && !exitObserved && exited !== null) {
       try { child.kill(); } catch (e: unknown) { cleanupErrors.push(`kill:${e instanceof Error ? e.message : String(e)}`); }
-      const kd = deadline<number | null>(5000, 'child did not exit after kill');
       try {
-        const code = await Promise.race([exited, kd.promise]);
-        kd.clear();
-        if (code !== 0 && child.pid !== undefined) {
-          if (process.platform === 'win32') {
-            const { spawnSync } = await import('node:child_process');
-            spawnSync('taskkill', ['/F', '/T', '/PID', String(child.pid)]);
-          } else {
-            process.kill(child.pid, 'SIGKILL');
-          }
+        await withDeadline(exited, 5000, 'child did not exit after kill');
+      } catch {
+        if (!exitObserved && child.pid !== undefined) {
+          const pid = child.pid;
+          try {
+            if (process.platform === 'win32') {
+              const { spawnSync } = await import('node:child_process');
+              spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)]);
+            } else {
+              process.kill(pid, 'SIGKILL');
+            }
+          } catch (e: unknown) { cleanupErrors.push(`escalate:${e instanceof Error ? e.message : String(e)}`); }
+          try {
+            await withDeadline(exited, 5000, 'child did not exit after force kill');
+          } catch (e: unknown) { cleanupErrors.push(`terminal:${e instanceof Error ? e.message : String(e)}`); }
         }
-      } catch (e: unknown) { cleanupErrors.push(`cleanup:${e instanceof Error ? e.message : String(e)}`); }
+      }
     }
-    if (cleanupErrors.length > 0) assert.fail(`cleanup: ${cleanupErrors.join('; ')}`);
+    if (primaryError !== null && cleanupErrors.length > 0) {
+      throw new AggregateError([primaryError, new Error(`cleanup: ${cleanupErrors.join('; ')}`)], 'test+cleanup');
+    }
+    if (cleanupErrors.length > 0) throw new Error(`cleanup: ${cleanupErrors.join('; ')}`);
+    if (primaryError !== null) throw primaryError;
   }
 });
 
