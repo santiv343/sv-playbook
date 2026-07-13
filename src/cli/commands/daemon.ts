@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
 import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
-import { commonRoot, isDaemonRunning } from '../../db/store.js';
+import { blessedRoot, commonRoot, isDaemonRunning } from '../../db/store.js';
 import { DAEMON_DEFAULT_PORT } from '../../daemon/daemon.constants.js';
 import { startDaemon } from '../../daemon/daemon.js';
 
@@ -26,7 +26,7 @@ export const command: Command = {
       return Promise.resolve(EXIT.USAGE);
     }
 
-    const repoRoot = commonRoot(process.cwd());
+    const repoRoot = blessedRoot(process.cwd()) ?? commonRoot(process.cwd());
 
     if (isDaemonRunning(repoRoot)) {
       io.err('Daemon is already running');
