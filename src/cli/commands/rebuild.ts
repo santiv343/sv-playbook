@@ -8,6 +8,7 @@ import { stringColumn } from '../../db/rows.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { DB_FILE, SVP_DIR } from '../../db/store.constants.js';
 import type { Store } from '../../db/store.types.js';
+import { getCwd } from '../../runtime/context.js';
 import { parsePacketDocument } from '../../packets/document.js';
 import type { PacketDefinition } from '../../packets/document.types.js';
 import { EVENT_TRANSITION, EXISTS_SQL, INSERT_EVENT_SQL, INSERT_PACKET_SQL, LEASE_TTL_MS, PACKETS_DOCS_DIR, PACKETS_DIR, STATUS, TASK_TYPE_PREFIX } from '../../tasks/service.constants.js';
@@ -152,7 +153,7 @@ export const command: Command = {
   summary: 'Reconstruct operational DB from git packet exports',
   destructive: true,
   run(args, io): Promise<number> {
-    const repoRoot = commonRoot(process.cwd());
+    const repoRoot = commonRoot(getCwd());
     const parsed = parseArgs({ args, allowPositionals: true, options: { force: { type: 'boolean' } } });
     if (parsed.positionals.length > 0) {
       io.err('Usage: sv-playbook rebuild [--force]');

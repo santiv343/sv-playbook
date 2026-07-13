@@ -7,6 +7,7 @@ import { main } from '../cli/main.js';
 import { DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
 import { EXIT } from '../cli/command.constants.js';
 import { SVP_DIR } from '../db/store.constants.js';
+import { runWithContext, createContext } from '../runtime/context.js';
 import type { Store } from '../db/store.types.js';
 import type { DaemonInstance } from './daemon.types.js';
 
@@ -81,11 +82,13 @@ function handleExec(token: string, req: IncomingMessage, res: ServerResponse): v
   readBody(req).then((raw) => {
     let parsedToken: unknown;
     let parsedArgv: unknown;
+    let parsedContext: unknown;
     try {
       const parsed: unknown = JSON.parse(raw);
       if (typeof parsed === 'object' && parsed !== null) {
         parsedToken = Reflect.get(parsed, 'token');
         parsedArgv = Reflect.get(parsed, 'argv');
+        parsedContext = Reflect.get(parsed, 'context');
       }
     } catch {
       jsonResponse(res, 400, { error: 'invalid json' });
@@ -103,9 +106,18 @@ function handleExec(token: string, req: IncomingMessage, res: ServerResponse): v
       return;
     }
 
+    const ctx = typeof parsedContext === 'object' && parsedContext !== null
+      ? (() => {
+          const cw = Reflect.get(parsedContext, 'cwd');
+          const sid = Reflect.get(parsedContext, 'sessionId');
+          return typeof cw === 'string' ? createContext(cw, typeof sid === 'string' ? sid : '') : undefined;
+        })()
+      : undefined;
+
     const execIo = buildExecIo();
 
-    main(argv, execIo).then((exitCode) => {
+    const p = ctx !== undefined ? runWithContext(ctx, () => main(argv, execIo)) : main(argv, execIo);
+    p.then((exitCode) => {
       const stdout = execIo.outLines.join('\n') + (execIo.outLines.length > 0 ? '\n' : '');
       const stderr = execIo.errLines.join('\n') + (execIo.errLines.length > 0 ? '\n' : '');
       jsonResponse(res, 200, { exitCode, stdout, stderr, daemonVersion: DAEMON_VERSION });
@@ -172,6 +184,14 @@ export function startDaemon(repoRoot: string, port: number): Promise<DaemonInsta
     setDaemonStarting(false);
     // 3. Register shared store
     setDaemonStore(store);
+
+    // 4. Force-acquire the exclusive lock so forwarded handlers can transact.
+    //    PRAGMA locking_mode=EXCLUSIVE (applied inside openStore) sets the mode
+    //    but does NOT acquire the lock — it's acquired lazily on first write.
+    //    Without this, there is a window where a concurrent process could sneak
+    //    in and also obtain a write lock, defeating single-writer enforcement.
+    store.db.exec('BEGIN EXCLUSIVE');
+    store.db.exec('COMMIT');
 
     writeTokenFileOwnerOnly(tokenPath, token);
 

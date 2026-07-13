@@ -6,7 +6,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openStore, isDaemonRunning } from '../db/store.js';
+import { openStore, isDaemonRunning, getDaemonStore } from '../db/store.js';
 import { startDaemon } from './daemon.js';
 import { DAEMON_TOKEN_FILE } from './daemon.constants.js';
 import { EXIT } from '../cli/command.constants.js';
@@ -85,16 +85,14 @@ test('a worktree CLI cannot open the live store directly and is served through t
       assert.equal(healthStatus, 'ok');
       assert.ok(typeof healthVersion === 'string');
 
-      // 3. Direct openStore from a non-daemon process is blocked
-      assert.throws(
-        () => { openStore(root); },
-        /daemon/,
-      );
+      // 3. In-process openStore returns the daemonStore (not blocked)
+      const inProcStore = openStore(root);
+      assert.ok(inProcStore !== null, 'in-process openStore must return daemonStore');
+      inProcStore.close(); // no-op for daemonStore
 
-      // 4. A worktree process can open the DB directly (WAL mode permits
-      // concurrent access), but must route through the daemon via auto-forward
-      // — the software guard in openStore (assertStoreNotHeldByDaemon) enforces
-      // this at the application level.
+      // 4. A separate child process cannot open the DB at all — the
+      //    force-acquired exclusive lock prevents any other process from
+      //    accessing the database.
       const dbPath = join(root, '.svp', 'playbook.sqlite');
       const subResult = execFileSync(process.execPath, ['-e', `
         const { DatabaseSync } = require('node:sqlite');
@@ -107,7 +105,7 @@ test('a worktree CLI cannot open the live store directly and is served through t
           process.stdout.write('FAIL:' + (e.message ?? String(e)));
         }
       `], { encoding: 'utf8', timeout: 10000 });
-      assert.ok(subResult.includes('OK'), `expected DatabaseSync open to succeed (WAL mode), got: ${subResult}`);
+      assert.ok(!subResult.includes('OK'), 'child process must be blocked by exclusive lock');
     } finally {
       daemon.stop();
     }
@@ -146,6 +144,41 @@ test('daemon auth token file is created owner-only (mode 0600)', { skip: process
       const tokenPath = join(root, SVP_DIR, DAEMON_TOKEN_FILE);
       const mode = statSync(tokenPath).mode & 0o777;
       assert.equal(mode, 0o600, `token file must be owner-only, got 0${mode.toString(8)}`);
+    } finally {
+      daemon.stop();
+    }
+  });
+});
+
+test('daemon forwarded task note is persisted to the store (STORE-003)', async () => {
+  await inTempRepo(async (root) => {
+    // Create a packet for the note to attach to
+    const store = openStore(root);
+    const packetId = 'NOTE-FWD-001';
+    store.db.prepare(`INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES (?, 'Fwd Note Test', '/tmp', 'draft', '[]', datetime('now'), datetime('now'))`).run(packetId);
+    store.close();
+
+    const port = await freePort();
+    const daemon = await startDaemon(root, port);
+
+    try {
+      assert.ok(isDaemonRunning(root));
+
+      // Forward a task note command through the daemon's exec endpoint
+      const code = await runForwardToDaemonSyncInChild(
+        ['task', 'note', packetId, 'checkpoint reached'],
+        daemon.token,
+        port,
+      );
+      assert.equal(code, EXIT.OK, `task note forward must succeed, got exit ${code}`);
+
+      // Verify the note event was written to the store via the in-process daemon store
+      const ds = getDaemonStore();
+      assert.ok(ds !== null, 'daemon store must be accessible in-process');
+      const row = ds.db.prepare(
+        "SELECT detail FROM events WHERE packet_id = ? AND command = 'note' ORDER BY seq DESC LIMIT 1",
+      ).get(packetId);
+      assert.ok(row !== undefined, 'note event must exist in the store');
     } finally {
       daemon.stop();
     }

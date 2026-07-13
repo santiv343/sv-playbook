@@ -8,6 +8,7 @@ import { commonRoot, openStore } from '../../db/store.js';
 import type { Store } from '../../db/store.types.js';
 import { LEASE_TTL_MS, PACKETS_DIR, PACKETS_DOCS_DIR, STATUS } from '../../tasks/service.constants.js';
 import { EXIT } from '../command.constants.js';
+import { getCwd } from '../../runtime/context.js';
 import type { Command, Io } from '../command.types.js';
 import {
   DOCTOR_DETAIL,
@@ -190,7 +191,7 @@ function packetsDriftCheck(repoRoot: string): CheckResult {
 function collectChecks(): CheckResult[] {
   const checks = [nodeCheck()];
   try {
-    const repoRoot = commonRoot(process.cwd());
+    const repoRoot = commonRoot(getCwd());
     checks.push(
       gitCheck(repoRoot),
       storeCheck(repoRoot),

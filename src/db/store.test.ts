@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createServer as createNetServer } from 'node:net';
 import { openStore, migrateStore, readDaemonPort, worktreeRoot } from './store.js';
 import { DAEMON_DEFAULT_PORT } from '../daemon/daemon.constants.js';
@@ -123,6 +123,29 @@ test('the store runs in WAL mode with EXCLUSIVE locking (single-writer enforceme
 
   db2.close();
   store.close();
+});
+
+test('red team: a cross-process writer is rejected when the store holds the exclusive lock (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-xp-'));
+  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  const store = openStore(root);
+
+  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  try {
+    const result = spawnSync(process.execPath, ['-e', `
+      const { DatabaseSync } = require('node:sqlite');
+      const db = new DatabaseSync(${JSON.stringify(dbPath)});
+      db.exec('BEGIN IMMEDIATE');
+    `], { encoding: 'utf8', timeout: 5000 });
+    assert.notEqual(result.status, 0, `child must fail with SQLITE_BUSY, got exit ${result.status}: ${result.stderr}`);
+    const msg = result.stderr + result.stdout;
+    assert.ok(
+      /locked/i.test(msg) || /busy/i.test(msg) || /exclusive/i.test(msg),
+      `stderr must mention locked/busy: ${result.stderr}`,
+    );
+  } finally {
+    store.close();
+  }
 });
 
 test('schema v6 includes constitution_sections and constitution_principles tables', async () => {

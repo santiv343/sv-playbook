@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { numberColumn, stringColumn } from './rows.js';
+import { getCwd } from '../runtime/context.js';
 import { DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT, sqlInList } from './store.constants.js';
 import { StoreVersionError } from './store.errors.js';
 import { createStateBackup } from './backup.js';
@@ -87,20 +88,27 @@ export function readDaemonPort(repoRoot: string): number {
 
 function tryAutoForward(): void {
   try {
-    const cwd = process.cwd();
-    if (!isWorktree(cwd)) return;
-    const br = blessedRoot(cwd);
-    if (br === null) return;
+    const cwd = getCwd();
     const args = process.argv.slice(2);
     if (args[0] === 'daemon') return;
-    if (!isDaemonRunning(br)) {
-      console.error(WORKTREE_DAEMON_REQUIRED_TEXT);
-      process.exit(1);
+
+    const br = blessedRoot(cwd);
+    // br is non-null in worktrees, null at root (where .git IS the common dir)
+    const repoRoot = br ?? worktreeRoot(cwd);
+
+    if (!isDaemonRunning(repoRoot)) {
+      // Worktree without daemon: error with guidance
+      if (br !== null) {
+        console.error(WORKTREE_DAEMON_REQUIRED_TEXT);
+        process.exit(1);
+      }
+      // Root without daemon: fall through to direct mode
       return;
     }
-    const token = readDaemonToken(br);
+
+    const token = readDaemonToken(repoRoot);
     if (token === null) return;
-    process.exit(forwardToDaemonSync(args, token, readDaemonPort(br)));
+    process.exit(forwardToDaemonSync(args, token, readDaemonPort(repoRoot)));
   } catch { /* proceed with direct mode */ }
 }
 
@@ -292,8 +300,8 @@ function assertStoreNotHeldByDaemon(repoRoot: string): void {
   if (isDaemonRunning(repoRoot)) {
     throw new StoreVersionError(`store is held by the daemon — run commands from the blessed root or start the daemon with \`sv-playbook daemon\``);
   }
-  if (!process.env.NODE_TEST_CONTEXT && isWorktree(process.cwd())) {
-    const br = blessedRoot(process.cwd());
+  if (!process.env.NODE_TEST_CONTEXT && isWorktree(getCwd())) {
+    const br = blessedRoot(getCwd());
     if (br !== null && !isDaemonRunning(br)) {
       throw new StoreVersionError(WORKTREE_DAEMON_REQUIRED_TEXT);
     }
@@ -336,10 +344,10 @@ export function setDaemonStarting(v: boolean): void {
 }
 
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
-  assertStoreNotHeldByDaemon(repoRoot);
   if (daemonStore !== null) {
     return daemonStore;
   }
+  assertStoreNotHeldByDaemon(repoRoot);
   const dir = join(repoRoot, SVP_DIR);
   mkdirSync(dir, { recursive: true });
   const dbPath = join(dir, DB_FILE);
