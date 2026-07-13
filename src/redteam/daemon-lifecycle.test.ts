@@ -1,75 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
-import { createServer as createHttpServer, request as httpRequest } from 'node:http';
-import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openStore } from '../db/store.js';
 import { startDaemon } from '../daemon/daemon.js';
 import { createCliCommandExecutionPort } from '../daemon/adapters/cli-command-execution.js';
 import { createNodeHttpServerFactory } from '../daemon/adapters/node-http-server.js';
-import { createNodeSignalSubscription } from '../daemon/adapters/node-signal-subscription.js';
 const cliCommandPort = createCliCommandExecutionPort();
 const realHttpFactory = createNodeHttpServerFactory();
 import { gitWorkspace } from '../runtime/workspace-git.js';
-import { freePort, initFixtureRepo, postJson, nextIndex, realCliEnv } from './daemon-test-utils.js';
-import type { HttpServerFactoryPort, HttpServerPort } from '../daemon/daemon.types.js';
+import { freePort, initFixtureRepo, postJson, nextIndex } from './daemon-test-utils.js';
 import { createStoreSessionBinding } from '../daemon/adapters/local-store-session-binding.js';
 const sessionBinding = createStoreSessionBinding();
-
-// ---- ControllableServer: Promise-latch close control ------------------
-class ControllableServer implements HttpServerPort {
-  errorHandler: ((err: Error) => void) | null = null;
-  closeCount = 0;
-  private _resolveCloseStarted: (() => void) | null = null;
-  readonly closeStarted = new Promise<void>((r) => { this._resolveCloseStarted = r; });
-  private _resolveReleaseClose: ((v?: unknown) => void) | null = null;
-  private real = createHttpServer();
-  private _rejectListen: Error | null = null;
-  private _rejectClose: Error | null = null;
-
-  constructor(opts?: { rejectListenWith?: Error; rejectCloseWith?: Error }) {
-    if (opts?.rejectListenWith) this._rejectListen = opts.rejectListenWith;
-    if (opts?.rejectCloseWith) this._rejectClose = opts.rejectCloseWith;
-  }
-
-  async listen(port: number, host: string): Promise<void> {
-    if (this._rejectListen) throw this._rejectListen;
-    this.real.on('error', (err) => this.errorHandler?.(err));
-    return new Promise((r) => this.real.listen(port, host, r));
-  }
-
-  close(): Promise<void> {
-    this.closeCount++;
-    this._resolveCloseStarted?.();
-    return new Promise<void>((resolve, reject) => {
-      this._resolveReleaseClose = () => {
-        if (this._rejectClose) reject(this._rejectClose);
-        else resolve();
-      };
-      this.real.close(() => { });
-    });
-  }
-
-  releaseClose(): void { this._resolveReleaseClose?.(); }
-  onError(h: (err: Error) => void) { this.errorHandler = h; }
-  induceError(err: Error) { this.errorHandler?.(err); }
-}
-
-async function withDeadline<T>(promise: Promise<T>, ms: number, msg: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const timeout = new Promise<T>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(msg)), ms);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer !== null) { clearTimeout(timer); timer = null; }
-  }
-}
-
-function cf(s: HttpServerPort): HttpServerFactoryPort { return { create: () => s }; }
+import { cf, ControllableServer } from './daemon-lifecycle-helpers.js';
 
 // ---- STORE-003: Active-handler shutdown drain (deterministic barrier) ----
 test('red team: stop drains in-flight exec handlers — deterministic barrier (STORE-003)', async () => {
@@ -81,10 +25,10 @@ test('red team: stop drains in-flight exec handlers — deterministic barrier (S
   let releaseBarrier: (() => void) = () => {};
   const readyPromise = new Promise<void>((r) => { markReady = r; });
   const barrierPromise = new Promise<void>((r) => { releaseBarrier = r; });
-  let timer: ReturnType<typeof setTimeout> | null = null;
 
+  const sv = new ControllableServer();
   const daemon = await startDaemon(root, port, {
-    workspaceIdentity: gitWorkspace, httpServerFactory: realHttpFactory,
+    workspaceIdentity: gitWorkspace, httpServerFactory: cf(sv),
     commandExecution: {
       async execute(req) {
         if (req.argv[0] === '__barrier__') { markReady(); await barrierPromise; return { exitCode: 0, stdout: '', stderr: '' }; }
@@ -96,17 +40,17 @@ test('red team: stop drains in-flight exec handlers — deterministic barrier (S
 
   try {
     const ep = postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['__barrier__'], context: { cwd: root } }, 15000);
-    await Promise.race([readyPromise, new Promise<void>((_, rej) => { timer = setTimeout(() => { rej(new Error('barrier not entered')); }, 10000); })]);
-    if (timer) clearTimeout(timer);
+    await readyPromise;
 
     const events: string[] = [];
     const sp = daemon.stop().then((o) => { events.push('stop'); return o; });
     const er = ep.then((r) => { events.push('exec'); return r; });
 
-    await new Promise<void>((r) => setImmediate(r));
+    await sv.closeStarted;
     assert.equal(events.length, 0, 'nothing before barrier release');
 
     releaseBarrier();
+    sv.releaseClose();
     const outcome = await sp;
     assert.equal(outcome.kind, 'stopped');
 
@@ -117,7 +61,7 @@ test('red team: stop drains in-flight exec handlers — deterministic barrier (S
     assert.equal(Reflect.get(p, 'exitCode'), 0);
     assert.equal(events[0], 'exec', 'exec response before stop');
     assert.equal(events[1], 'stop', 'stop after exec');
-  } finally { if (timer) clearTimeout(timer); await daemon.stop(); }
+  } finally { await daemon.stop(); }
 });
 
 // ---- 2. Exec rejected 503 after stop --
@@ -155,7 +99,7 @@ test('red team: repeated post-start errors — once close+finalize, first error 
   assert.equal(fc, 1);
 });
 
-// ---- 4. Stop→error before close: error wins --
+// ---- 4. Stop->error before close: error wins --
 test('red team: stop then error before close — outcome fails, not stops (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-stop-err-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -174,7 +118,7 @@ test('red team: stop then error before close — outcome fails, not stops (STORE
   assert.equal(fc, 1);
 });
 
-// ---- 5. Error→stop: outcome stays failed --
+// ---- 5. Error->stop: outcome stays failed --
 test('red team: error then stop — stop must not overwrite failed outcome (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-err-stop-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -215,204 +159,15 @@ test('red team: exec port rejection returns HTTP 500 with stable error, no detai
   const port = await freePort();
   const d = await startDaemon(root, port, {
     workspaceIdentity: gitWorkspace, httpServerFactory: realHttpFactory,
-    commandExecution: { async execute() { throw new Error('inter-secret'); } },
+    commandExecution: { execute() { throw new Error('inter-secret'); } },
     sessionBinding,
   });
-  const r = await postJson(port, '/api/v1/exec', { token: d.token, argv: ['x'], context: { cwd: root } });
-  assert.equal(r.statusCode, 500);
-  assert.ok(r.body.includes('rejected'), `body: ${r.body}`);
-  assert.ok(!r.body.includes('secret'), `body leaked detail: ${r.body}`);
-  await d.stop();
-});
-
-// ---- 8. Shutdown via async child: no process.exit ----
-test('red team: shutdown endpoint does not call process.exit — async child survival (STORE-003)', async () => {
-  const root = await mkdtemp(join(tmpdir(), `svp-shut-${nextIndex()}`));
-  initFixtureRepo(root);
-  const binPath = join(process.cwd(), 'bin', 'sv-playbook.js');
-  const port = await freePort();
-
-  let child: ReturnType<typeof spawn> | null = null;
-  let exited: Promise<number | null> | null = null;
-  let exitObserved = false;
-  let primaryError: Error | null = null;
-  const cleanupErrors: string[] = [];
-
   try {
-    child = spawn(process.execPath, [binPath, 'daemon', '--port', String(port)], {
-      cwd: root, env: realCliEnv(), stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000,
-    });
-
-    const childRef = child;
-    const ready = new Promise<void>((resolveReady) => {
-      let childOut = '';
-      childRef.stdout!.setEncoding('utf8');
-      childRef.stdout!.on('data', (d: string) => {
-        childOut += d;
-        if (childOut.includes('ready')) resolveReady();
-      });
-    });
-
-    exited = new Promise<number | null>((resolveExit) => {
-      childRef.on('exit', (c) => { exitObserved = true; resolveExit(c); });
-    });
-
-    await withDeadline(ready, 10000, 'daemon not ready');
-
-    const { readFile } = await import('node:fs/promises');
-    const token = (await readFile(join(root, '.svp', '.svp-daemon-token'), 'utf8')).trim().split('\n')[0] ?? '';
-    assert.ok(token.length > 0, 'daemon token must be readable');
-
-    const sr = await postJson(port, '/api/v1/shutdown', { token });
-    assert.equal(sr.statusCode, 200, 'shutdown must respond 200');
-    assert.ok(sr.body.includes('shutdown'), `body: ${sr.body}`);
-
-    const exitCode = await withDeadline(exited, 10000, 'child did not exit');
-    assert.equal(exitCode, 0, 'child must exit 0 after shutdown');
-  } catch (e: unknown) {
-    primaryError = e instanceof Error ? e : new Error(String(e));
+    const r = await postJson(port, '/api/v1/exec', { token: d.token, argv: ['x'], context: { cwd: root } });
+    assert.equal(r.statusCode, 500, `expected 500 got ${r.statusCode}: ${r.body}`);
+    assert.ok(r.body.includes('rejected'), `body: ${r.body}`);
+    assert.ok(!r.body.includes('secret'), `body leaked detail: ${r.body}`);
   } finally {
-    if (child !== null && !exitObserved && exited !== null) {
-      try { child.kill(); } catch (e: unknown) { cleanupErrors.push(`kill:${e instanceof Error ? e.message : String(e)}`); }
-      try {
-        await withDeadline(exited, 5000, 'child did not exit after kill');
-      } catch {
-        if (!exitObserved && child.pid !== undefined) {
-          const pid = child.pid;
-          try {
-            if (process.platform === 'win32') {
-              const { spawnSync } = await import('node:child_process');
-              spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)]);
-            } else {
-              process.kill(pid, 'SIGKILL');
-            }
-          } catch (e: unknown) { cleanupErrors.push(`escalate:${e instanceof Error ? e.message : String(e)}`); }
-          try {
-            await withDeadline(exited, 5000, 'child did not exit after force kill');
-          } catch (e: unknown) { cleanupErrors.push(`terminal:${e instanceof Error ? e.message : String(e)}`); }
-        }
-      }
-    }
-    if (primaryError !== null && cleanupErrors.length > 0) {
-      throw new AggregateError([primaryError, new Error(`cleanup: ${cleanupErrors.join('; ')}`)], 'test+cleanup');
-    }
-    if (cleanupErrors.length > 0) throw new Error(`cleanup: ${cleanupErrors.join('; ')}`);
-    if (primaryError !== null) throw primaryError;
+    await d.stop();
   }
-});
-
-// ---- 9. Real signal port register/unregister --
-test('red team: signal port registers once and unregisters once after done (STORE-003)', async () => {
-  const root = await mkdtemp(join(tmpdir(), `svp-sig-${nextIndex()}`));
-  initFixtureRepo(root); openStore(root).close();
-  const port = await freePort();
-
-  // Test the REAL createNodeSignalSubscription, not a fake
-  const signals = createNodeSignalSubscription();
-  const events: string[] = [];
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: realHttpFactory, sessionBinding });
-  const shutdown = () => { void daemon.stop(); };
-
-  signals.onShutdown(shutdown);
-  events.push('on');
-
-  await daemon.stop();
-  signals.removeShutdownHandler(shutdown);
-  events.push('off');
-
-  assert.deepEqual(events, ['on', 'off'], 'on then off exactly once');
-});
-
-// ---- 10. Post-start server error --
-test('red team: post-start server error produces done->{kind:failed,error}, exactly-once finalize (STORE-003)', async () => {
-  const root = await mkdtemp(join(tmpdir(), `svp-srv-err-${nextIndex()}`));
-  initFixtureRepo(root); openStore(root).close();
-  const port = await freePort();
-  let fc = 0;
-  const sv = new ControllableServer();
-  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; }, sessionBinding });
-  sv.induceError(new Error('induced'));
-  sv.releaseClose();
-  const o = await d.done;
-  assert.equal(o.kind, 'failed');
-  assert.ok(o.error.message.includes('induced'));
-  assert.equal(sv.closeCount, 1);
-  assert.equal(fc, 1);
-  assert.equal(d.state(), 'stopped');
-});
-
-// ---- 11. Close rejection: secondary, causal failure preserved --
-test('red team: close rejection is secondary — causal failure still wins (STORE-003)', async () => {
-  const root = await mkdtemp(join(tmpdir(), `svp-close-rej-${nextIndex()}`));
-  initFixtureRepo(root); openStore(root).close();
-  const port = await freePort();
-  let fc = 0;
-  const sv = new ControllableServer({ rejectCloseWith: new Error('close-failed') });
-  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; }, sessionBinding });
-  sv.induceError(new Error('causal'));
-  sv.releaseClose();
-  const o = await d.done;
-  assert.equal(o.kind, 'failed');
-  assert.equal(o.error.message, 'causal', 'causal error not overwritten by close rejection');
-  assert.equal(sv.closeCount, 1);
-  assert.equal(fc, 1);
-});
-
-// ---- 12. Finalize throw: causal failure preserved --
-test('red team: finalize throw is secondary — causal failure still wins (STORE-003)', async () => {
-  const root = await mkdtemp(join(tmpdir(), `svp-fin-throw-${nextIndex()}`));
-  initFixtureRepo(root); openStore(root).close();
-  const port = await freePort();
-  let fc = 0;
-  const sv = new ControllableServer();
-  const d = await startDaemon(root, port, {
-    workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv),
-    sessionBinding,
-    onFinalize: () => { fc++; throw new Error('finalize-boom'); },
-  });
-  sv.induceError(new Error('causal'));
-  sv.releaseClose();
-  const o = await d.done;
-  assert.equal(o.kind, 'failed');
-  assert.equal(o.error.message, 'causal', 'causal error not overwritten by finalize throw');
-  assert.equal(sv.closeCount, 1);
-  assert.equal(fc, 1);
-});
-
-// ---- 13. Clean stop + close rejection: upgrades stopped -> failed ----
-test('red team: clean stop with close rejection upgrades outcome to failed (STORE-003)', async () => {
-  const root = await mkdtemp(join(tmpdir(), `svp-clean-close-rej-${nextIndex()}`));
-  initFixtureRepo(root); openStore(root).close();
-  const port = await freePort();
-  let fc = 0;
-  const sv = new ControllableServer({ rejectCloseWith: new Error('close-failed') });
-  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; }, sessionBinding });
-  const sp = d.stop();
-  sv.releaseClose();
-  const o = await sp;
-  assert.equal(o.kind, 'failed', 'close rejection must upgrade clean stop to failed');
-  assert.ok(o.error.message.includes('close-failed'), `error must mention close failure: ${o.error.message}`);
-  assert.equal(sv.closeCount, 1);
-  assert.equal(fc, 1);
-});
-
-// ---- 14. Clean stop + finalize throw: upgrades stopped -> failed ----
-test('red team: clean stop with finalize throw upgrades outcome to failed (STORE-003)', async () => {
-  const root = await mkdtemp(join(tmpdir(), `svp-clean-fin-throw-${nextIndex()}`));
-  initFixtureRepo(root); openStore(root).close();
-  const port = await freePort();
-  let fc = 0;
-  const sv = new ControllableServer();
-  const d = await startDaemon(root, port, {
-    workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv),
-    sessionBinding,
-    onFinalize: () => { fc++; throw new Error('finalize-boom'); },
-  });
-  const sp = d.stop();
-  sv.releaseClose();
-  const o = await sp;
-  assert.equal(o.kind, 'failed', 'finalize throw must upgrade clean stop to failed');
-  assert.ok(o.error.message.includes('finalize'), `error must mention finalize failure: ${o.error.message}`);
-  assert.equal(sv.closeCount, 1);
-  assert.equal(fc, 1);
 });

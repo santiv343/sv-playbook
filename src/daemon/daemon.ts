@@ -7,7 +7,7 @@ import { DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.co
 import { SVP_DIR } from '../db/store.constants.js';
 import { runWithContext, createContext } from '../runtime/context.js';
 import type { Store } from '../db/store.types.js';
-import type { DaemonInstance, DaemonOptions, DaemonOutcome, SessionBindingPort } from './daemon.types.js';
+import type { DaemonInstance, DaemonOptions, DaemonOutcome, HttpServerPort, SessionBindingPort } from './daemon.types.js';
 
 const ERR_INVALID_JSON = 'invalid json';
 const ERR_INVALID_TOKEN = 'invalid token';
@@ -98,7 +98,7 @@ function handleExec(token: string, req: IncomingMessage, res: ServerResponse, re
     }
     const enrichedCtx = createContext(parsed.ctx.cwd, sid);
 
-    runWithContext(enrichedCtx, () => opts.commandExecution.execute({ argv: parsed.argv, cwd: parsed.ctx.cwd })).then((result) => {
+    Promise.resolve().then(() => runWithContext(enrichedCtx, () => opts.commandExecution.execute({ argv: parsed.argv, cwd: parsed.ctx.cwd }))).then((result) => {
       jsonResponse(res, 200, { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, daemonVersion: DAEMON_VERSION, sessionId: sid });
     }).catch(() => {
       jsonResponse(res, 500, { error: ERR_EXEC_REJECTED });
@@ -154,95 +154,129 @@ function notFound(res: ServerResponse): void {
 }
 
 export function startDaemon(repoRoot: string, port: number, opts: DaemonOptions): Promise<DaemonInstance> {
-  return new Promise((resolve, reject) => {
-    const svpDir = join(repoRoot, SVP_DIR);
-    mkdirSync(svpDir, { recursive: true, mode: 0o700 });
-    const lockPath = join(svpDir, DAEMON_LOCK_FILE);
-    const tokenPath = join(svpDir, DAEMON_TOKEN_FILE);
+  return new Promise((resolve, reject) => { startDaemonInner(resolve, reject, repoRoot, port, opts); });
+}
 
-    if (isDaemonRunning(repoRoot)) { reject(new Error('daemon is already running for this repo')); return; }
-
-    const token = generateToken();
-    try { acquireLock(lockPath, process.pid, port); } catch (err: unknown) { reject(err instanceof Error ? err : new Error(String(err))); return; }
-
-    let store: Store;
-    setDaemonStarting(true);
-    try { store = openStore(repoRoot); } catch (err: unknown) {
-      setDaemonStarting(false); try { unlinkSync(lockPath); } catch { /* best-effort */ }
-      reject(new Error(`failed to open store: ${String(err)}`));
+function createTerminate(
+  context: {
+    state: { terminationStarted: boolean; terminationOutcome: DaemonOutcome };
+    listenerRef: { current: HttpServerPort };
+    evidence: string[];
+    startSettled: { value: boolean };
+    daemonState: { value: 'running' | 'stopping' | 'stopped' };
+    lifecycleComplete: ((outcome: DaemonOutcome) => void) | null;
+    reject: (reason: unknown) => void;
+    resolve: (value: DaemonInstance | PromiseLike<DaemonInstance>) => void;
+    finalize: () => void;
+    onFinalize: (() => void) | undefined;
+  },
+): (outcome: DaemonOutcome) => void {
+  return (outcome: DaemonOutcome): void => {
+    const s = context.state;
+    if (s.terminationStarted) {
+      if (outcome.kind === 'failed' && s.terminationOutcome.kind === 'stopped') s.terminationOutcome = outcome;
       return;
     }
-    setDaemonStarting(false);
-    setDaemonStore(store);
-
-    const sessionBinding = opts.sessionBinding;
-
-    const evidence: string[] = [];
-    const finalize = (): void => {
-      setDaemonStore(null);
-      try { store.close(); } catch (e: unknown) { evidence.push(`store:${e instanceof Error ? e.message : String(e)}`); }
-      try { unlinkSync(lockPath); } catch (e: unknown) { evidence.push(`lock:${e instanceof Error ? e.message : String(e)}`); }
-      try { unlinkSync(tokenPath); } catch (e: unknown) { evidence.push(`token:${e instanceof Error ? e.message : String(e)}`); }
-    };
-
-    try {
-      store.db.exec('BEGIN EXCLUSIVE'); store.db.exec('COMMIT');
-      writeTokenFileOwnerOnly(tokenPath, token);
-    } catch (err: unknown) { finalize(); reject(new Error(`startup failed: ${String(err)}`)); return; }
-
-    let daemonState: 'running' | 'stopping' | 'stopped' = 'running';
-    const getState = (): 'running' | 'stopping' | 'stopped' => daemonState;
-    let lifecycleComplete: ((outcome: DaemonOutcome) => void) | null = null;
-    let terminationOutcome: DaemonOutcome = { kind: 'stopped' };
-    let terminationStarted = false;
-    const lifecyclePromise = new Promise<DaemonOutcome>((resolveLifecycle) => { lifecycleComplete = (outcome) => { resolveLifecycle(outcome); }; });
-    let startSettled = false;
-
-    const noopListener: import('./daemon.types.js').HttpServerPort = { listen: () => Promise.resolve(), close: () => Promise.resolve(), onError: () => {} };
-    let listener: import('./daemon.types.js').HttpServerPort = noopListener;
-
-    const terminate = (outcome: DaemonOutcome): void => {
-      if (terminationStarted) {
-        if (outcome.kind === 'failed' && terminationOutcome.kind === 'stopped') terminationOutcome = outcome;
-        return;
+    s.terminationStarted = true;
+    s.terminationOutcome = outcome;
+    const done = (): void => {
+      context.daemonState.value = 'stopped';
+      context.finalize();
+      try { context.onFinalize?.(); } catch (e: unknown) { context.evidence.push(`onFinalize:${e instanceof Error ? e.message : String(e)}`); }
+      if (s.terminationOutcome.kind === 'stopped' && context.evidence.length > 0) {
+        s.terminationOutcome = { kind: 'failed', error: new Error(`cleanup errors: ${context.evidence.join('; ')}`) };
       }
-      terminationStarted = true;
-      terminationOutcome = outcome;
-      const done = (): void => {
-        daemonState = 'stopped';
-        finalize();
-        try { opts.onFinalize?.(); } catch (e: unknown) { evidence.push(`onFinalize:${e instanceof Error ? e.message : String(e)}`); }
-        if (terminationOutcome.kind === 'stopped' && evidence.length > 0) {
-          terminationOutcome = { kind: 'failed', error: new Error(`cleanup errors: ${evidence.join('; ')}`) };
-        }
-        if (!startSettled) reject(terminationOutcome.kind === 'failed' ? terminationOutcome.error : Error('daemon terminated before start'));
-        lifecycleComplete?.(terminationOutcome);
-      };
-      void listener.close().then(done, (err: unknown) => {
-        evidence.push(`close:${err instanceof Error ? err.message : String(err)}`);
-        done();
-      });
+      if (!context.startSettled.value) context.reject(s.terminationOutcome.kind === 'failed' ? s.terminationOutcome.error : Error('daemon terminated before start'));
+      context.lifecycleComplete?.(s.terminationOutcome);
     };
-
-    listener = opts.httpServerFactory.create((req, res) => { routeRequest(token, req, res, repoRoot, opts, shutdown, getState, sessionBinding); });
-
-    const shutdown = (): Promise<DaemonOutcome> => {
-      if (daemonState !== 'running') return lifecyclePromise;
-      daemonState = 'stopping';
-      terminate({ kind: 'stopped' });
-      return lifecyclePromise;
-    };
-
-    listener.onError((err: Error) => { terminate({ kind: 'failed', error: err }); });
-
-    void listener.listen(port, '127.0.0.1').then(() => {
-      // Guard: if terminate already started (e.g., listen error fired spuriously),
-      // never resolve the daemon instance for a terminated listener.
-      if (terminationStarted) return;
-      startSettled = true;
-      resolve({ port, token, stop: shutdown, state: getState, done: lifecyclePromise });
-    }, (err: unknown) => {
-      terminate({ kind: 'failed', error: err instanceof Error ? err : new Error(String(err)) });
+    void context.listenerRef.current.close().then(done, (err: unknown) => {
+      context.evidence.push(`close:${err instanceof Error ? err.message : String(err)}`);
+      done();
     });
+  };
+}
+
+interface DaemonContext {
+  resolve: (value: DaemonInstance | PromiseLike<DaemonInstance>) => void;
+  reject: (reason: unknown) => void;
+  repoRoot: string;
+  port: number;
+  opts: DaemonOptions;
+  lockPath: string;
+  tokenPath: string;
+  evidence: string[];
+}
+
+function setupDaemon(ctx: DaemonContext): { token: string; sessionBinding: SessionBindingPort; finalize: () => void; store: Store } | null {
+  if (isDaemonRunning(ctx.repoRoot)) { ctx.reject(new Error('daemon is already running for this repo')); return null; }
+  const token = generateToken();
+  try { acquireLock(ctx.lockPath, process.pid, ctx.port); } catch (err: unknown) { ctx.reject(err instanceof Error ? err : new Error(String(err))); return null; }
+  setDaemonStarting(true);
+  let store: Store;
+  try { store = openStore(ctx.repoRoot); } catch (err: unknown) {
+    setDaemonStarting(false); try { unlinkSync(ctx.lockPath); } catch { /* best-effort */ }
+    ctx.reject(new Error(`failed to open store: ${String(err)}`)); return null;
+  }
+  setDaemonStarting(false);
+  setDaemonStore(store);
+  const evidence: string[] = [];
+  const finalize = (): void => {
+    setDaemonStore(null);
+    try { store.close(); } catch (e: unknown) { evidence.push(`store:${e instanceof Error ? e.message : String(e)}`); }
+    try { unlinkSync(ctx.lockPath); } catch (e: unknown) { evidence.push(`lock:${e instanceof Error ? e.message : String(e)}`); }
+    try { unlinkSync(ctx.tokenPath); } catch (e: unknown) { evidence.push(`token:${e instanceof Error ? e.message : String(e)}`); }
+  };
+  try { store.db.exec('BEGIN EXCLUSIVE'); store.db.exec('COMMIT'); writeTokenFileOwnerOnly(ctx.tokenPath, token); }
+  catch (err: unknown) { finalize(); ctx.reject(new Error(`startup failed: ${String(err)}`)); return null; }
+  ctx.evidence = evidence;
+  return { token, sessionBinding: ctx.opts.sessionBinding, finalize, store };
+}
+
+function startDaemonInner(
+  resolve: (value: DaemonInstance | PromiseLike<DaemonInstance>) => void,
+  reject: (reason: unknown) => void,
+  repoRoot: string, port: number, opts: DaemonOptions,
+): void {
+  const svpDir = join(repoRoot, SVP_DIR);
+  mkdirSync(svpDir, { recursive: true, mode: 0o700 });
+  const lockPath = join(svpDir, DAEMON_LOCK_FILE);
+  const tokenPath = join(svpDir, DAEMON_TOKEN_FILE);
+
+  const daemonCtx: DaemonContext = { resolve, reject, repoRoot, port, opts, lockPath, tokenPath, evidence: [] };
+  const setup = setupDaemon(daemonCtx);
+  if (setup === null) return;
+
+  const termState: { terminationStarted: boolean; terminationOutcome: DaemonOutcome } = { terminationStarted: false, terminationOutcome: { kind: 'stopped' } };
+  const daemonState: { value: 'running' | 'stopping' | 'stopped' } = { value: 'running' };
+  const getState = (): 'running' | 'stopping' | 'stopped' => daemonState.value;
+  let lifecycleComplete: ((outcome: DaemonOutcome) => void) | null = null;
+  const lifecyclePromise = new Promise<DaemonOutcome>((rl) => { lifecycleComplete = (o) => { rl(o); }; });
+  const startSettled: { value: boolean } = { value: false };
+
+  const noopListener: HttpServerPort = { listen: () => Promise.resolve(), close: () => Promise.resolve(), onError: () => {} };
+  const listenerRef: { current: HttpServerPort } = { current: noopListener };
+
+  const termCtx = {
+    state: termState, listenerRef, evidence: daemonCtx.evidence,
+    startSettled, daemonState, lifecycleComplete, reject, resolve,
+    finalize: setup.finalize, onFinalize: opts.onFinalize,
+  };
+  const terminate = createTerminate(termCtx);
+
+  listenerRef.current = opts.httpServerFactory.create((req, r) => { routeRequest(setup.token, req, r, repoRoot, opts, shutdown, getState, setup.sessionBinding); });
+  const shutdown = (): Promise<DaemonOutcome> => {
+    if (daemonState.value !== 'running') return lifecyclePromise;
+    daemonState.value = 'stopping';
+    terminate({ kind: 'stopped' });
+    return lifecyclePromise;
+  };
+
+  listenerRef.current.onError((err: Error) => { terminate({ kind: 'failed', error: err }); });
+  void listenerRef.current.listen(port, '127.0.0.1').then(() => {
+    if (termState.terminationStarted) return;
+    startSettled.value = true;
+    resolve({ port, token: setup.token, stop: shutdown, state: getState, done: lifecyclePromise });
+  }, (err: unknown) => {
+    terminate({ kind: 'failed', error: err instanceof Error ? err : new Error(String(err)) });
   });
 }

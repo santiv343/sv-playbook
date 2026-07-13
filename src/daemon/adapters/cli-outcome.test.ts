@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { EXIT } from '../../cli/command.constants.js';
 import { daemonOutcomeToExitCode } from './cli-outcome.js';
 import type { Io } from '../../cli/command.types.js';
-import type { DaemonOutcome } from '../daemon.types.js';
 
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = [];
