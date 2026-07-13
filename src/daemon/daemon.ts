@@ -4,11 +4,10 @@ import { closeSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting } from '../db/store.js';
 import { DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
-import { EXIT } from '../cli/command.constants.js';
 import { SVP_DIR } from '../db/store.constants.js';
 import { runWithContext, createContext } from '../runtime/context.js';
 import type { Store } from '../db/store.types.js';
-import type { DaemonInstance, DaemonOptions, DaemonOutcome } from './daemon.types.js';
+import type { DaemonInstance, DaemonOptions, DaemonOutcome, HttpServerPort } from './daemon.types.js';
 
 const ERR_INVALID_JSON = 'invalid json';
 const ERR_INVALID_TOKEN = 'invalid token';
@@ -16,6 +15,7 @@ const ERR_REQ_READ_FAILED = 'request read failed';
 const ERR_INVALID_CONTEXT = 'invalid context (missing or outside repo)';
 const ERR_INVALID_ARGV = 'argv required';
 const ERR_UNAVAILABLE = 'service unavailable (daemon is stopping)';
+const ERR_EXEC_REJECTED = 'command execution rejected';
 
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.length > 0 && v.every((a) => typeof a === 'string');
@@ -87,7 +87,7 @@ function handleExec(token: string, req: IncomingMessage, res: ServerResponse, re
     runWithContext(parsed.ctx, () => opts.commandExecution.execute({ argv: parsed.argv, cwd: parsed.ctx.cwd })).then((result) => {
       jsonResponse(res, 200, { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, daemonVersion: DAEMON_VERSION });
     }).catch((err: unknown) => {
-      jsonResponse(res, 200, { exitCode: EXIT.SYSTEM, stdout: '', stderr: String(err), daemonVersion: DAEMON_VERSION });
+      jsonResponse(res, 500, { error: ERR_EXEC_REJECTED, detail: String(err) });
     });
   }).catch(() => {
     jsonResponse(res, 400, { error: ERR_REQ_READ_FAILED });
@@ -105,7 +105,7 @@ function handleShutdown(token: string, req: IncomingMessage, res: ServerResponse
     } catch { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return; }
     if (parsedToken !== token) { jsonResponse(res, 403, { error: ERR_INVALID_TOKEN }); return; }
     jsonResponse(res, 200, { status: 'shutdown' });
-    cleanup().then(() => process.exit(0)).catch(() => process.exit(1));
+    void cleanup();
   }).catch(() => { jsonResponse(res, 400, { error: ERR_REQ_READ_FAILED }); });
 }
 
@@ -172,41 +172,43 @@ export function startDaemon(repoRoot: string, port: number, opts: DaemonOptions)
     const getState = (): 'running' | 'stopping' | 'stopped' => daemonState;
     let lifecycleComplete: ((outcome: DaemonOutcome) => void) | null = null;
     let terminationOutcome: DaemonOutcome = { kind: 'stopped' };
+    let terminationStarted = false;
     const lifecyclePromise = new Promise<DaemonOutcome>((resolveLifecycle) => { lifecycleComplete = (outcome) => { resolveLifecycle(outcome); }; });
     let startSettled = false;
 
-    const finalizeOnce = (): void => {
-      if (daemonState === 'stopped') return;
-      daemonState = 'stopped';
-      finalize();
-      opts.onFinalize?.();
-      lifecycleComplete?.(terminationOutcome);
+    // Noop listener — replaced by real listener once created. Guarantees
+    // terminate() always has a valid close() regardless of failure timing.
+    const noopListener: HttpServerPort = { listen: () => Promise.resolve(), close: () => Promise.resolve(), onError: () => {} };
+    let listener: ReturnType<typeof opts.httpServerFactory.create> = noopListener;
+
+    const terminate = (outcome: DaemonOutcome): void => {
+      if (terminationStarted) {
+        if (outcome.kind === 'failed' && terminationOutcome.kind === 'stopped') terminationOutcome = outcome;
+        return;
+      }
+      terminationStarted = true;
+      terminationOutcome = outcome;
+      if (!startSettled) reject(outcome.kind === 'failed' ? outcome.error : new Error('daemon terminated before start'));
+      const done = (): void => { daemonState = 'stopped'; finalize(); opts.onFinalize?.(); lifecycleComplete?.(terminationOutcome); };
+      void listener.close().then(done, done);
     };
 
-    const listener = opts.httpServerFactory.create((req, res) => { routeRequest(token, req, res, repoRoot, opts, shutdown, getState); });
-
-    const safeFinalize = (): void => { void listener.close().then(() => { finalizeOnce(); }, () => { finalizeOnce(); }); };
+    listener = opts.httpServerFactory.create((req, res) => { routeRequest(token, req, res, repoRoot, opts, shutdown, getState); });
 
     const shutdown = (): Promise<DaemonOutcome> => {
       if (daemonState !== 'running') return lifecyclePromise;
       daemonState = 'stopping';
-      terminationOutcome = { kind: 'stopped' };
-      safeFinalize();
+      terminate({ kind: 'stopped' });
       return lifecyclePromise;
     };
 
-    listener.onError((err: Error) => {
-      terminationOutcome = { kind: 'failed', error: err };
-      if (!startSettled) {
-        void listener.close().then(() => { daemonState = 'stopped'; finalize(); opts.onFinalize?.(); lifecycleComplete?.(terminationOutcome); reject(err); }, () => { daemonState = 'stopped'; finalize(); opts.onFinalize?.(); lifecycleComplete?.(terminationOutcome); reject(err); });
-        return;
-      }
-      safeFinalize();
-    });
+    listener.onError((err: Error) => { terminate({ kind: 'failed', error: err }); });
 
-    void listener.listen(port, '127.0.0.1').then(() => { startSettled = true; resolve({
-      port, token, stop: shutdown, state: getState,
-      done: lifecyclePromise,
-    }); });
+    void listener.listen(port, '127.0.0.1').then(() => {
+      startSettled = true;
+      resolve({ port, token, stop: shutdown, state: getState, done: lifecyclePromise });
+    }, (err: unknown) => {
+      terminate({ kind: 'failed', error: err instanceof Error ? err : new Error(String(err)) });
+    });
   });
 }
