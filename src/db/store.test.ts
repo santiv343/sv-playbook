@@ -99,30 +99,27 @@ test('doctor flags a review packet whose PR is already merged', async () => {
   store.close();
 });
 
-test('the store runs in WAL mode and two concurrent writers both commit', async () => {
+test('the store runs in WAL mode with EXCLUSIVE locking (single-writer enforcement)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-wal-'));
   execFileSync('git', ['init'], { cwd: root });
   const store = openStore(root);
 
-  const sid1 = randomUUID();
-  const sid2 = randomUUID();
-  store.db.exec(`INSERT INTO sessions (id, worktree, started_at) VALUES ('${sid1}', '/tmp/wt1', datetime('now'))`);
-  store.db.exec(`INSERT INTO sessions (id, worktree, started_at) VALUES ('${sid2}', '/tmp/wt2', datetime('now'))`);
-
   const modeRow = store.db.prepare('PRAGMA journal_mode').get();
   assert.equal(stringColumn(modeRow, 'journal_mode'), 'wal');
 
+  const lockRow = store.db.prepare('PRAGMA locking_mode').get();
+  assert.equal(stringColumn(lockRow, 'locking_mode'), 'exclusive');
+
+  // EXCLUSIVE mode holds the write lock after the first write; a second
+  // connection attempting to write receives SQLITE_BUSY.
+  store.db.exec(`INSERT INTO sessions (id, worktree, started_at) VALUES ('${randomUUID()}', '/tmp/wt1', datetime('now'))`);
+
   const dbPath = join(root, '.svp', 'playbook.sqlite');
   const db2 = new DatabaseSync(dbPath);
-
-  db2.exec(`INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('pk1', 'T1', '/tmp', 'draft', '[]', datetime('now'), datetime('now'))`);
-
-  store.db.exec(`INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('pk2', 'T2', '/tmp', 'draft', '[]', datetime('now'), datetime('now'))`);
-
-  const pk1 = store.db.prepare("SELECT id FROM packets WHERE id = 'pk1'").get();
-  const pk2 = store.db.prepare("SELECT id FROM packets WHERE id = 'pk2'").get();
-  assert.ok(pk1, 'writer 1 commit should be visible');
-  assert.ok(pk2, 'writer 2 commit should be visible');
+  assert.throws(
+    () => { db2.exec(`INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('pk1', 'T1', '/tmp', 'draft', '[]', datetime('now'), datetime('now'))`); },
+    /database is locked/,
+  );
 
   db2.close();
   store.close();

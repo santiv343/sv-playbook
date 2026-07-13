@@ -129,6 +129,7 @@ function applyPragmas(db: DatabaseSync): void {
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
+  db.exec('PRAGMA locking_mode = EXCLUSIVE;');
 }
 
 interface OpenStoreOptions {
@@ -307,7 +308,7 @@ function performMigration(db: DatabaseSync, repoRoot: string, currentVersion: nu
 }
 
 function assertStoreNotHeldByDaemon(repoRoot: string): void {
-  if (process.argv[2] === 'daemon') return;
+  if (process.argv[2] === 'daemon' || daemonStarting) return;
   if (isDaemonRunning(repoRoot)) {
     throw new StoreVersionError(
       `store is held by the daemon — run commands from the blessed root or start the daemon with \`sv-playbook daemon\``,
@@ -333,8 +334,37 @@ function checkVersionAndMigrate(db: DatabaseSync, repoRoot: string, options?: Op
   }
 }
 
+let daemonStore: Store | null = null;
+let realDaemonStore: Store | null = null;
+let daemonStarting = false;
+
+export function setDaemonStore(s: Store | null): void {
+  if (s === null) {
+    daemonStore = null;
+    realDaemonStore = null;
+  } else {
+    realDaemonStore = s;
+    daemonStore = {
+      db: s.db,
+      dir: s.dir,
+      close: () => {},
+    };
+  }
+}
+
+export function getDaemonStore(): Store | null {
+  return daemonStore;
+}
+
+export function setDaemonStarting(v: boolean): void {
+  daemonStarting = v;
+}
+
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   assertStoreNotHeldByDaemon(repoRoot);
+  if (daemonStore !== null) {
+    return daemonStore;
+  }
   const dir = join(repoRoot, SVP_DIR);
   mkdirSync(dir, { recursive: true });
   const dbPath = join(dir, DB_FILE);

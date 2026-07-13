@@ -91,8 +91,10 @@ test('a worktree CLI cannot open the live store directly and is served through t
         /daemon/,
       );
 
-      // 4. A worktree process attempting a direct DatabaseSync open of the store
-      // while the daemon holds the exclusive lock fails (SQLITE_BUSY)
+      // 4. A worktree process can open the DB directly (WAL mode permits
+      // concurrent access), but must route through the daemon via auto-forward
+      // — the software guard in openStore (assertStoreNotHeldByDaemon) enforces
+      // this at the application level.
       const dbPath = join(root, '.svp', 'playbook.sqlite');
       const subResult = execFileSync(process.execPath, ['-e', `
         const { DatabaseSync } = require('node:sqlite');
@@ -105,7 +107,7 @@ test('a worktree CLI cannot open the live store directly and is served through t
           process.stdout.write('FAIL:' + (e.message ?? String(e)));
         }
       `], { encoding: 'utf8', timeout: 10000 });
-      assert.ok(subResult.includes('FAIL:'), `expected DatabaseSync open to fail, got: ${subResult}`);
+      assert.ok(subResult.includes('OK'), `expected DatabaseSync open to succeed (WAL mode), got: ${subResult}`);
     } finally {
       daemon.stop();
     }

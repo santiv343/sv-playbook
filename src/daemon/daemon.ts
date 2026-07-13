@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
-import { openStore, isDaemonRunning } from '../db/store.js';
+import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting } from '../db/store.js';
 import { main } from '../cli/main.js';
 import { DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
 import { EXIT } from '../cli/command.constants.js';
@@ -132,21 +132,11 @@ export function startDaemon(repoRoot: string, port: number): Promise<DaemonInsta
 
     const token = generateToken();
 
-    let store: Store;
-    try {
-      store = openStore(repoRoot);
-      store.db.exec('PRAGMA locking_mode = EXCLUSIVE');
-      store.db.exec('BEGIN EXCLUSIVE');
-    } catch (err: unknown) {
-      reject(new Error(`failed to open store in exclusive mode: ${String(err)}`));
-      return;
-    }
-
+    // 1. Lock file FIRST — atomic single-daemon enforcement (closes TOCTOU
+    //    window between isDaemonRunning check and exclusive resource access).
     try {
       writeLockFileAtomically(lockPath, process.pid, port);
     } catch (err: unknown) {
-      store.db.exec('ROLLBACK');
-      store.close();
       let msg: string;
       if (err instanceof Error && 'code' in err) {
         const c = Reflect.get(err, 'code');
@@ -160,24 +150,38 @@ export function startDaemon(repoRoot: string, port: number): Promise<DaemonInsta
       return;
     }
 
+    // 2. Open store — we hold the lock, safe to proceed
+    let store: Store;
+    setDaemonStarting(true);
+    try {
+      store = openStore(repoRoot);
+    } catch (err: unknown) {
+      setDaemonStarting(false);
+      try { unlinkSync(lockPath); } catch { /* best-effort */ }
+      reject(new Error(`failed to open store: ${String(err)}`));
+      return;
+    }
+    setDaemonStarting(false);
+    // 3. Register shared store
+    setDaemonStore(store);
+
     writeTokenFileOwnerOnly(tokenPath, token);
 
     const server = createServer((req, res) => { handleRequest(token, req, res); });
 
     server.on('error', (err: NodeJS.ErrnoException) => {
-      store.db.exec('ROLLBACK');
+      setDaemonStore(null);
       store.close();
       reject(err);
     });
 
     server.listen(port, '127.0.0.1', () => {
-      store.db.exec('ROLLBACK');
       resolve({
         port,
         token,
         stop: () => {
           server.close();
-          store.db.exec('PRAGMA locking_mode = NORMAL');
+          setDaemonStore(null);
           store.close();
           try { unlinkSync(lockPath); } catch { /* best-effort */ }
           try { unlinkSync(tokenPath); } catch { /* best-effort */ }
