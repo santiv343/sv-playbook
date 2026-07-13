@@ -15,9 +15,10 @@ import { command as rebuild } from './rebuild.js';
 import { command as reconcile } from './reconcile.js';
 import { command as restore } from './restore.js';
 import { command as review } from './review.js';
+import { command as daemon } from './daemon.js';
 import { command as serve } from './serve.js';
 import { command as sprint } from './sprint.js';
 import { command as status } from './status.js';
 import { command as task } from './task.js';
 
-export const allCommands: readonly Command[] = [adopt, backup, check, constitution, describe, doctor, docs, handoff, import_, instructions, rebuild, reconcile, restore, review, serve, sprint, status, task];
+export const allCommands: readonly Command[] = [adopt, backup, check, constitution, daemon, describe, doctor, docs, handoff, import_, instructions, rebuild, reconcile, restore, review, serve, sprint, status, task];

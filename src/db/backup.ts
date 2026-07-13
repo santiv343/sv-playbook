@@ -229,6 +229,12 @@ function vacuumInto(sourcePath: string, destPath: string): void {
   try { db.exec(`VACUUM INTO '${destPath.replace(/'/g, "''")}'`); } finally { db.close(); }
 }
 
+function atomicReplace(source: string, target: string): void {
+  const tmp = join(dirname(target), `.${basename(target)}.tmp`);
+  copyFileSync(source, tmp);
+  try { renameSync(tmp, target); } finally { if (existsSync(tmp)) rmSync(tmp); }
+}
+
 function rawPreRestoreBackup(repoRoot: string, retention?: number, resolvedDir?: string): BackupReport {
   const dir = resolvedDir ?? resolveBackupsDir(repoRoot);
   mkdirSync(dir, { recursive: true });
@@ -265,7 +271,11 @@ export function createStateBackup(repoRoot: string, options: BackupOptions, reso
   const sqlitePath = join(dir, `${BACKUP_PREFIX}-${stampVal}.sqlite`);
   const metadataPath = sqlitePath.replace(/\.sqlite$/, '.json');
   const tempPath = join(dir, `.${BACKUP_PREFIX}-${stampVal}.sqlite.tmp`);
-  vacuumInto(dbPath(repoRoot), tempPath);
+  try {
+    vacuumInto(dbPath(repoRoot), tempPath);
+  } catch {
+    copyFileSync(dbPath(repoRoot), tempPath);
+  }
   if (existsSync(sqlitePath)) rmSync(sqlitePath);
   renameSync(tempPath, sqlitePath);
   const report: BackupReport = {
@@ -373,15 +383,7 @@ export function restoreStateBackup(repoRoot: string, backupPath: string, force: 
   validateBackup(backupPath);
 
   const target = liveDbPath;
-  const tempPath = join(dirname(target), `.${basename(target)}.tmp`);
-  copyFileSync(backupPath, tempPath);
-  try {
-    renameSync(tempPath, target);
-  } finally {
-    if (existsSync(tempPath)) {
-      rmSync(tempPath);
-    }
-  }
+  atomicReplace(backupPath, target);
 
   return { restoredFrom: backupPath, preRestoreBackup: preRestore };
 }

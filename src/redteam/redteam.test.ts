@@ -339,3 +339,6 @@ test('red team: store fixture DB is used during migration, never the shared .svp
   assert.ok(fixturePath.startsWith(root), 'fixture DB path must be under the test root');
   store.close();
 });
+
+// CHEAT 14 (worktree vs. daemon exclusive lock) and the STORE-003 worktree-CLI
+// refusal live in daemon.test.ts alongside the other daemon red-team tests.

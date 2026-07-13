@@ -8,6 +8,7 @@ export const sqlString = (value: string): string => `'${value.replaceAll("'", "'
 export const sqlInList = (values: readonly string[]): string => values.map(sqlString).join(', ');
 const TRANSITION_STATUSES = ['none', ...PACKET_STATUSES];
 export const EVENT_SCHEMA_MIGRATED = 'schema-migrated';
+export const WORKTREE_DAEMON_REQUIRED_TEXT = 'This is a git worktree. Start `sv-playbook daemon` at the repo root first.';
 export const EVENT_COMMANDS = [EVENT_TRANSITION, EVENT_NOTE, EVENT_TAKEOVER, EVENT_EVIDENCE, EVENT_IMPORTED, EVENT_SCHEMA_MIGRATED];
 
 export const SCHEMA = `
