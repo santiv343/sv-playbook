@@ -11,7 +11,10 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { openStore, isDaemonRunning } from '../db/store.js';
 import { startDaemon } from '../daemon/daemon.js';
-import { main } from '../cli/main.js';
+import { createCliCommandExecutionPort } from '../cli/daemon-adapter.js';
+import { createNodeHttpServerFactory } from '../cli/http-server-adapter.js';
+const cliCommandPort = createCliCommandExecutionPort();
+const httpServerFactory = createNodeHttpServerFactory();
 import { gitWorkspace } from '../runtime/workspace-git.js';
 
 function realCliEnv(): NodeJS.ProcessEnv {
@@ -117,7 +120,7 @@ test('red team: a worktree process cannot open the store directly while the daem
     });
   });
 
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, executeCommand: main });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory });
 
   try {
     assert.ok(isDaemonRunning(root));

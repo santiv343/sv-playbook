@@ -1,15 +1,34 @@
 export type DaemonOutcome = { kind: 'stopped' } | { kind: 'failed'; error: Error };
 
-export interface DaemonExecIo {
-  out(line: string): void;
-  err(line: string): void;
-  readonly outLines: string[];
-  readonly errLines: string[];
+export interface ControlCommandRequest {
+  readonly argv: readonly string[];
+  readonly cwd: string;
+}
+
+export interface ControlCommandResult {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export interface CommandExecutionPort {
+  execute(req: ControlCommandRequest): Promise<ControlCommandResult>;
+}
+
+export interface HttpServerPort {
+  listen(port: number, host: string): Promise<void>;
+  close(): Promise<void>;
+  onError(handler: (err: Error) => void): void;
+}
+
+export interface HttpServerFactoryPort {
+  create(handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void): HttpServerPort;
 }
 
 export interface DaemonOptions {
   readonly workspaceIdentity: import('../runtime/workspace.types.js').WorkspacePort;
-  executeCommand(argv: string[], io: DaemonExecIo): Promise<number>;
+  readonly commandExecution: CommandExecutionPort;
+  readonly httpServerFactory: HttpServerFactoryPort;
   onFinalize?: () => void;
 }
 

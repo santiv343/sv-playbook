@@ -1,5 +1,5 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { closeSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting } from '../db/store.js';
@@ -8,7 +8,7 @@ import { EXIT } from '../cli/command.constants.js';
 import { SVP_DIR } from '../db/store.constants.js';
 import { runWithContext, createContext } from '../runtime/context.js';
 import type { Store } from '../db/store.types.js';
-import type { DaemonExecIo, DaemonInstance, DaemonOptions, DaemonOutcome } from './daemon.types.js';
+import type { DaemonInstance, DaemonOptions, DaemonOutcome } from './daemon.types.js';
 
 const ERR_INVALID_JSON = 'invalid json';
 const ERR_INVALID_TOKEN = 'invalid token';
@@ -50,16 +50,6 @@ function jsonResponse(res: ServerResponse, code: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-function buildExecIo(): DaemonExecIo {
-  const outLines: string[] = [];
-  const errLines: string[] = [];
-  return {
-    outLines, errLines,
-    out: (l: string) => { outLines.push(l); },
-    err: (l: string) => { errLines.push(l); },
-  };
-}
-
 function contextFromPayload(parsed: object, repoRoot: string, ws: import('../runtime/workspace.types.js').WorkspacePort): ReturnType<typeof createContext> | null {
   const rawCtx: unknown = Reflect.get(parsed, 'context');
   if (typeof rawCtx !== 'object' || rawCtx === null) return null;
@@ -94,11 +84,8 @@ function handleExec(token: string, req: IncomingMessage, res: ServerResponse, re
     const parsed = parseExecRequest(raw, token, res, repoRoot, opts);
     if (parsed === null) return;
 
-    const execIo = buildExecIo();
-    runWithContext(parsed.ctx, () => opts.executeCommand(parsed.argv, execIo)).then((exitCode) => {
-      const stdout = execIo.outLines.join('\n') + (execIo.outLines.length > 0 ? '\n' : '');
-      const stderr = execIo.errLines.join('\n') + (execIo.errLines.length > 0 ? '\n' : '');
-      jsonResponse(res, 200, { exitCode, stdout, stderr, daemonVersion: DAEMON_VERSION });
+    runWithContext(parsed.ctx, () => opts.commandExecution.execute({ argv: parsed.argv, cwd: parsed.ctx.cwd })).then((result) => {
+      jsonResponse(res, 200, { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, daemonVersion: DAEMON_VERSION });
     }).catch((err: unknown) => {
       jsonResponse(res, 200, { exitCode: EXIT.SYSTEM, stdout: '', stderr: String(err), daemonVersion: DAEMON_VERSION });
     });
@@ -188,30 +175,36 @@ export function startDaemon(repoRoot: string, port: number, opts: DaemonOptions)
     const lifecyclePromise = new Promise<DaemonOutcome>((resolveLifecycle) => { lifecycleComplete = (outcome) => { resolveLifecycle(outcome); }; });
     let startSettled = false;
 
-    const finalizeOnce = (outcome?: DaemonOutcome): void => {
+    const finalizeOnce = (): void => {
       if (daemonState === 'stopped') return;
-      if (outcome) terminationOutcome = outcome;
       daemonState = 'stopped';
       finalize();
       opts.onFinalize?.();
       lifecycleComplete?.(terminationOutcome);
     };
 
+    const listener = opts.httpServerFactory.create((req, res) => { routeRequest(token, req, res, repoRoot, opts, shutdown, getState); });
+
+    const safeFinalize = (): void => { void listener.close().then(() => { finalizeOnce(); }, () => { finalizeOnce(); }); };
+
     const shutdown = (): Promise<DaemonOutcome> => {
       if (daemonState !== 'running') return lifecyclePromise;
       daemonState = 'stopping';
-      server.close(() => { finalizeOnce({ kind: 'stopped' }); });
+      terminationOutcome = { kind: 'stopped' };
+      safeFinalize();
       return lifecyclePromise;
     };
 
-    const server = createServer((req, res) => { routeRequest(token, req, res, repoRoot, opts, shutdown, getState); });
-
-    server.on('error', (err: NodeJS.ErrnoException) => {
-      if (!startSettled) { finalizeOnce({ kind: 'failed', error: err }); reject(err); return; }
-      finalizeOnce({ kind: 'failed', error: err });
+    listener.onError((err: Error) => {
+      terminationOutcome = { kind: 'failed', error: err };
+      if (!startSettled) {
+        void listener.close().then(() => { daemonState = 'stopped'; finalize(); opts.onFinalize?.(); lifecycleComplete?.(terminationOutcome); reject(err); }, () => { daemonState = 'stopped'; finalize(); opts.onFinalize?.(); lifecycleComplete?.(terminationOutcome); reject(err); });
+        return;
+      }
+      safeFinalize();
     });
 
-    server.listen(port, '127.0.0.1', () => { startSettled = true; resolve({
+    void listener.listen(port, '127.0.0.1').then(() => { startSettled = true; resolve({
       port, token, stop: shutdown, state: getState,
       done: lifecyclePromise,
     }); });
