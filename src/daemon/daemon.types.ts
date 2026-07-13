@@ -36,7 +36,7 @@ export interface DaemonOptions {
   readonly commandExecution: CommandExecutionPort;
   readonly httpServerFactory: HttpServerFactoryPort;
   readonly sessionBinding: SessionBindingPort;
-  readonly fileSystem: DaemonFilesystemPort;
+  readonly fileSystem?: DaemonFilesystemPort;
   onFinalize?: () => void;
 }
 
