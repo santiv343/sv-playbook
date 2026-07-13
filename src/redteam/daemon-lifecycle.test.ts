@@ -18,7 +18,7 @@ import type { HttpServerFactoryPort, HttpServerPort } from '../daemon/daemon.typ
 import { createStoreSessionBinding } from '../daemon/adapters/local-store-session-binding.js';
 const sessionBinding = createStoreSessionBinding();
 
-// ---- ControllableServer: Promise-latch close control ──────────────────
+// ---- ControllableServer: Promise-latch close control ------------------
 class ControllableServer implements HttpServerPort {
   errorHandler: ((err: Error) => void) | null = null;
   closeCount = 0;
@@ -55,6 +55,14 @@ class ControllableServer implements HttpServerPort {
   releaseClose(): void { this._resolveReleaseClose?.(); }
   onError(h: (err: Error) => void) { this.errorHandler = h; }
   induceError(err: Error) { this.errorHandler?.(err); }
+}
+
+function deadline<T>(ms: number, msg: string): { promise: Promise<T>; clear: () => void } {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const promise = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(msg)), ms);
+  });
+  return { promise, clear: () => { if (timer !== null) { clearTimeout(timer); timer = null; } } };
 }
 
 function cf(s: HttpServerPort): HttpServerFactoryPort { return { create: () => s }; }
@@ -108,7 +116,7 @@ test('red team: stop drains in-flight exec handlers — deterministic barrier (S
   } finally { if (timer) clearTimeout(timer); await daemon.stop(); }
 });
 
-// ---- 2. Exec rejected 503 after stop ──
+// ---- 2. Exec rejected 503 after stop --
 test('red team: exec requests are rejected with 503 or connection refused after stop (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-stop-rej-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -125,7 +133,7 @@ test('red team: exec requests are rejected with 503 or connection refused after 
   }
 });
 
-// ---- 3. Repeated errors: once, first preserved ──
+// ---- 3. Repeated errors: once, first preserved --
 test('red team: repeated post-start errors — once close+finalize, first error preserved (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-rep-err-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -143,7 +151,7 @@ test('red team: repeated post-start errors — once close+finalize, first error 
   assert.equal(fc, 1);
 });
 
-// ---- 4. Stop→error before close: error wins ──
+// ---- 4. Stop→error before close: error wins --
 test('red team: stop then error before close — outcome fails, not stops (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-stop-err-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -162,7 +170,7 @@ test('red team: stop then error before close — outcome fails, not stops (STORE
   assert.equal(fc, 1);
 });
 
-// ---- 5. Error→stop: outcome stays failed ──
+// ---- 5. Error→stop: outcome stays failed --
 test('red team: error then stop — stop must not overwrite failed outcome (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-err-stop-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -181,7 +189,7 @@ test('red team: error then stop — stop must not overwrite failed outcome (STOR
   assert.equal(fc, 1);
 });
 
-// ---- 6. Listen rejection: rejects after close+finalize ──
+// ---- 6. Listen rejection: rejects after close+finalize --
 test('red team: listen rejection rejects after close+finalize, not early (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-listen-rej-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -196,7 +204,7 @@ test('red team: listen rejection rejects after close+finalize, not early (STORE-
   assert.equal(fc, 1);
 });
 
-// ---- 7. HTTP 500 stable error, no detail leak ──
+// ---- 7. HTTP 500 stable error, no detail leak --
 test('red team: exec port rejection returns HTTP 500 with stable error, no detail leak (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-500-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -221,6 +229,8 @@ test('red team: shutdown endpoint does not call process.exit — async child sur
   const port = await freePort();
 
   let child: ReturnType<typeof spawn> | null = null;
+  let exited: Promise<number | null> = Promise.resolve<number | null>(null);
+  const cleanupErrors: string[] = [];
   try {
     child = spawn(process.execPath, [binPath, 'daemon', '--port', String(port)], {
       cwd: root, env: realCliEnv(), stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000,
@@ -236,16 +246,13 @@ test('red team: shutdown endpoint does not call process.exit — async child sur
       });
     });
 
-    const exited = new Promise<number | null>((resolveExit) => {
+    exited = new Promise<number | null>((resolveExit) => {
       childRef.on('exit', (c) => { resolveExit(c); });
     });
 
-    // bounded timeout: readiness failure = test failure, NOT silent pass
-    await Promise.race([
-      ready,
-      exited.then(() => { throw new Error('daemon exited before ready'); }),
-      new Promise<never>((_, reject) => { setTimeout(() => { reject(new Error('daemon not ready within 10s')); }, 10000); }),
-    ]);
+    const rd = deadline<void>(10000, 'daemon not ready');
+    await Promise.race([ready, exited.then(() => { throw new Error('daemon exited before ready'); }), rd.promise]);
+    rd.clear();
 
     const { readFile } = await import('node:fs/promises');
     const token = (await readFile(join(root, '.svp', '.svp-daemon-token'), 'utf8')).trim().split('\n')[0] ?? '';
@@ -255,17 +262,32 @@ test('red team: shutdown endpoint does not call process.exit — async child sur
     assert.equal(sr.statusCode, 200, 'shutdown must respond 200');
     assert.ok(sr.body.includes('shutdown'), `body: ${sr.body}`);
 
-    const exitCode = await Promise.race([
-      exited,
-      new Promise<number | null>((_, reject) => { setTimeout(() => { reject(new Error('child did not exit within 10s')); }, 10000); }),
-    ]);
+    const ed = deadline<number | null>(10000, 'child did not exit');
+    const exitCode = await Promise.race([exited, ed.promise]);
+    ed.clear();
     assert.equal(exitCode, 0, 'child must exit 0 after shutdown');
   } finally {
-    if (child !== null && child.exitCode === null) { child.kill(); }
+    if (child !== null && child.exitCode === null) {
+      try { child.kill(); } catch (e: unknown) { cleanupErrors.push(`kill:${e instanceof Error ? e.message : String(e)}`); }
+      const kd = deadline<number | null>(5000, 'child did not exit after kill');
+      try {
+        const code = await Promise.race([exited, kd.promise]);
+        kd.clear();
+        if (code !== 0 && child.pid !== undefined) {
+          if (process.platform === 'win32') {
+            const { spawnSync } = await import('node:child_process');
+            spawnSync('taskkill', ['/F', '/T', '/PID', String(child.pid)]);
+          } else {
+            process.kill(child.pid, 'SIGKILL');
+          }
+        }
+      } catch (e: unknown) { cleanupErrors.push(`cleanup:${e instanceof Error ? e.message : String(e)}`); }
+    }
+    if (cleanupErrors.length > 0) assert.fail(`cleanup: ${cleanupErrors.join('; ')}`);
   }
 });
 
-// ---- 9. Real signal port register/unregister ──
+// ---- 9. Real signal port register/unregister --
 test('red team: signal port registers once and unregisters once after done (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-sig-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -287,7 +309,7 @@ test('red team: signal port registers once and unregisters once after done (STOR
   assert.deepEqual(events, ['on', 'off'], 'on then off exactly once');
 });
 
-// ---- 10. Post-start server error ──
+// ---- 10. Post-start server error --
 test('red team: post-start server error produces done->{kind:failed,error}, exactly-once finalize (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-srv-err-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -305,7 +327,7 @@ test('red team: post-start server error produces done->{kind:failed,error}, exac
   assert.equal(d.state(), 'stopped');
 });
 
-// ---- 11. Close rejection: secondary, causal failure preserved ──
+// ---- 11. Close rejection: secondary, causal failure preserved --
 test('red team: close rejection is secondary — causal failure still wins (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-close-rej-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -322,7 +344,7 @@ test('red team: close rejection is secondary — causal failure still wins (STOR
   assert.equal(fc, 1);
 });
 
-// ---- 12. Finalize throw: causal failure preserved ──
+// ---- 12. Finalize throw: causal failure preserved --
 test('red team: finalize throw is secondary — causal failure still wins (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-fin-throw-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
