@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
-import { closeSync, mkdirSync, openSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning } from '../db/store.js';
 import { main } from '../cli/main.js';
@@ -21,6 +21,15 @@ function writeTokenFileOwnerOnly(tokenPath: string, token: string): void {
   const fd = openSync(tokenPath, 'wx', 0o600);
   try {
     writeSync(fd, `${token}\n`);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function writeLockFileAtomically(lockPath: string, pid: number, port: number): void {
+  const fd = openSync(lockPath, 'wx', 0o600);
+  try {
+    writeSync(fd, `${pid}\n${port}\n${new Date().toISOString()}\n`);
   } finally {
     closeSync(fd);
   }
@@ -133,7 +142,24 @@ export function startDaemon(repoRoot: string, port: number): Promise<DaemonInsta
       return;
     }
 
-    writeFileSync(lockPath, `${process.pid}\n${port}\n${new Date().toISOString()}\n`);
+    try {
+      writeLockFileAtomically(lockPath, process.pid, port);
+    } catch (err: unknown) {
+      store.db.exec('ROLLBACK');
+      store.close();
+      let msg: string;
+      if (err instanceof Error && 'code' in err) {
+        const c = Reflect.get(err, 'code');
+        msg = c === 'EEXIST'
+          ? 'daemon is already running for this repo (lock file race)'
+          : `failed to create lock file: ${String(err)}`;
+      } else {
+        msg = `failed to create lock file: ${String(err)}`;
+      }
+      reject(new Error(msg));
+      return;
+    }
+
     writeTokenFileOwnerOnly(tokenPath, token);
 
     const server = createServer((req, res) => { handleRequest(token, req, res); });

@@ -100,7 +100,7 @@ function tryAutoForward(): void {
   } catch { /* proceed with direct mode */ }
 }
 
-if (!process.env.SV_PLAYBOOK_DAEMON && !process.env.NODE_TEST_CONTEXT) {
+if (!process.env.NODE_TEST_CONTEXT) {
   tryAutoForward();
 }
 
@@ -303,7 +303,6 @@ function performMigration(db: DatabaseSync, repoRoot: string, currentVersion: nu
 }
 
 function assertStoreNotHeldByDaemon(repoRoot: string): void {
-  if (process.env.SV_PLAYBOOK_DAEMON) return;
   if (isDaemonRunning(repoRoot)) {
     throw new StoreVersionError(
       `store is held by the daemon — run commands from the blessed root or start the daemon with \`sv-playbook daemon\``,

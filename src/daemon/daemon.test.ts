@@ -112,6 +112,27 @@ test('a worktree CLI cannot open the live store directly and is served through t
   });
 });
 
+test('concurrent daemon starts: atomic lock file causes the second to refuse (STORE-003)', async () => {
+  await inTempRepo(async (root) => {
+    openStore(root).close();
+
+    const port1 = await freePort();
+    const daemon1 = await startDaemon(root, port1);
+
+    try {
+      assert.ok(isDaemonRunning(root));
+
+      const port2 = await freePort();
+      await assert.rejects(
+        () => startDaemon(root, port2),
+        /already running/,
+      );
+    } finally {
+      daemon1.stop();
+    }
+  });
+});
+
 test('daemon auth token file is created owner-only (mode 0600)', { skip: process.platform === 'win32' }, async () => {
   await inTempRepo(async (root) => {
     openStore(root).close();
