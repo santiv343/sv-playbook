@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
+const FORWARD_TIMEOUT_MS = 310000;
 
-const FORWARD_TIMEOUT_MS = 15000;
-const REQUEST_TIMEOUT_MS = 10000;
+const REQUEST_TIMEOUT_MS = 300000;
 
 // The forwarding transport runs in a child node process so it can be awaited
 // synchronously from module-load code (store.ts tryAutoForward). The child
