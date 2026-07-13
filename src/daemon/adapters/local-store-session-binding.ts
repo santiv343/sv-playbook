@@ -36,10 +36,10 @@ function reconcileSession(store: ReturnType<typeof getDaemonStore>, worktree: st
 }
 
 function preflightClientId(clientSessionId: unknown): string | null {
-  if (clientSessionId !== null && clientSessionId !== undefined && typeof clientSessionId !== 'string') {
-    throw new Error('session requires explicit null or nonempty string');
-  }
-  return typeof clientSessionId === 'string' && clientSessionId.length > 0 ? clientSessionId : null;
+  if (clientSessionId === undefined) throw new Error('sessionId required');
+  if (clientSessionId === null) return null;
+  if (typeof clientSessionId !== 'string' || clientSessionId.length === 0) throw new Error('session requires null or nonempty string');
+  return clientSessionId;
 }
 
 export function createStoreSessionBinding(): SessionBindingPort {

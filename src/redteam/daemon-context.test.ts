@@ -14,16 +14,18 @@ const httpServerFactory = createNodeHttpServerFactory();
 import { gitWorkspace } from '../runtime/workspace-git.js';
 import { freePort, initFixtureRepo, postJson, realCliEnv, spawnCollect, pollDaemon, stopDaemonChild, fakePort, nextIndex } from './daemon-test-utils.js';
 import { createStoreSessionBinding } from '../daemon/adapters/local-store-session-binding.js';
+import { createNodeDaemonFileSystem } from '../daemon/adapters/node-daemon-filesystem.js';
 const sessionBinding = createStoreSessionBinding();
+const fileSystem = createNodeDaemonFileSystem();
 
 test('context validation accepts valid cwd via injected fake port (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-fake-port-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   const fp = fakePort(root);
-  const daemon = await startDaemon(root, port, { workspaceIdentity: fp, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: fp, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
   try {
-    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root } });
+    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root, sessionId: null } });
     assert.equal(res.statusCode, 200, 'fake-port daemon must accept valid cwd');
     const parsed: unknown = JSON.parse(res.body);
     assert.ok(typeof parsed === 'object' && parsed !== null);
@@ -36,9 +38,9 @@ test('context validation rejects unknown cwd via injected fake port (STORE-003)'
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   const fp = fakePort(root);
-  const daemon = await startDaemon(root, port, { workspaceIdentity: fp, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: fp, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
   try {
-    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: '/nonexistent' } });
+    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: '/nonexistent', sessionId: null } });
     assert.equal(res.statusCode, 400, 'fake-port daemon must reject unknown cwd');
     assert.ok(res.body.includes('invalid context'));
   } finally { await daemon.stop(); }
@@ -90,11 +92,11 @@ test('red team: concurrent HTTP exec requests with distinct worktree cwds are is
   execFileSync('git', ['worktree', 'add', wt2, 'HEAD'], { cwd: root });
   openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
   try {
     const [r1, r2] = await Promise.all([
-      postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: wt1 } }),
-      postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: wt2 } }),
+      postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: wt1, sessionId: null } }),
+      postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: wt2, sessionId: null } }),
     ]);
     assert.equal(r1.statusCode, 200);
     assert.equal(r2.statusCode, 200);
@@ -111,9 +113,9 @@ test('red team: forwarded exec request preserves cwd in daemon context (STORE-00
   const root = await mkdtemp(join(tmpdir(), `svp-exec-ctx-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
   try {
-    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root } });
+    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root, sessionId: null } });
     assert.equal(res.statusCode, 200);
     const parsed: unknown = JSON.parse(res.body);
     assert.ok(typeof parsed === 'object' && parsed !== null);
@@ -127,9 +129,9 @@ test('red team: exec with mixed-type argv is rejected before any side effect (ST
   const root = await mkdtemp(join(tmpdir(), `svp-argv-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
   try {
-    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['valid', 123, null], context: { cwd: root } });
+    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['valid', 123, null], context: { cwd: root, sessionId: null } });
     assert.equal(res.statusCode, 400);
     assert.ok(res.body.includes('argv required'), `must reject mixed argv: ${res.body}`);
   } finally { await daemon.stop(); }
@@ -147,14 +149,14 @@ test('red team: concurrent session binding — two distinct packets, event-to-se
   seed.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('ALS-S2', 'Session Test 2', '/tmp', 'ready', '[]', datetime('now'), datetime('now'))").run();
   seed.close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
   try {
     const ds = getDaemonStore(); assert.ok(ds);
 
     // Concurrent exec requests for two distinct packets from two worktrees
     const [r1, r2] = await Promise.all([
-      postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['task', 'start', 'ALS-S1'], context: { cwd: wt1 } }),
-      postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['task', 'start', 'ALS-S2'], context: { cwd: wt2 } }),
+      postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['task', 'start', 'ALS-S1'], context: { cwd: wt1, sessionId: null } }),
+      postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['task', 'start', 'ALS-S2'], context: { cwd: wt2, sessionId: null } }),
     ]);
     assert.equal(r1.statusCode, 200, `wt1 start must succeed, got ${r1.statusCode}: ${r1.body}`);
     assert.equal(r2.statusCode, 200, `wt2 start must succeed, got ${r2.statusCode}: ${r2.body}`);
@@ -210,12 +212,12 @@ test('red team: context boundary — outside-repo spoof, missing context, no sto
   const root = await mkdtemp(join(tmpdir(), `svp-boundary-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
   try {
     const token = daemon.token; const ds = getDaemonStore(); assert.ok(ds);
 
     const outside = await mkdtemp(join(tmpdir(), `svp-boundary-out-${nextIndex()}`));
-    const spoofRes = await postJson(port, '/api/v1/exec', { token, argv: ['describe'], context: { cwd: outside } });
+    const spoofRes = await postJson(port, '/api/v1/exec', { token, argv: ['describe'], context: { cwd: outside, sessionId: null } });
     assert.equal(spoofRes.statusCode, 400); assert.ok(spoofRes.body.includes('invalid context'));
 
     const noCtxRes = await postJson(port, '/api/v1/exec', { token, argv: ['describe'] });
@@ -224,7 +226,7 @@ test('red team: context boundary — outside-repo spoof, missing context, no sto
     const ec = (row: Record<string, unknown> | undefined): number => row !== undefined ? Number(Reflect.get(row, 'c')) : 0;
     const before = ec(ds.db.prepare('SELECT COUNT(*) AS c FROM events').get());
     assert.equal(before, 0, 'no events before rejection');
-    const noEffectRes = await postJson(port, '/api/v1/exec', { token, argv: ['check'], context: { cwd: outside } });
+    const noEffectRes = await postJson(port, '/api/v1/exec', { token, argv: ['check'], context: { cwd: outside, sessionId: null } });
     assert.equal(noEffectRes.statusCode, 400);
     assert.equal(ec(ds.db.prepare('SELECT COUNT(*) AS c FROM events').get()), 0, 'no events after rejection');
   } finally { await daemon.stop(); }
@@ -235,7 +237,7 @@ test('red team: shutdown lifecycle transitions running→stopping→stopped; con
   const root = await mkdtemp(join(tmpdir(), `svp-stop-con-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
   assert.equal(daemon.state(), 'running');
   const s1 = daemon.stop();
   assert.equal(daemon.state(), 'stopping');
@@ -256,7 +258,7 @@ test('red team: onFinalize callback invoked exactly once; second stop does not r
   const port = await freePort();
   let finalizeCount = 0;
   const daemon = await startDaemon(root, port, {
-    workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding,
+    workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem,
     onFinalize: () => { finalizeCount++; },
   });
   assert.equal(finalizeCount, 0, 'no cleanup before stop');
@@ -264,5 +266,171 @@ test('red team: onFinalize callback invoked exactly once; second stop does not r
   assert.equal(finalizeCount, 1, 'finalize must run exactly once');
   await daemon.stop();
   assert.equal(finalizeCount, 1, 'finalize must NOT run again on second stop');
+});
+
+// ---- ACC-03: context + sessionId validation — every case ----
+test('ACC-03: first-use explicit null sessionId succeeds (created)', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-null-${nextIndex()}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
+  try {
+    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root, sessionId: null } });
+    assert.equal(res.statusCode, 200, 'explicit null on first-use must create session');
+    const parsed: unknown = JSON.parse(res.body);
+    assert.ok(typeof parsed === 'object' && parsed !== null);
+    assert.equal(Reflect.get(parsed, 'exitCode'), 0);
+  } finally { await daemon.stop(); }
+});
+
+test('ACC-03: omitted sessionId on first-use rejected 400', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-omit-${nextIndex()}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
+  try {
+    const ds = getDaemonStore(); assert.ok(ds);
+    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root } });
+    assert.equal(res.statusCode, 400, 'omitted sessionId must be rejected');
+    assert.ok(res.body.includes('invalid context'), `body: ${res.body}`);
+    const ec = (row: Record<string, unknown> | undefined): number => row !== undefined ? Number(Reflect.get(row, 'c')) : 0;
+    assert.equal(ec(ds.db.prepare('SELECT COUNT(*) AS c FROM events').get()), 0, 'no events after omitted sessionId');
+  } finally { await daemon.stop(); }
+});
+
+test('ACC-03: nonempty string sessionId on first-use rejected 400', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-str1-${nextIndex()}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
+  try {
+    const ds = getDaemonStore(); assert.ok(ds);
+    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root, sessionId: 'pre-existing' } });
+    assert.equal(res.statusCode, 400, 'nonempty sessionId on first-use must be rejected');
+    assert.ok(res.body.includes('invalid context'), `body: ${res.body}`);
+    const ec = (row: Record<string, unknown> | undefined): number => row !== undefined ? Number(Reflect.get(row, 'c')) : 0;
+    assert.equal(ec(ds.db.prepare('SELECT COUNT(*) AS c FROM events').get()), 0, 'no events');
+  } finally { await daemon.stop(); }
+});
+
+test('ACC-03: empty string sessionId on first-use rejected 400', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-emp-${nextIndex()}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
+  try {
+    const ds = getDaemonStore(); assert.ok(ds);
+    const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root, sessionId: '' } });
+    assert.equal(res.statusCode, 400, 'empty sessionId must be rejected');
+    assert.ok(res.body.includes('invalid context'), `body: ${res.body}`);
+    const ec = (row: Record<string, unknown> | undefined): number => row !== undefined ? Number(Reflect.get(row, 'c')) : 0;
+    assert.equal(ec(ds.db.prepare('SELECT COUNT(*) AS c FROM events').get()), 0, 'no events');
+  } finally { await daemon.stop(); }
+});
+
+// ---- ACC-04: session binding reuse and cross-binding rejection ----
+test('ACC-04: existing binding — exact nonempty sessionId reuses (bound)', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-reuse-${nextIndex()}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
+  try {
+    // First call: explicit null creates session
+    const r1 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root, sessionId: null } });
+    assert.equal(r1.statusCode, 200);
+    const p1: unknown = JSON.parse(r1.body);
+    assert.ok(typeof p1 === 'object' && p1 !== null);
+    const sid = String(Reflect.get(p1, 'sessionId'));
+    assert.ok(sid.length > 0);
+
+    // Second call from same cwd with exact sessionId: reuse
+    const r2 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root, sessionId: sid } });
+    assert.equal(r2.statusCode, 200, 'exact sessionId on existing binding must reuse');
+    const p2: unknown = JSON.parse(r2.body);
+    assert.ok(typeof p2 === 'object' && p2 !== null);
+    assert.equal(String(Reflect.get(p2, 'sessionId')), sid, 'must return same sessionId');
+  } finally { await daemon.stop(); }
+});
+
+test('ACC-04: existing binding — null sessionId rejected 400', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-null2-${nextIndex()}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
+  try {
+    const ds = getDaemonStore(); assert.ok(ds);
+    // Create binding
+    const r1 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root, sessionId: null } });
+    assert.equal(r1.statusCode, 200);
+
+    // Second call from same cwd with explicit null: must reject
+    const r2 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root, sessionId: null } });
+    assert.equal(r2.statusCode, 400, 'null sessionId on existing binding must be rejected');
+    assert.ok(r2.body.includes('invalid context'), `body: ${r2.body}`);
+    const ec = (row: Record<string, unknown> | undefined): number => row !== undefined ? Number(Reflect.get(row, 'c')) : 0;
+    assert.equal(ec(ds.db.prepare('SELECT COUNT(*) AS c FROM events').get()), 0, 'no new events after null rejection');
+  } finally { await daemon.stop(); }
+});
+
+test('ACC-04: existing binding — omitted sessionId rejected 400', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-omit2-${nextIndex()}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
+  try {
+    const ds = getDaemonStore(); assert.ok(ds);
+    const r1 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root, sessionId: null } });
+    assert.equal(r1.statusCode, 200);
+
+    const r2 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root } });
+    assert.equal(r2.statusCode, 400, 'omitted sessionId on existing binding must be rejected');
+    assert.ok(r2.body.includes('invalid context'), `body: ${r2.body}`);
+    const ec = (row: Record<string, unknown> | undefined): number => row !== undefined ? Number(Reflect.get(row, 'c')) : 0;
+    assert.equal(ec(ds.db.prepare('SELECT COUNT(*) AS c FROM events').get()), 0, 'no events after omitted sessionId rejection');
+  } finally { await daemon.stop(); }
+});
+
+test('ACC-04: existing binding — mismatch sessionId rejected 400', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-mism-${nextIndex()}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
+  try {
+    const ds = getDaemonStore(); assert.ok(ds);
+    const r1 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root, sessionId: null } });
+    assert.equal(r1.statusCode, 200);
+
+    const r2 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root, sessionId: 'wrong-session-id' } });
+    assert.equal(r2.statusCode, 400, 'mismatch sessionId must be rejected');
+    assert.ok(r2.body.includes('invalid context'), `body: ${r2.body}`);
+    const ec = (row: Record<string, unknown> | undefined): number => row !== undefined ? Number(Reflect.get(row, 'c')) : 0;
+    assert.equal(ec(ds.db.prepare('SELECT COUNT(*) AS c FROM events').get()), 0, 'no events after mismatch rejection');
+  } finally { await daemon.stop(); }
+});
+
+test('ACC-04: cwd from wtB with sessionId from wtA rejected before mutation', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-xbind-${nextIndex()}`));
+  initFixtureRepo(root);
+  const wt1 = join(root, 'wt1'); const wt2 = join(root, 'wt2');
+  execFileSync('git', ['worktree', 'add', wt1, 'HEAD'], { cwd: root });
+  execFileSync('git', ['worktree', 'add', wt2, 'HEAD'], { cwd: root });
+  openStore(root).close();
+  const port = await freePort();
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding, fileSystem });
+  try {
+    const ds = getDaemonStore(); assert.ok(ds);
+    const r1 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: wt1, sessionId: null } });
+    assert.equal(r1.statusCode, 200);
+    const p1: unknown = JSON.parse(r1.body);
+    assert.ok(typeof p1 === 'object' && p1 !== null);
+    const sid = String(Reflect.get(p1, 'sessionId'));
+    assert.ok(sid.length > 0);
+
+    const r2 = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: wt2, sessionId: sid } });
+    assert.equal(r2.statusCode, 400, 'cross-worktree sessionId must be rejected');
+    assert.ok(r2.body.includes('invalid context'), `body: ${r2.body}`);
+    const ec = (row: Record<string, unknown> | undefined): number => row !== undefined ? Number(Reflect.get(row, 'c')) : 0;
+    assert.equal(ec(ds.db.prepare('SELECT COUNT(*) AS c FROM events').get()), 0, 'no events after cross-binding rejection');
+  } finally { await daemon.stop(); }
 });
 
