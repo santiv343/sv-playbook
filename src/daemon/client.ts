@@ -1,9 +1,5 @@
 import { spawnSync } from 'node:child_process';
 
-// Child-process deadline — safety net against truly hung daemons without
-// cutting off legitimate long commands (e.g. verify takes 25s+).
-const FORWARD_DEADLINE_MS = 600000;
-
 // How long to wait for the TCP connection to the daemon before failing fast.
 const CONNECT_TIMEOUT_MS = 5000;
 
@@ -22,7 +18,6 @@ export function forwardToDaemonSync(argv: string[], token: string, port: number)
   const body = JSON.stringify({ token, argv });
   const result = spawnSync(process.execPath, ['-e', buildForwardScript(body, port)], {
     stdio: ['ignore', 'inherit', 'inherit'],
-    timeout: FORWARD_DEADLINE_MS,
   });
   return typeof result.status === 'number' ? result.status : 1;
 }
