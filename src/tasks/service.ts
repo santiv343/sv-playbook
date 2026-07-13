@@ -129,41 +129,7 @@ export function listPackets(store: Store): Array<{ id: string; title: string; st
 }
 export function ensureSession(store: Store, worktree: string): string {
   const file = join(worktree, SESSION_FILE_NAME);
-  const fileExists = existsSync(file);
-  const fileId: string | null = fileExists ? readFileSync(file, 'utf8').trim() : null;
-
-  const dbRow = store.db.prepare('SELECT id FROM sessions WHERE worktree = ?').get(worktree);
-  const dbId: string | null = dbRow !== undefined ? String(Reflect.get(dbRow, 'id')) : null;
-
-  // Both exist: canonical DB row agrees with file
-  if (fileExists && dbId !== null) {
-    if (fileId !== null && fileId === dbId) return fileId;
-    // Disagreement: reconcile to DB canonical
-    writeFileSync(file, `${dbId}\n`, 'utf8');
-    return dbId;
-  }
-
-  // Only file exists but missing or empty: recreate
-  if (fileExists && (fileId === null || fileId.length === 0)) {
-    const id = randomUUID();
-    store.db.prepare('INSERT INTO sessions (id, worktree, started_at) VALUES (?,?,?)').run(id, worktree, now());
-    writeFileSync(file, `${id}\n`, 'utf8');
-    return id;
-  }
-
-  // Only file exists with valid id but DB missing: restore DB row
-  if (fileExists && fileId !== null && fileId.length > 0 && dbId === null) {
-    store.db.prepare('INSERT OR IGNORE INTO sessions (id, worktree, started_at) VALUES (?, ?, ?)').run(fileId, worktree, now());
-    return fileId;
-  }
-
-  // Only DB exists: recreate file
-  if (!fileExists && dbId !== null) {
-    writeFileSync(file, `${dbId}\n`, 'utf8');
-    return dbId;
-  }
-
-  // Neither exists: create new
+  if (existsSync(file)) { const id = readFileSync(file, 'utf8').trim(); if (store.db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(id) !== undefined) return id; }
   const id = randomUUID();
   store.db.prepare('INSERT INTO sessions (id, worktree, started_at) VALUES (?,?,?)').run(id, worktree, now());
   writeFileSync(file, `${id}\n`, 'utf8');
