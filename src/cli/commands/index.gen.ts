@@ -8,6 +8,7 @@ import { command as constitution } from './constitution.js';
 import { command as describe } from './describe.js';
 import { command as doctor } from './doctor.js';
 import { command as docs } from './docs.js';
+import { command as enforce } from './enforce.js';
 import { command as handoff } from './handoff.js';
 import { command as import_ } from './import.js';
 import { command as instructions } from './instructions.js';
@@ -20,4 +21,4 @@ import { command as sprint } from './sprint.js';
 import { command as status } from './status.js';
 import { command as task } from './task.js';
 
-export const allCommands: readonly Command[] = [adopt, backup, check, constitution, describe, doctor, docs, handoff, import_, instructions, rebuild, reconcile, restore, review, serve, sprint, status, task];
+export const allCommands: readonly Command[] = [adopt, backup, check, constitution, describe, doctor, docs, enforce, handoff, import_, instructions, rebuild, reconcile, restore, review, serve, sprint, status, task];

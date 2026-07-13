@@ -25,6 +25,9 @@
     "test:quiet": "npm run build && node --test --test-reporter dot \"dist/**/*.test.js\"",
     "verify": "npm run typecheck && npm run lint && npm run test"
   },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "eslint": "^9.18.0",
