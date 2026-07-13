@@ -265,11 +265,7 @@ export function createStateBackup(repoRoot: string, options: BackupOptions, reso
   const sqlitePath = join(dir, `${BACKUP_PREFIX}-${stampVal}.sqlite`);
   const metadataPath = sqlitePath.replace(/\.sqlite$/, '.json');
   const tempPath = join(dir, `.${BACKUP_PREFIX}-${stampVal}.sqlite.tmp`);
-  try {
-    vacuumInto(dbPath(repoRoot), tempPath);
-  } catch {
-    copyFileSync(dbPath(repoRoot), tempPath);
-  }
+  vacuumInto(dbPath(repoRoot), tempPath);
   if (existsSync(sqlitePath)) rmSync(sqlitePath);
   renameSync(tempPath, sqlitePath);
   const report: BackupReport = {
