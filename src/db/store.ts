@@ -66,8 +66,12 @@ export function readDaemonToken(repoRoot: string): string | null {
 }
 
 export function blessedRoot(s: string): string | null {
-  try { return dirname(resolve(s, execGitCommonDir(s))); }
-  catch { return null; }
+  try {
+    const commonDir = resolve(s, execGitCommonDir(s));
+    const localDotGit = resolve(s, '.git');
+    if (normalizePathForCompare(commonDir) === normalizePathForCompare(localDotGit)) return null;
+    return dirname(commonDir);
+  } catch { return null; }
 }
 
 // The daemon lock file records `pid\nport\nstarted_at` — honor the port the
