@@ -6,6 +6,7 @@ import { getCwd } from '../../runtime/context.js';
 import { gitWorkspace } from '../../runtime/workspace-git.js';
 import { DAEMON_DEFAULT_PORT } from '../../daemon/daemon.constants.js';
 import { startDaemon } from '../../daemon/daemon.js';
+import { main } from '../main.js';
 
 const USAGE = 'Usage: sv-playbook daemon [--port <N>]';
 
@@ -36,14 +37,18 @@ export const command: Command = {
     }
 
     return new Promise((resolve) => {
-      startDaemon(repoRoot, port, gitWorkspace).then((instance) => {
+      startDaemon(repoRoot, port, { workspaceIdentity: gitWorkspace, executeCommand: main }).then((instance) => {
         io.out(`Daemon ready on 127.0.0.1:${port} — pid ${process.pid}, token ${instance.token.slice(0, 8)}...`);
         io.out('Press Ctrl+C to stop');
-        const shutdown = (): void => { void instance.stop().then(() => { resolve(EXIT.OK); }); };
+        const resolveOutcome = (outcome: { kind: string }): void => {
+          if (outcome.kind === 'stopped') resolve(EXIT.OK);
+          else { io.err('Daemon terminated unexpectedly'); resolve(EXIT.SYSTEM); }
+        };
+        const shutdown = (): void => { void instance.stop().then(resolveOutcome); };
         process.once('SIGINT', shutdown);
         process.once('SIGTERM', shutdown);
         process.once('SIGBREAK', shutdown);
-        void instance.done.then(() => { resolve(EXIT.OK); });
+        void instance.done.then(resolveOutcome);
       }).catch((err: unknown) => {
         io.err(`Failed to start daemon: ${String(err)}`);
         resolve(EXIT.SYSTEM);

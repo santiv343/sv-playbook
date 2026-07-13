@@ -8,9 +8,11 @@ import assert from 'node:assert/strict';
  * fix was correct (IMPLEMENTER-CLAIM-QUALITY) and/or the technical lead
  * accepted an incomplete fix (TL-ACCEPTANCE-QUALITY).
  *
- * These are NOT tests that run logic — they are structured records that
- * surface during test runs to prove the fixtures exist. The RED tests that
- * enforce each fix live in the test files named in each fixture.
+ * These are HONEST ABOUT THEIR LIMITATIONS: they only prove that structured
+ * records exist. They do NOT replace the RED tests in the files below —
+ * each RED test enforces one fix. These fixtures exist for audit trail and
+ * should be linked to a CHECK-SELF/HONESTY review that validates the RED
+ * tests are actually running and failing as intended.
  */
 
 interface FalseClaimFixture {

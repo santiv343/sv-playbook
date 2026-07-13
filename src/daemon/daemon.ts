@@ -3,14 +3,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting } from '../db/store.js';
-import { main } from '../cli/main.js';
 import { DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
 import { EXIT } from '../cli/command.constants.js';
 import { SVP_DIR } from '../db/store.constants.js';
 import { runWithContext, createContext } from '../runtime/context.js';
-import type { WorkspacePort } from '../runtime/workspace.types.js';
 import type { Store } from '../db/store.types.js';
-import type { DaemonInstance } from './daemon.types.js';
+import type { DaemonExecIo, DaemonInstance, DaemonOptions, DaemonOutcome } from './daemon.types.js';
 
 const ERR_INVALID_JSON = 'invalid json';
 const ERR_INVALID_TOKEN = 'invalid token';
@@ -52,7 +50,7 @@ function jsonResponse(res: ServerResponse, code: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-function buildExecIo(): { out: (l: string) => void; err: (l: string) => void; outLines: string[]; errLines: string[] } {
+function buildExecIo(): DaemonExecIo {
   const outLines: string[] = [];
   const errLines: string[] = [];
   return {
@@ -62,7 +60,7 @@ function buildExecIo(): { out: (l: string) => void; err: (l: string) => void; ou
   };
 }
 
-function contextFromPayload(parsed: object, repoRoot: string, ws: WorkspacePort): ReturnType<typeof createContext> | null {
+function contextFromPayload(parsed: object, repoRoot: string, ws: import('../runtime/workspace.types.js').WorkspacePort): ReturnType<typeof createContext> | null {
   const rawCtx: unknown = Reflect.get(parsed, 'context');
   if (typeof rawCtx !== 'object' || rawCtx === null) return null;
   const cwVal: unknown = Reflect.get(rawCtx, 'cwd');
@@ -73,7 +71,7 @@ function contextFromPayload(parsed: object, repoRoot: string, ws: WorkspacePort)
   return createContext(canonical);
 }
 
-function parseExecRequest(raw: string, token: string, res: ServerResponse, repoRoot: string, ws: WorkspacePort): { argv: string[]; ctx: ReturnType<typeof createContext> } | null {
+function parseExecRequest(raw: string, token: string, res: ServerResponse, repoRoot: string, opts: DaemonOptions): { argv: string[]; ctx: ReturnType<typeof createContext> } | null {
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
   if (typeof parsed !== 'object' || parsed === null) { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
@@ -85,19 +83,19 @@ function parseExecRequest(raw: string, token: string, res: ServerResponse, repoR
   if (!isStringArray(parsedArgv)) { jsonResponse(res, 400, { error: ERR_INVALID_ARGV }); return null; }
   const argv: string[] = parsedArgv;
 
-  const ctx = contextFromPayload(parsed, repoRoot, ws);
+  const ctx = contextFromPayload(parsed, repoRoot, opts.workspaceIdentity);
   if (ctx === null) { jsonResponse(res, 400, { error: ERR_INVALID_CONTEXT }); return null; }
 
   return { argv, ctx };
 }
 
-function handleExec(token: string, req: IncomingMessage, res: ServerResponse, repoRoot: string, ws: WorkspacePort): void {
+function handleExec(token: string, req: IncomingMessage, res: ServerResponse, repoRoot: string, opts: DaemonOptions): void {
   readBody(req).then((raw) => {
-    const parsed = parseExecRequest(raw, token, res, repoRoot, ws);
+    const parsed = parseExecRequest(raw, token, res, repoRoot, opts);
     if (parsed === null) return;
 
     const execIo = buildExecIo();
-    runWithContext(parsed.ctx, () => main(parsed.argv, execIo)).then((exitCode) => {
+    runWithContext(parsed.ctx, () => opts.executeCommand(parsed.argv, execIo)).then((exitCode) => {
       const stdout = execIo.outLines.join('\n') + (execIo.outLines.length > 0 ? '\n' : '');
       const stderr = execIo.errLines.join('\n') + (execIo.errLines.length > 0 ? '\n' : '');
       jsonResponse(res, 200, { exitCode, stdout, stderr, daemonVersion: DAEMON_VERSION });
@@ -109,7 +107,7 @@ function handleExec(token: string, req: IncomingMessage, res: ServerResponse, re
   });
 }
 
-function handleShutdown(token: string, req: IncomingMessage, res: ServerResponse, cleanup: () => Promise<void>): void {
+function handleShutdown(token: string, req: IncomingMessage, res: ServerResponse, cleanup: () => Promise<DaemonOutcome>): void {
   readBody(req).then((raw) => {
     let parsedToken: unknown;
     try {
@@ -137,7 +135,7 @@ function acquireLock(lockPath: string, pid: number, port: number): void {
   }
 }
 
-function routeRequest(token: string, req: IncomingMessage, res: ServerResponse, repoRoot: string, ws: WorkspacePort, shutdown: () => Promise<void>, daemonState: () => 'running' | 'stopping' | 'stopped'): void {
+function routeRequest(token: string, req: IncomingMessage, res: ServerResponse, repoRoot: string, opts: DaemonOptions, shutdown: () => Promise<DaemonOutcome>, daemonState: () => 'running' | 'stopping' | 'stopped'): void {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   if (req.method === 'GET' && url.pathname === '/api/v1/health') {
     jsonResponse(res, 200, { status: daemonState() === 'running' ? 'ok' : 'stopping', version: DAEMON_VERSION, pid: process.pid, storeLock: 'exclusive' });
@@ -145,7 +143,7 @@ function routeRequest(token: string, req: IncomingMessage, res: ServerResponse, 
   }
   if (daemonState() !== 'running') { jsonResponse(res, 503, { error: ERR_UNAVAILABLE }); return; }
   if (req.method !== 'POST') { notFound(res); return; }
-  if (url.pathname === '/api/v1/exec') { handleExec(token, req, res, repoRoot, ws); return; }
+  if (url.pathname === '/api/v1/exec') { handleExec(token, req, res, repoRoot, opts); return; }
   if (url.pathname === '/api/v1/shutdown') { handleShutdown(token, req, res, shutdown); return; }
   notFound(res);
 }
@@ -154,7 +152,7 @@ function notFound(res: ServerResponse): void {
   res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not found' }));
 }
 
-export function startDaemon(repoRoot: string, port: number, ws: WorkspacePort): Promise<DaemonInstance> {
+export function startDaemon(repoRoot: string, port: number, opts: DaemonOptions): Promise<DaemonInstance> {
   return new Promise((resolve, reject) => {
     const svpDir = join(repoRoot, SVP_DIR);
     mkdirSync(svpDir, { recursive: true, mode: 0o700 });
@@ -185,29 +183,32 @@ export function startDaemon(repoRoot: string, port: number, ws: WorkspacePort): 
 
     let daemonState: 'running' | 'stopping' | 'stopped' = 'running';
     const getState = (): 'running' | 'stopping' | 'stopped' => daemonState;
-    let lifecycleComplete: ((err?: Error) => void) | null = null;
-    const lifecyclePromise = new Promise<void>((resolveLifecycle) => { lifecycleComplete = () => { resolveLifecycle(); }; });
+    let lifecycleComplete: ((outcome: DaemonOutcome) => void) | null = null;
+    let terminationOutcome: DaemonOutcome = { kind: 'stopped' };
+    const lifecyclePromise = new Promise<DaemonOutcome>((resolveLifecycle) => { lifecycleComplete = (outcome) => { resolveLifecycle(outcome); }; });
     let startSettled = false;
 
-    const finalizeOnce = (): void => {
+    const finalizeOnce = (outcome?: DaemonOutcome): void => {
       if (daemonState === 'stopped') return;
+      if (outcome) terminationOutcome = outcome;
       daemonState = 'stopped';
       finalize();
-      lifecycleComplete?.();
+      opts.onFinalize?.();
+      lifecycleComplete?.(terminationOutcome);
     };
 
-    const shutdown = (): Promise<void> => {
+    const shutdown = (): Promise<DaemonOutcome> => {
       if (daemonState !== 'running') return lifecyclePromise;
       daemonState = 'stopping';
-      server.close(() => { finalizeOnce(); });
+      server.close(() => { finalizeOnce({ kind: 'stopped' }); });
       return lifecyclePromise;
     };
 
-    const server = createServer((req, res) => { routeRequest(token, req, res, repoRoot, ws, shutdown, getState); });
+    const server = createServer((req, res) => { routeRequest(token, req, res, repoRoot, opts, shutdown, getState); });
 
     server.on('error', (err: NodeJS.ErrnoException) => {
-      if (!startSettled) { finalizeOnce(); reject(err); return; }
-      finalizeOnce();
+      if (!startSettled) { finalizeOnce({ kind: 'failed', error: err }); reject(err); return; }
+      finalizeOnce({ kind: 'failed', error: err });
     });
 
     server.listen(port, '127.0.0.1', () => { startSettled = true; resolve({

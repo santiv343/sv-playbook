@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning, getDaemonStore } from '../db/store.js';
 import { startDaemon } from './daemon.js';
+import { main } from '../cli/main.js';
 import { gitWorkspace } from '../runtime/workspace-git.js';
 import { DAEMON_TOKEN_FILE } from './daemon.constants.js';
 import { EXIT } from '../cli/command.constants.js';
@@ -59,7 +60,7 @@ test('a worktree CLI cannot open the live store directly and is served through t
     openStore(root).close();
 
     const port = await freePort();
-    const daemon = await startDaemon(root, port, gitWorkspace);
+    const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, executeCommand: main });
 
     try {
       assert.ok(isDaemonRunning(root));
@@ -118,14 +119,14 @@ test('concurrent daemon starts: atomic lock file causes the second to refuse (ST
     openStore(root).close();
 
     const port1 = await freePort();
-    const daemon1 = await startDaemon(root, port1, gitWorkspace);
+    const daemon1 = await startDaemon(root, port1, { workspaceIdentity: gitWorkspace, executeCommand: main });
 
     try {
       assert.ok(isDaemonRunning(root));
 
       const port2 = await freePort();
       await assert.rejects(
-        () => startDaemon(root, port2, gitWorkspace),
+        () => startDaemon(root, port2, { workspaceIdentity: gitWorkspace, executeCommand: main }),
         /already running/,
       );
     } finally {
@@ -139,7 +140,7 @@ test('daemon auth token file is created owner-only (mode 0600)', { skip: process
     openStore(root).close();
 
     const port = await freePort();
-    const daemon = await startDaemon(root, port, gitWorkspace);
+    const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, executeCommand: main });
 
     try {
       const tokenPath = join(root, SVP_DIR, DAEMON_TOKEN_FILE);
@@ -160,7 +161,7 @@ test('daemon forwarded task note is persisted to the store (STORE-003)', async (
     store.close();
 
     const port = await freePort();
-    const daemon = await startDaemon(root, port, gitWorkspace);
+    const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, executeCommand: main });
 
     try {
       assert.ok(isDaemonRunning(root));

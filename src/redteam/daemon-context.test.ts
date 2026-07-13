@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore, getDaemonStore } from '../db/store.js';
 import { startDaemon } from '../daemon/daemon.js';
+import { main } from '../cli/main.js';
 import { gitWorkspace } from '../runtime/workspace-git.js';
 
 function freePort(): Promise<number> {
@@ -22,7 +23,7 @@ function initFixtureRepo(root: string): void {
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
 }
 
-function postJson(port: number, path: string, body: unknown): Promise<{ statusCode: number | undefined; body: string }> {
+function postJson(port: number, path: string, body: unknown, timeoutMs = 5000): Promise<{ statusCode: number | undefined; body: string }> {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
     const req = httpRequest({
@@ -32,7 +33,7 @@ function postJson(port: number, path: string, body: unknown): Promise<{ statusCo
       let d = ''; res.setEncoding('utf8');
       res.on('data', (c: string) => { d += c; }); res.on('end', () => { resolve({ statusCode: res.statusCode, body: d }); });
     });
-    req.on('error', reject); req.setTimeout(5000, () => { req.destroy(); reject(new Error('timeout')); }); req.end(data);
+    req.on('error', reject); req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error('timeout')); }); req.end(data);
   });
 }
 
@@ -104,7 +105,7 @@ test('context validation accepts valid cwd via injected fake port (STORE-003)', 
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   const fp = fakePort(root);
-  const daemon = await startDaemon(root, port, fp);
+  const daemon = await startDaemon(root, port, { workspaceIdentity: fp, executeCommand: main });
   try {
     const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root } });
     assert.equal(res.statusCode, 200, 'fake-port daemon must accept valid cwd');
@@ -119,7 +120,7 @@ test('context validation rejects unknown cwd via injected fake port (STORE-003)'
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   const fp = fakePort(root);
-  const daemon = await startDaemon(root, port, fp);
+  const daemon = await startDaemon(root, port, { workspaceIdentity: fp, executeCommand: main });
   try {
     const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: '/nonexistent' } });
     assert.equal(res.statusCode, 400, 'fake-port daemon must reject unknown cwd');
@@ -173,7 +174,7 @@ test('red team: concurrent HTTP exec requests with distinct worktree cwds are is
   execFileSync('git', ['worktree', 'add', wt2, 'HEAD'], { cwd: root });
   openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, gitWorkspace);
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, executeCommand: main });
   try {
     const [r1, r2] = await Promise.all([
       postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: wt1 } }),
@@ -194,7 +195,7 @@ test('red team: forwarded exec request preserves cwd in daemon context (STORE-00
   const root = await mkdtemp(join(tmpdir(), `svp-exec-ctx-${++daemonIndex}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, gitWorkspace);
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, executeCommand: main });
   try {
     const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root } });
     assert.equal(res.statusCode, 200);
@@ -210,7 +211,7 @@ test('red team: exec with mixed-type argv is rejected before any side effect (ST
   const root = await mkdtemp(join(tmpdir(), `svp-argv-${++daemonIndex}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, gitWorkspace);
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, executeCommand: main });
   try {
     const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['valid', 123, null], context: { cwd: root } });
     assert.equal(res.statusCode, 400);
@@ -230,7 +231,7 @@ test('red team: concurrent session binding — two distinct packets, event-to-se
   seed.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('ALS-S2', 'Session Test 2', '/tmp', 'ready', '[]', datetime('now'), datetime('now'))").run();
   seed.close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, gitWorkspace);
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, executeCommand: main });
   try {
     const ds = getDaemonStore(); assert.ok(ds);
 
@@ -260,32 +261,67 @@ test('red team: concurrent session binding — two distinct packets, event-to-se
     assert.ok(sessionWorktrees.includes(canonicalWt1), `wt1 (${canonicalWt1}) must be in session worktrees: [${sessionWorktrees.join(', ')}]`);
     assert.ok(sessionWorktrees.includes(canonicalWt2), `wt2 (${canonicalWt2}) must be in session worktrees: [${sessionWorktrees.join(', ')}]`);
 
-    // Each transition has a distinct session (no swap)
-    const transitions = ds.db.prepare(
-      "SELECT t.session_id, t.packet_id FROM transitions t WHERE t.to_status = 'active' ORDER BY t.seq"
+    // JOIN transition→session→worktree to prove exact mapping (no swap)
+    const mapping = ds.db.prepare(
+      "SELECT t.packet_id, s.worktree FROM transitions t JOIN sessions s ON t.session_id = s.id WHERE t.to_status = 'active' ORDER BY t.packet_id"
     ).all();
-    const t0: unknown = transitions[0];
-    const t1: unknown = transitions[1];
-    assert.ok(t0 !== undefined && typeof t0 === 'object' && t0 !== null);
-    assert.ok(t1 !== undefined && typeof t1 === 'object' && t1 !== null);
-    assert.notEqual(Reflect.get(t0, 'packet_id'), Reflect.get(t1, 'packet_id'), 'must transition two distinct packets');
-    assert.notEqual(Reflect.get(t0, 'session_id'), Reflect.get(t1, 'session_id'), 'each packet must have a distinct session (no swap)');
+    assert.equal(mapping.length, 2, 'must have exactly 2 mapped transitions');
+    const m0: unknown = mapping[0]; const m1: unknown = mapping[1];
+    assert.ok(m0 !== undefined && typeof m0 === 'object' && m0 !== null);
+    assert.ok(m1 !== undefined && typeof m1 === 'object' && m1 !== null);
+    const mapPid0 = String(Reflect.get(m0, 'packet_id'));
+    const mapWt0 = String(Reflect.get(m0, 'worktree'));
+    const mapPid1 = String(Reflect.get(m1, 'packet_id'));
+    const mapWt1 = String(Reflect.get(m1, 'worktree'));
+    const cWt1 = realpathSync(wt1);
+    const cWt2 = realpathSync(wt2);
+    if (mapPid0 === 'ALS-S1') {
+      assert.equal(mapWt0, cWt1, 'ALS-S1 must map to wt1');
+      assert.equal(mapPid1, 'ALS-S2');
+      assert.equal(mapWt1, cWt2, 'ALS-S2 must map to wt2');
+    } else {
+      assert.equal(mapPid0, 'ALS-S2', 'first mapped packet must be ALS-S2 when ALS-S1 is second');
+      assert.equal(mapWt0, cWt2, 'ALS-S2 must map to wt2');
+      assert.equal(mapPid1, 'ALS-S1');
+      assert.equal(mapWt1, cWt1, 'ALS-S1 must map to wt1');
+    }
   } finally { await daemon.stop(); }
 });
 
-// ---- STORE-003: Active-handler shutdown drain ----
-test('red team: stop drains in-flight exec handlers before resolving (STORE-003)', async () => {
+// ---- STORE-003: Active-handler shutdown drain (deterministic barrier) ----
+test('red team: stop drains in-flight exec handlers — deterministic barrier (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-drain-${++daemonIndex}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, gitWorkspace);
-  // Start exec request (don't await yet) — let it connect first
-  const execPromise = postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root } });
-  await new Promise((r) => setTimeout(r, 300)); // wait for TCP connect
-  // Call stop() while a request is in-flight — server.close must drain
-  await daemon.stop();
+
+  let barrierEntered = false;
+  let barrierRelease!: () => void;
+  const barrierWait = new Promise<void>((resolve) => { barrierRelease = () => { resolve(); }; });
+
+  const daemon = await startDaemon(root, port, {
+    workspaceIdentity: gitWorkspace,
+    executeCommand: async (argv, io) => {
+      if (argv[0] === '__barrier__') { barrierEntered = true; await barrierWait; return 0; }
+      return main(argv, io);
+    },
+  });
+
+  const execPromise = postJson(port, '/api/v1/exec', {
+    token: daemon.token, argv: ['__barrier__'], context: { cwd: root },
+  }, 15000);
+
+  for (let i = 0; i < 100; i++) { await new Promise((r) => setTimeout(r, 100)); }
+  assert.ok(barrierEntered, 'barrier must be entered within 5s');
+
+  const stopPromise = daemon.stop();
+  const race = await Promise.race([stopPromise.then(() => 'resolved' as const), new Promise<string>((r) => setTimeout(() => { r('timeout'); }, 500))]);
+  assert.equal(race, 'timeout', 'stop must NOT resolve while barrier is in-flight');
+  barrierRelease();
+  const outcome = await stopPromise;
+  assert.equal(outcome.kind, 'stopped', 'stop must resolve with kind=stopped');
+
   const execResponse = await execPromise;
-  assert.equal(execResponse.statusCode, 200, `exec must complete before stop resolves, got ${execResponse.statusCode}`);
+  assert.equal(execResponse.statusCode, 200, `exec must complete, got ${execResponse.statusCode}`);
   const parsed: unknown = JSON.parse(execResponse.body);
   assert.ok(typeof parsed === 'object' && parsed !== null);
   assert.equal(Reflect.get(parsed, 'exitCode'), 0, `exec must succeed, got ${execResponse.body}`);
@@ -295,7 +331,7 @@ test('red team: exec requests are rejected with 503 or connection refused after 
   const root = await mkdtemp(join(tmpdir(), `svp-stop-rej-${++daemonIndex}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, gitWorkspace);
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, executeCommand: main });
 
   await daemon.stop();
 
@@ -318,7 +354,7 @@ test('red team: context boundary — outside-repo spoof, missing context, no sto
   const root = await mkdtemp(join(tmpdir(), `svp-boundary-${++daemonIndex}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, gitWorkspace);
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, executeCommand: main });
   try {
     const token = daemon.token; const ds = getDaemonStore(); assert.ok(ds);
 
@@ -343,23 +379,33 @@ test('red team: shutdown lifecycle transitions running→stopping→stopped; con
   const root = await mkdtemp(join(tmpdir(), `svp-stop-con-${++daemonIndex}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, gitWorkspace);
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, executeCommand: main });
   assert.equal(daemon.state(), 'running');
-
   const s1 = daemon.stop();
   assert.equal(daemon.state(), 'stopping');
-
   const s2 = daemon.stop();
   assert.strictEqual(s1, s2, 'concurrent stop() must return identical promise');
-
-  await s1;
+  const outcome = await s1;
+  assert.equal(outcome.kind, 'stopped');
   assert.equal(daemon.state(), 'stopped');
-
-  const ds = getDaemonStore();
-  assert.ok(ds === null, 'daemon store must be null after stop');
-
-  // Second stop after stopped resolves immediately
+  assert.ok(getDaemonStore() === null, 'daemon store must be null after stop');
   const s3 = daemon.stop();
   assert.equal(daemon.state(), 'stopped');
   await s3;
+});
+
+test('red team: onFinalize callback invoked exactly once; second stop does not re-run (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-finalize-${++daemonIndex}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  let finalizeCount = 0;
+  const daemon = await startDaemon(root, port, {
+    workspaceIdentity: gitWorkspace, executeCommand: main,
+    onFinalize: () => { finalizeCount++; },
+  });
+  assert.equal(finalizeCount, 0, 'no cleanup before stop');
+  await daemon.stop();
+  assert.equal(finalizeCount, 1, 'finalize must run exactly once');
+  await daemon.stop();
+  assert.equal(finalizeCount, 1, 'finalize must NOT run again on second stop');
 });
