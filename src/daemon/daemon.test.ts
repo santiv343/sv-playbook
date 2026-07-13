@@ -8,14 +8,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning, getDaemonStore } from '../db/store.js';
 import { startDaemon } from './daemon.js';
-import { createCliCommandExecutionPort } from './adapters/cli-execution-port.js';
-import { createNodeHttpServerFactory } from './adapters/http-server-adapter.js';
+import { createCliCommandExecutionPort } from './adapters/cli-command-execution.js';
+import { createNodeHttpServerFactory } from './adapters/node-http-server.js';
 const cliCommandPort = createCliCommandExecutionPort();
 const httpServerFactory = createNodeHttpServerFactory();
 import { gitWorkspace } from '../runtime/workspace-git.js';
 import { DAEMON_TOKEN_FILE } from './daemon.constants.js';
 import { EXIT } from '../cli/command.constants.js';
 import { SVP_DIR } from '../db/store.constants.js';
+import { createStoreSessionBinding } from './adapters/local-store-session-binding.js';
+const sessionBinding = createStoreSessionBinding();
 
 // Run the shipped sync transport (client.js forwardToDaemonSync) from a child
 // process — exactly how production auto-forwarding uses it (worktree CLI
@@ -63,7 +65,7 @@ test('a worktree CLI cannot open the live store directly and is served through t
     openStore(root).close();
 
     const port = await freePort();
-    const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory });
+    const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
 
     try {
       assert.ok(isDaemonRunning(root));
@@ -122,14 +124,14 @@ test('concurrent daemon starts: atomic lock file causes the second to refuse (ST
     openStore(root).close();
 
     const port1 = await freePort();
-    const daemon1 = await startDaemon(root, port1, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory });
+    const daemon1 = await startDaemon(root, port1, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
 
     try {
       assert.ok(isDaemonRunning(root));
 
       const port2 = await freePort();
       await assert.rejects(
-        () => startDaemon(root, port2, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory }),
+        () => startDaemon(root, port2, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding }),
         /already running/,
       );
     } finally {
@@ -143,7 +145,7 @@ test('daemon auth token file is created owner-only (mode 0600)', { skip: process
     openStore(root).close();
 
     const port = await freePort();
-    const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory });
+    const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
 
     try {
       const tokenPath = join(root, SVP_DIR, DAEMON_TOKEN_FILE);
@@ -164,7 +166,7 @@ test('daemon forwarded task note is persisted to the store (STORE-003)', async (
     store.close();
 
     const port = await freePort();
-    const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory });
+    const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
 
     try {
       assert.ok(isDaemonRunning(root));

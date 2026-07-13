@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EXIT } from './command.constants.js';
-import { daemonOutcomeToExitCode } from '../daemon/adapters/daemon-outcome.js';
-import type { Io } from './command.types.js';
-
+import { EXIT } from '../../cli/command.constants.js';
+import { daemonOutcomeToExitCode } from './cli-outcome.js';
+import type { Io } from '../../cli/command.types.js';
+import type { DaemonOutcome } from '../daemon.types.js';
 
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = [];
   const errLines: string[] = [];
-  return { outLines, errLines, out: (l) => void outLines.push(l), err: (l) => void errLines.push(l) };
+  return { outLines, errLines, out: (l: string) => void outLines.push(l), err: (l: string) => void errLines.push(l) };
 }
 
 test('daemonOutcomeToExitCode maps stopped to EXIT.OK with no stderr', () => {

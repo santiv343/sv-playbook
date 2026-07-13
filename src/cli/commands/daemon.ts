@@ -6,10 +6,11 @@ import { getCwd } from '../../runtime/context.js';
 import { gitWorkspace } from '../../runtime/workspace-git.js';
 import { DAEMON_DEFAULT_PORT } from '../../daemon/daemon.constants.js';
 import { startDaemon } from '../../daemon/daemon.js';
-import { createCliCommandExecutionPort } from '../../daemon/adapters/cli-execution-port.js';
-import { createNodeHttpServerFactory } from '../../daemon/adapters/http-server-adapter.js';
-import { createNodeSignalSubscription } from '../../daemon/adapters/signal-adapter.js';
-import { daemonOutcomeToExitCode } from '../../daemon/adapters/daemon-outcome.js';
+import { createCliCommandExecutionPort } from '../../daemon/adapters/cli-command-execution.js';
+import { createNodeHttpServerFactory } from '../../daemon/adapters/node-http-server.js';
+import { createNodeSignalSubscription } from '../../daemon/adapters/node-signal-subscription.js';
+import { daemonOutcomeToExitCode } from '../../daemon/adapters/cli-outcome.js';
+import { createStoreSessionBinding } from '../../daemon/adapters/local-store-session-binding.js';
 
 const USAGE = 'Usage: sv-playbook daemon [--port <N>]';
 
@@ -42,8 +43,9 @@ export const command: Command = {
     const cliCommandPort = createCliCommandExecutionPort();
     const httpServerFactory = createNodeHttpServerFactory();
     const signals = createNodeSignalSubscription();
+    const sessionBinding = createStoreSessionBinding();
     return new Promise((resolve) => {
-      startDaemon(repoRoot, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory }).then((instance) => {
+      startDaemon(repoRoot, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding }).then((instance) => {
         io.out(`Daemon ready on 127.0.0.1:${port} — pid ${process.pid}, token ${instance.token.slice(0, 8)}...`);
         io.out('Press Ctrl+C to stop');
         const shutdown = (): void => { void instance.stop(); };

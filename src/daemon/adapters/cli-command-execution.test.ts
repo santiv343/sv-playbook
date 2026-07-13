@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createCliCommandExecutionPort } from '../daemon/adapters/cli-execution-port.js';
+import { createCliCommandExecutionPort } from './cli-command-execution.js';
 
 const cliCommandPort = createCliCommandExecutionPort();
 

@@ -7,16 +7,18 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openStore } from '../db/store.js';
 import { startDaemon } from '../daemon/daemon.js';
-import { createCliCommandExecutionPort } from '../daemon/adapters/cli-execution-port.js';
-import { createNodeHttpServerFactory } from '../daemon/adapters/http-server-adapter.js';
-import { createNodeSignalSubscription } from '../daemon/adapters/signal-adapter.js';
+import { createCliCommandExecutionPort } from '../daemon/adapters/cli-command-execution.js';
+import { createNodeHttpServerFactory } from '../daemon/adapters/node-http-server.js';
+import { createNodeSignalSubscription } from '../daemon/adapters/node-signal-subscription.js';
 const cliCommandPort = createCliCommandExecutionPort();
 const realHttpFactory = createNodeHttpServerFactory();
 import { gitWorkspace } from '../runtime/workspace-git.js';
 import { freePort, initFixtureRepo, postJson, nextIndex, realCliEnv } from './daemon-test-utils.js';
 import type { HttpServerFactoryPort, HttpServerPort } from '../daemon/daemon.types.js';
+import { createStoreSessionBinding } from '../daemon/adapters/local-store-session-binding.js';
+const sessionBinding = createStoreSessionBinding();
 
-// ── ControllableServer: Promise-latch close control ──────────────────
+// ---- ControllableServer: Promise-latch close control ──────────────────
 class ControllableServer implements HttpServerPort {
   errorHandler: ((err: Error) => void) | null = null;
   closeCount = 0;
@@ -57,8 +59,8 @@ class ControllableServer implements HttpServerPort {
 
 function cf(s: HttpServerPort): HttpServerFactoryPort { return { create: () => s }; }
 
-// ── 1. Deterministic drain (no timing) ──
-test('red team: stop drains in-flight exec — deterministic barrier, no timing (STORE-003)', async () => {
+// ---- STORE-003: Active-handler shutdown drain (deterministic barrier) ----
+test('red team: stop drains in-flight exec handlers — deterministic barrier (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-drain-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
@@ -77,6 +79,7 @@ test('red team: stop drains in-flight exec — deterministic barrier, no timing 
         return cliCommandPort.execute(req);
       },
     },
+    sessionBinding,
   });
 
   try {
@@ -105,12 +108,12 @@ test('red team: stop drains in-flight exec — deterministic barrier, no timing 
   } finally { if (timer) clearTimeout(timer); await daemon.stop(); }
 });
 
-// ── 2. Exec rejected 503 after stop ──
+// ---- 2. Exec rejected 503 after stop ──
 test('red team: exec requests are rejected with 503 or connection refused after stop (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-stop-rej-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: realHttpFactory });
+  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: realHttpFactory, sessionBinding });
   await d.stop();
   try {
     const r = await postJson(port, '/api/v1/exec', { token: d.token, argv: ['describe'], context: { cwd: root } });
@@ -122,14 +125,14 @@ test('red team: exec requests are rejected with 503 or connection refused after 
   }
 });
 
-// ── 3. Repeated errors: once, first preserved ──
+// ---- 3. Repeated errors: once, first preserved ──
 test('red team: repeated post-start errors — once close+finalize, first error preserved (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-rep-err-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   let fc = 0;
   const sv = new ControllableServer();
-  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; } });
+  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; }, sessionBinding });
   sv.induceError(new Error('first'));
   sv.induceError(new Error('second'));
   sv.releaseClose();
@@ -140,14 +143,14 @@ test('red team: repeated post-start errors — once close+finalize, first error 
   assert.equal(fc, 1);
 });
 
-// ── 4. Stop→error before close: error wins ──
+// ---- 4. Stop→error before close: error wins ──
 test('red team: stop then error before close — outcome fails, not stops (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-stop-err-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   let fc = 0;
   const sv = new ControllableServer();
-  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; } });
+  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; }, sessionBinding });
   void d.stop();
   await sv.closeStarted;
   sv.induceError(new Error('close-error'));
@@ -159,14 +162,14 @@ test('red team: stop then error before close — outcome fails, not stops (STORE
   assert.equal(fc, 1);
 });
 
-// ── 5. Error→stop: outcome stays failed ──
+// ---- 5. Error→stop: outcome stays failed ──
 test('red team: error then stop — stop must not overwrite failed outcome (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-err-stop-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   let fc = 0;
   const sv = new ControllableServer();
-  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; } });
+  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; }, sessionBinding });
   sv.induceError(new Error('first-fail'));
   await sv.closeStarted;
   void d.stop();
@@ -178,14 +181,14 @@ test('red team: error then stop — stop must not overwrite failed outcome (STOR
   assert.equal(fc, 1);
 });
 
-// ── 6. Listen rejection: rejects after close+finalize ──
+// ---- 6. Listen rejection: rejects after close+finalize ──
 test('red team: listen rejection rejects after close+finalize, not early (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-listen-rej-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   let fc = 0;
   const sv = new ControllableServer({ rejectListenWith: new Error('port in use') });
-  const dp = startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; } });
+  const dp = startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; }, sessionBinding });
   await sv.closeStarted;
   sv.releaseClose();
   await assert.rejects(dp, /port in use/);
@@ -193,7 +196,7 @@ test('red team: listen rejection rejects after close+finalize, not early (STORE-
   assert.equal(fc, 1);
 });
 
-// ── 7. HTTP 500 stable error, no detail leak ──
+// ---- 7. HTTP 500 stable error, no detail leak ──
 test('red team: exec port rejection returns HTTP 500 with stable error, no detail leak (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-500-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -201,6 +204,7 @@ test('red team: exec port rejection returns HTTP 500 with stable error, no detai
   const d = await startDaemon(root, port, {
     workspaceIdentity: gitWorkspace, httpServerFactory: realHttpFactory,
     commandExecution: { async execute() { throw new Error('inter-secret'); } },
+    sessionBinding,
   });
   const r = await postJson(port, '/api/v1/exec', { token: d.token, argv: ['x'], context: { cwd: root } });
   assert.equal(r.statusCode, 500);
@@ -209,7 +213,7 @@ test('red team: exec port rejection returns HTTP 500 with stable error, no detai
   await d.stop();
 });
 
-// ── 8. Shutdown via async child: no process.exit ──
+// ---- 8. Shutdown via async child: no process.exit ──
 test('red team: shutdown endpoint does not call process.exit — async child survival (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-shut-${nextIndex()}`));
   initFixtureRepo(root);
@@ -248,7 +252,7 @@ test('red team: shutdown endpoint does not call process.exit — async child sur
   if (childExit === null) child.kill();
 });
 
-// ── 9. Real signal port register/unregister ──
+// ---- 9. Real signal port register/unregister ──
 test('red team: signal port registers once and unregisters once after done (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-sig-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -257,7 +261,7 @@ test('red team: signal port registers once and unregisters once after done (STOR
   // Test the REAL createNodeSignalSubscription, not a fake
   const signals = createNodeSignalSubscription();
   const events: string[] = [];
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: realHttpFactory });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: realHttpFactory, sessionBinding });
   const shutdown = () => { void daemon.stop(); };
 
   signals.onShutdown(shutdown);
@@ -270,14 +274,14 @@ test('red team: signal port registers once and unregisters once after done (STOR
   assert.deepEqual(events, ['on', 'off'], 'on then off exactly once');
 });
 
-// ── 10. Post-start server error ──
+// ---- 10. Post-start server error ──
 test('red team: post-start server error produces done->{kind:failed,error}, exactly-once finalize (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-srv-err-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   let fc = 0;
   const sv = new ControllableServer();
-  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; } });
+  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; }, sessionBinding });
   sv.induceError(new Error('induced'));
   sv.releaseClose();
   const o = await d.done;
@@ -288,14 +292,14 @@ test('red team: post-start server error produces done->{kind:failed,error}, exac
   assert.equal(d.state(), 'stopped');
 });
 
-// ── 11. Close rejection: secondary, causal failure preserved ──
+// ---- 11. Close rejection: secondary, causal failure preserved ──
 test('red team: close rejection is secondary — causal failure still wins (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-close-rej-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   let fc = 0;
   const sv = new ControllableServer({ rejectCloseWith: new Error('close-failed') });
-  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; } });
+  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; }, sessionBinding });
   sv.induceError(new Error('causal'));
   sv.releaseClose();
   const o = await d.done;
@@ -305,7 +309,7 @@ test('red team: close rejection is secondary — causal failure still wins (STOR
   assert.equal(fc, 1);
 });
 
-// ── 12. Finalize throw: causal failure preserved ──
+// ---- 12. Finalize throw: causal failure preserved ──
 test('red team: finalize throw is secondary — causal failure still wins (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-fin-throw-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
@@ -314,6 +318,7 @@ test('red team: finalize throw is secondary — causal failure still wins (STORE
   const sv = new ControllableServer();
   const d = await startDaemon(root, port, {
     workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv),
+    sessionBinding,
     onFinalize: () => { fc++; throw new Error('finalize-boom'); },
   });
   sv.induceError(new Error('causal'));
@@ -321,6 +326,44 @@ test('red team: finalize throw is secondary — causal failure still wins (STORE
   const o = await d.done;
   assert.equal(o.kind, 'failed');
   assert.equal(o.error.message, 'causal', 'causal error not overwritten by finalize throw');
+  assert.equal(sv.closeCount, 1);
+  assert.equal(fc, 1);
+});
+
+// ---- 13. Clean stop + close rejection: upgrades stopped -> failed ----
+test('red team: clean stop with close rejection upgrades outcome to failed (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-clean-close-rej-${nextIndex()}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  let fc = 0;
+  const sv = new ControllableServer({ rejectCloseWith: new Error('close-failed') });
+  const d = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv), onFinalize: () => { fc++; }, sessionBinding });
+  const sp = d.stop();
+  sv.releaseClose();
+  const o = await sp;
+  assert.equal(o.kind, 'failed', 'close rejection must upgrade clean stop to failed');
+  assert.ok(o.error.message.includes('close-failed'), `error must mention close failure: ${o.error.message}`);
+  assert.equal(sv.closeCount, 1);
+  assert.equal(fc, 1);
+});
+
+// ---- 14. Clean stop + finalize throw: upgrades stopped -> failed ----
+test('red team: clean stop with finalize throw upgrades outcome to failed (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), `svp-clean-fin-throw-${nextIndex()}`));
+  initFixtureRepo(root); openStore(root).close();
+  const port = await freePort();
+  let fc = 0;
+  const sv = new ControllableServer();
+  const d = await startDaemon(root, port, {
+    workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory: cf(sv),
+    sessionBinding,
+    onFinalize: () => { fc++; throw new Error('finalize-boom'); },
+  });
+  const sp = d.stop();
+  sv.releaseClose();
+  const o = await sp;
+  assert.equal(o.kind, 'failed', 'finalize throw must upgrade clean stop to failed');
+  assert.ok(o.error.message.includes('finalize'), `error must mention finalize failure: ${o.error.message}`);
   assert.equal(sv.closeCount, 1);
   assert.equal(fc, 1);
 });

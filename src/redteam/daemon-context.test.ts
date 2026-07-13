@@ -7,19 +7,21 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openStore, getDaemonStore } from '../db/store.js';
 import { startDaemon } from '../daemon/daemon.js';
-import { createCliCommandExecutionPort } from '../daemon/adapters/cli-execution-port.js';
-import { createNodeHttpServerFactory } from '../daemon/adapters/http-server-adapter.js';
+import { createCliCommandExecutionPort } from '../daemon/adapters/cli-command-execution.js';
+import { createNodeHttpServerFactory } from '../daemon/adapters/node-http-server.js';
 const cliCommandPort = createCliCommandExecutionPort();
 const httpServerFactory = createNodeHttpServerFactory();
 import { gitWorkspace } from '../runtime/workspace-git.js';
 import { freePort, initFixtureRepo, postJson, realCliEnv, spawnCollect, pollDaemon, stopDaemonChild, fakePort, nextIndex } from './daemon-test-utils.js';
+import { createStoreSessionBinding } from '../daemon/adapters/local-store-session-binding.js';
+const sessionBinding = createStoreSessionBinding();
 
 test('context validation accepts valid cwd via injected fake port (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), `svp-fake-port-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   const fp = fakePort(root);
-  const daemon = await startDaemon(root, port, { workspaceIdentity: fp, commandExecution: cliCommandPort, httpServerFactory });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: fp, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
   try {
     const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root } });
     assert.equal(res.statusCode, 200, 'fake-port daemon must accept valid cwd');
@@ -34,7 +36,7 @@ test('context validation rejects unknown cwd via injected fake port (STORE-003)'
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
   const fp = fakePort(root);
-  const daemon = await startDaemon(root, port, { workspaceIdentity: fp, commandExecution: cliCommandPort, httpServerFactory });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: fp, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
   try {
     const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: '/nonexistent' } });
     assert.equal(res.statusCode, 400, 'fake-port daemon must reject unknown cwd');
@@ -88,7 +90,7 @@ test('red team: concurrent HTTP exec requests with distinct worktree cwds are is
   execFileSync('git', ['worktree', 'add', wt2, 'HEAD'], { cwd: root });
   openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
   try {
     const [r1, r2] = await Promise.all([
       postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: wt1 } }),
@@ -109,7 +111,7 @@ test('red team: forwarded exec request preserves cwd in daemon context (STORE-00
   const root = await mkdtemp(join(tmpdir(), `svp-exec-ctx-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
   try {
     const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['describe'], context: { cwd: root } });
     assert.equal(res.statusCode, 200);
@@ -125,7 +127,7 @@ test('red team: exec with mixed-type argv is rejected before any side effect (ST
   const root = await mkdtemp(join(tmpdir(), `svp-argv-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
   try {
     const res = await postJson(port, '/api/v1/exec', { token: daemon.token, argv: ['valid', 123, null], context: { cwd: root } });
     assert.equal(res.statusCode, 400);
@@ -145,7 +147,7 @@ test('red team: concurrent session binding — two distinct packets, event-to-se
   seed.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('ALS-S2', 'Session Test 2', '/tmp', 'ready', '[]', datetime('now'), datetime('now'))").run();
   seed.close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
   try {
     const ds = getDaemonStore(); assert.ok(ds);
 
@@ -208,7 +210,7 @@ test('red team: context boundary — outside-repo spoof, missing context, no sto
   const root = await mkdtemp(join(tmpdir(), `svp-boundary-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
   try {
     const token = daemon.token; const ds = getDaemonStore(); assert.ok(ds);
 
@@ -233,7 +235,7 @@ test('red team: shutdown lifecycle transitions running→stopping→stopped; con
   const root = await mkdtemp(join(tmpdir(), `svp-stop-con-${nextIndex()}`));
   initFixtureRepo(root); openStore(root).close();
   const port = await freePort();
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
   assert.equal(daemon.state(), 'running');
   const s1 = daemon.stop();
   assert.equal(daemon.state(), 'stopping');
@@ -254,7 +256,7 @@ test('red team: onFinalize callback invoked exactly once; second stop does not r
   const port = await freePort();
   let finalizeCount = 0;
   const daemon = await startDaemon(root, port, {
-    workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory,
+    workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding,
     onFinalize: () => { finalizeCount++; },
   });
   assert.equal(finalizeCount, 0, 'no cleanup before stop');

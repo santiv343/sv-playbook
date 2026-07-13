@@ -2,12 +2,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { closeSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
-import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting, getDaemonStore } from '../db/store.js';
+import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting } from '../db/store.js';
 import { DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
 import { SVP_DIR } from '../db/store.constants.js';
 import { runWithContext, createContext } from '../runtime/context.js';
 import type { Store } from '../db/store.types.js';
-import type { DaemonInstance, DaemonOptions, DaemonOutcome, HttpServerPort } from './daemon.types.js';
+import type { DaemonInstance, DaemonOptions, DaemonOutcome, SessionBindingPort } from './daemon.types.js';
 
 const ERR_INVALID_JSON = 'invalid json';
 const ERR_INVALID_TOKEN = 'invalid token';
@@ -82,35 +82,24 @@ function parseExecRequest(raw: string, token: string, res: ServerResponse, repoR
   return { argv, ctx, clientSessionId };
 }
 
-function handleExec(token: string, req: IncomingMessage, res: ServerResponse, repoRoot: string, opts: DaemonOptions): void {
+function handleExec(token: string, req: IncomingMessage, res: ServerResponse, repoRoot: string, opts: DaemonOptions, binding: SessionBindingPort): void {
   readBody(req).then((raw) => {
     const parsed = parseExecRequest(raw, token, res, repoRoot, opts);
     if (parsed === null) return;
 
-    // Derive session from canonical workspace — client sessionId is advisory
-    const store = getDaemonStore();
-    if (store !== null) {
-      const worktree = parsed.ctx.cwd;
-      const row = store.db.prepare('SELECT id FROM sessions WHERE worktree = ?').get(worktree);
-      if (row !== undefined) {
-        const sid = String(Reflect.get(row, 'id'));
-        // Client-claimed sessionId must match the canonical binding
-        const clientSid: unknown = parsed.clientSessionId;
-        if (clientSid !== undefined && clientSid !== null && String(clientSid) !== sid) {
-          jsonResponse(res, 400, { error: ERR_INVALID_CONTEXT });
-          return;
-        }
-        parsed.ctx = createContext(parsed.ctx.cwd, sid);
-      } else {
-        // First-use: create session binding
-        const sid = randomUUID();
-        store.db.prepare('INSERT INTO sessions (id, worktree, started_at) VALUES (?, ?, ?)').run(sid, worktree, new Date().toISOString());
-        parsed.ctx = createContext(parsed.ctx.cwd, sid);
-      }
+    // Resolve session binding via injected port (storage-agnostic)
+    let sid: string | null = null;
+    try {
+      const result = binding.resolve({ worktree: parsed.ctx.cwd, clientSessionId: parsed.clientSessionId });
+      sid = result.sessionId;
+    } catch {
+      jsonResponse(res, 400, { error: ERR_INVALID_CONTEXT });
+      return;
     }
+    const enrichedCtx = createContext(parsed.ctx.cwd, sid);
 
-    runWithContext(parsed.ctx, () => opts.commandExecution.execute({ argv: parsed.argv, cwd: parsed.ctx.cwd })).then((result) => {
-      jsonResponse(res, 200, { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, daemonVersion: DAEMON_VERSION });
+    runWithContext(enrichedCtx, () => opts.commandExecution.execute({ argv: parsed.argv, cwd: parsed.ctx.cwd })).then((result) => {
+      jsonResponse(res, 200, { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, daemonVersion: DAEMON_VERSION, sessionId: sid });
     }).catch(() => {
       jsonResponse(res, 500, { error: ERR_EXEC_REJECTED });
     });
@@ -147,7 +136,7 @@ function acquireLock(lockPath: string, pid: number, port: number): void {
   }
 }
 
-function routeRequest(token: string, req: IncomingMessage, res: ServerResponse, repoRoot: string, opts: DaemonOptions, shutdown: () => Promise<DaemonOutcome>, daemonState: () => 'running' | 'stopping' | 'stopped'): void {
+function routeRequest(token: string, req: IncomingMessage, res: ServerResponse, repoRoot: string, opts: DaemonOptions, shutdown: () => Promise<DaemonOutcome>, daemonState: () => 'running' | 'stopping' | 'stopped', binding: SessionBindingPort): void {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   if (req.method === 'GET' && url.pathname === '/api/v1/health') {
     jsonResponse(res, 200, { status: daemonState() === 'running' ? 'ok' : 'stopping', version: DAEMON_VERSION, pid: process.pid, storeLock: 'exclusive' });
@@ -155,7 +144,7 @@ function routeRequest(token: string, req: IncomingMessage, res: ServerResponse, 
   }
   if (daemonState() !== 'running') { jsonResponse(res, 503, { error: ERR_UNAVAILABLE }); return; }
   if (req.method !== 'POST') { notFound(res); return; }
-  if (url.pathname === '/api/v1/exec') { handleExec(token, req, res, repoRoot, opts); return; }
+  if (url.pathname === '/api/v1/exec') { handleExec(token, req, res, repoRoot, opts, binding); return; }
   if (url.pathname === '/api/v1/shutdown') { handleShutdown(token, req, res, shutdown); return; }
   notFound(res);
 }
@@ -186,7 +175,15 @@ export function startDaemon(repoRoot: string, port: number, opts: DaemonOptions)
     setDaemonStarting(false);
     setDaemonStore(store);
 
-    const finalize = (): void => { setDaemonStore(null); store.close(); try { unlinkSync(lockPath); } catch { } try { unlinkSync(tokenPath); } catch { } };
+    const sessionBinding = opts.sessionBinding;
+
+    const evidence: string[] = [];
+    const finalize = (): void => {
+      setDaemonStore(null);
+      try { store.close(); } catch (e: unknown) { evidence.push(`store:${e instanceof Error ? e.message : String(e)}`); }
+      try { unlinkSync(lockPath); } catch (e: unknown) { evidence.push(`lock:${e instanceof Error ? e.message : String(e)}`); }
+      try { unlinkSync(tokenPath); } catch (e: unknown) { evidence.push(`token:${e instanceof Error ? e.message : String(e)}`); }
+    };
 
     try {
       store.db.exec('BEGIN EXCLUSIVE'); store.db.exec('COMMIT');
@@ -201,10 +198,8 @@ export function startDaemon(repoRoot: string, port: number, opts: DaemonOptions)
     const lifecyclePromise = new Promise<DaemonOutcome>((resolveLifecycle) => { lifecycleComplete = (outcome) => { resolveLifecycle(outcome); }; });
     let startSettled = false;
 
-    // Noop listener — replaced by real listener once created. Guarantees
-    // terminate() always has a valid close() regardless of failure timing.
-    const noopListener: HttpServerPort = { listen: () => Promise.resolve(), close: () => Promise.resolve(), onError: () => {} };
-    let listener: ReturnType<typeof opts.httpServerFactory.create> = noopListener;
+    const noopListener: import('./daemon.types.js').HttpServerPort = { listen: () => Promise.resolve(), close: () => Promise.resolve(), onError: () => {} };
+    let listener: import('./daemon.types.js').HttpServerPort = noopListener;
 
     const terminate = (outcome: DaemonOutcome): void => {
       if (terminationStarted) {
@@ -215,15 +210,21 @@ export function startDaemon(repoRoot: string, port: number, opts: DaemonOptions)
       terminationOutcome = outcome;
       const done = (): void => {
         daemonState = 'stopped';
-        try { finalize(); } catch { /* finalize errors are secondary — causal outcome preserved */ }
-        try { opts.onFinalize?.(); } catch { /* onFinalize errors are secondary */ }
-        if (!startSettled) reject(outcome.kind === 'failed' ? outcome.error : new Error('daemon terminated before start'));
+        finalize();
+        try { opts.onFinalize?.(); } catch (e: unknown) { evidence.push(`onFinalize:${e instanceof Error ? e.message : String(e)}`); }
+        if (terminationOutcome.kind === 'stopped' && evidence.length > 0) {
+          terminationOutcome = { kind: 'failed', error: new Error(`cleanup errors: ${evidence.join('; ')}`) };
+        }
+        if (!startSettled) reject(terminationOutcome.kind === 'failed' ? terminationOutcome.error : Error('daemon terminated before start'));
         lifecycleComplete?.(terminationOutcome);
       };
-      void listener.close().then(done, () => { done(); /* close rejection is secondary — proceed with finalize */ });
+      void listener.close().then(done, (err: unknown) => {
+        evidence.push(`close:${err instanceof Error ? err.message : String(err)}`);
+        done();
+      });
     };
 
-    listener = opts.httpServerFactory.create((req, res) => { routeRequest(token, req, res, repoRoot, opts, shutdown, getState); });
+    listener = opts.httpServerFactory.create((req, res) => { routeRequest(token, req, res, repoRoot, opts, shutdown, getState, sessionBinding); });
 
     const shutdown = (): Promise<DaemonOutcome> => {
       if (daemonState !== 'running') return lifecyclePromise;
@@ -235,6 +236,9 @@ export function startDaemon(repoRoot: string, port: number, opts: DaemonOptions)
     listener.onError((err: Error) => { terminate({ kind: 'failed', error: err }); });
 
     void listener.listen(port, '127.0.0.1').then(() => {
+      // Guard: if terminate already started (e.g., listen error fired spuriously),
+      // never resolve the daemon instance for a terminated listener.
+      if (terminationStarted) return;
       startSettled = true;
       resolve({ port, token, stop: shutdown, state: getState, done: lifecyclePromise });
     }, (err: unknown) => {

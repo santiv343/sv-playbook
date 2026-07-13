@@ -29,12 +29,28 @@ export interface DaemonOptions {
   readonly workspaceIdentity: import('../runtime/workspace.types.js').WorkspacePort;
   readonly commandExecution: CommandExecutionPort;
   readonly httpServerFactory: HttpServerFactoryPort;
+  readonly sessionBinding: SessionBindingPort;
   onFinalize?: () => void;
 }
 
 export interface SignalSubscriptionPort {
   onShutdown(handler: () => void): void;
   removeShutdownHandler(handler: () => void): void;
+}
+
+export interface SessionBindingResult {
+  readonly kind: 'bound' | 'created';
+  readonly sessionId: string;
+}
+
+export interface SessionBindingPort {
+  /** Resolve a durable session binding for the given canonical worktree.
+   *  - No binding + null clientSessionId → first-use (created)
+   *  - No binding + clientSessionId provided → bind the supplied ID (created)
+   *  - Binding exists + null clientSessionId → reuse (bound)
+   *  - Binding exists + clientSessionId matches → reuse (bound)
+   *  - Binding exists + clientSessionId present + mismatch → throws */
+  resolve(request: { worktree: string; clientSessionId: unknown }): SessionBindingResult;
 }
 
 export interface DaemonInstance {

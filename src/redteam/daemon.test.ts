@@ -11,11 +11,13 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { openStore, isDaemonRunning } from '../db/store.js';
 import { startDaemon } from '../daemon/daemon.js';
-import { createCliCommandExecutionPort } from '../daemon/adapters/cli-execution-port.js';
-import { createNodeHttpServerFactory } from '../daemon/adapters/http-server-adapter.js';
+import { createCliCommandExecutionPort } from '../daemon/adapters/cli-command-execution.js';
+import { createNodeHttpServerFactory } from '../daemon/adapters/node-http-server.js';
 const cliCommandPort = createCliCommandExecutionPort();
 const httpServerFactory = createNodeHttpServerFactory();
 import { gitWorkspace } from '../runtime/workspace-git.js';
+import { createStoreSessionBinding } from '../daemon/adapters/local-store-session-binding.js';
+const sessionBinding = createStoreSessionBinding();
 
 function realCliEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -120,7 +122,7 @@ test('red team: a worktree process cannot open the store directly while the daem
     });
   });
 
-  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory });
+  const daemon = await startDaemon(root, port, { workspaceIdentity: gitWorkspace, commandExecution: cliCommandPort, httpServerFactory, sessionBinding });
 
   try {
     assert.ok(isDaemonRunning(root));
