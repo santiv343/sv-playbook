@@ -2,13 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { main } from '../main.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import type { ConformanceReceipt } from '../../enforcement/conformance.types.js';
-
-const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
 
 function isConformanceReceipt(value: unknown): value is ConformanceReceipt {
   return typeof value === 'object' && value !== null && 'verdict' in value;
@@ -53,17 +51,23 @@ const VALID_CONTRACT = {
 };
 
 test('invalid profile exits non-zero with schema failure', async () => {
-  const contractPath = join(REPO_ROOT, '.tmp', 'data-governance.contract.json');
-  const schemaPath = join(REPO_ROOT, '.tmp', 'data-policy.schema.json');
-  const profilePath = join(REPO_ROOT, '.tmp', 'local-reviewable.data-policy.json');
+  const dir = await mkdtemp(join(tmpdir(), 'enforce-test-'));
+  try {
+    const invalidProfile = {};
+    await writeFile(join(dir, 'schema.json'), JSON.stringify(MINIMAL_SCHEMA));
+    await writeFile(join(dir, 'profile.json'), JSON.stringify(invalidProfile));
+    await writeFile(join(dir, 'contract.json'), JSON.stringify(VALID_CONTRACT));
 
-  const io = fakeIo();
-  const code = await main(['enforce', contractPath, schemaPath, profilePath], io);
-  assert.notEqual(code, EXIT.OK);
-  const receipt = readReceipt(io.outLines);
-  assert.equal(receipt.verdict, 'nonconformant');
-  assert.ok(receipt.schema_errors.length > 0, 'expected schema errors');
-  assert.ok(receipt.failure_codes.includes('SCHEMA_INVALID'), 'expected SCHEMA_INVALID failure code');
+    const io = fakeIo();
+    const code = await main(['enforce', join(dir, 'contract.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io);
+    assert.notEqual(code, EXIT.OK);
+    const receipt = readReceipt(io.outLines);
+    assert.equal(receipt.verdict, 'nonconformant');
+    assert.ok(receipt.schema_errors.length > 0, 'expected schema errors');
+    assert.ok(receipt.failure_codes.includes('SCHEMA_INVALID'), 'expected SCHEMA_INVALID failure code');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('duplicate scenario IDs detected', async () => {
