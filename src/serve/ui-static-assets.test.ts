@@ -11,6 +11,8 @@ const UI_ASSET_SUFFIXES = ['.html', '.js', '.css'];
 const MOJIBAKE_LEAD = 'Ã';
 const UTF8_CONTINUATION_MIN = 0x80;
 const UTF8_CONTINUATION_MAX = 0xbf;
+const NOT_FOUND = -1;
+const MIN_UI_ASSET_COUNT = 1;
 
 function collectUiAssetPaths(): string[] {
   return readdirSync(UI_ASSET_ROOT, { recursive: true, withFileTypes: true })
@@ -24,7 +26,7 @@ function containsDoubleEncodedUtf8(content: string): boolean {
   let from = 0;
   for (;;) {
     const index = content.indexOf(MOJIBAKE_LEAD, from);
-    if (index === -1 || index + 1 >= content.length) {
+    if (index === NOT_FOUND || index + 1 >= content.length) {
       return false;
     }
     const next = content.charCodeAt(index + 1);
@@ -37,7 +39,7 @@ function containsDoubleEncodedUtf8(content: string): boolean {
 
 test('static UI assets contain no double-encoded UTF-8 sequences', () => {
   const assets = collectUiAssetPaths();
-  assert.ok(assets.length > 0, 'expected UI assets under content/ui');
+  assert.ok(assets.length >= MIN_UI_ASSET_COUNT, 'expected UI assets under content/ui');
   for (const asset of assets) {
     const content = readFileSync(asset, TEXT_ENCODING.UTF8);
     assert.ok(!containsDoubleEncodedUtf8(content), `${asset} contains a double-encoded UTF-8 sequence`);

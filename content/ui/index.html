@@ -112,15 +112,15 @@
     </section>
 
     <section class="view" data-panel="promotions">
-      <header class="view-header"><div><h1>Promociones</h1><p>Estado mecÃ¡nico desde el candidato inmutable hasta la integraciÃ³n y el cierre de la tarea.</p></div></header>
+      <header class="view-header"><div><h1>Promociones</h1><p>Estado mecánico desde el candidato inmutable hasta la integración y el cierre de la tarea.</p></div></header>
       <section class="panel">
-        <div class="panel-heading"><div class="heading-with-help"><h2>Candidatos controlados</h2><button class="info-button" type="button" aria-label="Acerca de promociones" data-tooltip="Cada fila estÃ¡ ligada a un SHA, una revisiÃ³n independiente y recibos durables. Solo el estado closed produjo una tarea done."><i data-lucide="circle-help"></i></button></div><span id="promotion-count" class="count"></span></div>
+        <div class="panel-heading"><div class="heading-with-help"><h2>Candidatos controlados</h2><button class="info-button" type="button" aria-label="Acerca de promociones" data-tooltip="Cada fila está ligada a un SHA, una revisión independiente y recibos durables. Solo el estado closed produjo una tarea done."><i data-lucide="circle-help"></i></button></div><span id="promotion-count" class="count"></span></div>
         <div class="table-wrap"><table><thead><tr>
-          <th><span class="column-heading">Estado<button class="info-button" type="button" aria-label="Acerca del estado de promociÃ³n" data-tooltip="Etapa efectiva del controlador: verificaciones, aprobaciÃ³n, integraciÃ³n o cierre."><i data-lucide="circle-help"></i></button></span></th>
+          <th><span class="column-heading">Estado<button class="info-button" type="button" aria-label="Acerca del estado de promoción" data-tooltip="Etapa efectiva del controlador: verificaciones, aprobación, integración o cierre."><i data-lucide="circle-help"></i></button></span></th>
           <th>Tarea y candidato</th><th>SHA</th><th>Destino</th>
-          <th><span class="column-heading">Resultado Git<button class="info-button" type="button" aria-label="Acerca del resultado Git" data-tooltip="ObservaciÃ³n posterior al intento: succeeded, failed o unknown. Unknown bloquea el cierre."><i data-lucide="circle-help"></i></button></span></th>
-          <th><span class="column-heading">Recibo final<button class="info-button" type="button" aria-label="Acerca del recibo final" data-tooltip="Identidad durable emitida en la misma transacciÃ³n que mueve la tarea a done."><i data-lucide="circle-help"></i></button></span></th>
-          <th>Ãšltimo cambio</th>
+          <th><span class="column-heading">Resultado Git<button class="info-button" type="button" aria-label="Acerca del resultado Git" data-tooltip="Observación posterior al intento: succeeded, failed o unknown. Unknown bloquea el cierre."><i data-lucide="circle-help"></i></button></span></th>
+          <th><span class="column-heading">Recibo final<button class="info-button" type="button" aria-label="Acerca del recibo final" data-tooltip="Identidad durable emitida en la misma transacción que mueve la tarea a done."><i data-lucide="circle-help"></i></button></span></th>
+          <th>Último cambio</th>
         </tr></thead><tbody id="promotion-rows"></tbody></table></div>
       </section>
     </section>
