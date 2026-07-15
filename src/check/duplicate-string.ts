@@ -68,7 +68,7 @@ function occurrences(source: DuplicateStringSource): StringOccurrence[] {
 }
 
 function fingerprint(item: StringOccurrence): string {
-  return sourceFingerprint([item.path, DUPLICATE_STRING_KIND, item.value]);
+  return sourceFingerprint([DUPLICATE_STRING_KIND, item.value]);
 }
 
 function compareOccurrences(left: StringOccurrence, right: StringOccurrence): number {

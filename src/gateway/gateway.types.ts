@@ -116,6 +116,12 @@ export interface AdapterObservationRequest extends AdapterOperationRequest {
   messageId: string;
 }
 
+export interface AdapterRunFailure {
+  code: string;
+  message: string;
+  evidence: Readonly<Record<string, unknown>>;
+}
+
 export interface AdapterRunObservation {
   adapterId: string;
   sessionId: string;
@@ -124,6 +130,7 @@ export interface AdapterRunObservation {
   progressToken: string;
   observedToolIds: readonly string[];
   output?: string;
+  failure?: AdapterRunFailure;
   evidence: Readonly<Record<string, unknown>>;
 }
 

@@ -6,5 +6,5 @@ export function sourceFingerprint(parts: readonly string[]): string {
 }
 
 export function sourceInventoryDigest(fingerprints: readonly string[]): string {
-  return createHash(HASH_ALGORITHM.SHA256).update(fingerprints.join('\n')).digest(HASH_ENCODING.HEX);
+  return createHash(HASH_ALGORITHM.SHA256).update([...fingerprints].sort().join('\n')).digest(HASH_ENCODING.HEX);
 }

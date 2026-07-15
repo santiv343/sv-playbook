@@ -176,8 +176,14 @@ async function cancelAndAwait(
   return { cancellation, observation, confirmed: observation.state !== ADAPTER_RUN_STATE.RUNNING };
 }
 
-function adapterFailure(state: AdapterRunObservation['state']): ContextError {
-  return new ContextError('AGENT_RUN_FAILED', `adapter reported terminal state: ${state}`);
+function adapterFailureDetail(observation: AdapterRunObservation): string {
+  return observation.failure === undefined
+    ? `adapter reported terminal state: ${observation.state}`
+    : `${observation.failure.code}: ${observation.failure.message}`;
+}
+
+function adapterFailure(observation: AdapterRunObservation): ContextError {
+  return new ContextError(GATEWAY_LIFECYCLE_ERROR.AGENT_RUN_FAILED, adapterFailureDetail(observation));
 }
 
 function failObservingRun(store: Store, runSpec: RunSpec, error: unknown, nowMs: number): void {
@@ -225,8 +231,9 @@ function handleTerminal(
 ): GatewayCompletionReceipt | undefined {
   if (observation.state === ADAPTER_RUN_STATE.RUNNING) return undefined;
   if (observation.state === ADAPTER_RUN_STATE.COMPLETED) return validateCompletion(context, observation, nowMs);
-  finishRun(context.store, context.runSpec, observation.state, observation, nowMs);
-  throw adapterFailure(observation.state);
+  const detail = adapterFailureDetail(observation);
+  finishRun(context.store, context.runSpec, observation.state, observation, nowMs, detail);
+  throw adapterFailure(observation);
 }
 
 async function enforceProgressTimeout(context: LifecycleContext, state: ObservationState, nowMs: number): Promise<void> {

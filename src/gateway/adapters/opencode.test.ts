@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { OpenCodeAdapter } from './opencode.js';
+import { OpenCodeAdapter } from './opencode-adapter.js';
 import type { AdapterObservationRequest, AdapterOperationRequest, AdapterTurnRequest, ExecutionProfile, RunSpec } from '../gateway.types.js';
 import { HTTP_METHOD } from '../../platform.constants.js';
 import {
@@ -51,6 +51,7 @@ interface MockState {
   toolStatus?: string;
   structuredOutput?: unknown;
   assistantText?: string;
+  assistantError?: Readonly<Record<string, unknown>>;
 }
 
 const SAFE_AGENT_PERMISSIONS = [
@@ -76,7 +77,9 @@ function getResponse(url: URL, response: ServerResponse, state: MockState): bool
   else if (url.pathname === openCodeSessionMessagePath(TEST_SESSION_ID)) response.end(JSON.stringify([
     { info: { id: state.submitted?.messageID, role: 'user' }, parts: [] },
     { info: {
-      id: 'assistant-1', role: 'assistant', parentID: state.submitted?.messageID, finish: 'stop',
+      id: 'assistant-1', role: 'assistant', parentID: state.submitted?.messageID,
+      finish: state.assistantError === undefined ? 'stop' : undefined,
+      error: state.assistantError,
       structured: state.structuredOutput,
     },
       parts: [{ id: 'tool-1', type: 'tool', tool: 'engram', state: { status: state.toolStatus ?? 'completed' } },
@@ -177,6 +180,17 @@ test('OpenCode adapter submits once and reports actual terminal tools and output
     state.toolStatus = 'error';
     const denied = await adapter.observeRun(observationRequest);
     assert.deepEqual(denied.observedToolIds, []);
+    state.assistantError = {
+      name: 'UnknownError',
+      data: { message: 'unknown certificate verification error' },
+    };
+    const failed = await adapter.observeRun(observationRequest);
+    assert.equal(failed.state, 'failed');
+    assert.deepEqual(failed.evidence.providerError, {
+      code: 'UnknownError',
+      message: 'unknown certificate verification error',
+    });
+    delete state.assistantError;
     const nativeProfile: ExecutionProfile = {
       ...executionProfile,
       adapterConfig: { ...executionProfile.adapterConfig, outputMode: OPENCODE_OUTPUT_MODE.NATIVE },

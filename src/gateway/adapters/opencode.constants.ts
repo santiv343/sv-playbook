@@ -45,6 +45,11 @@ export const OPENCODE_OUTPUT_FORMAT = {
   JSON_SCHEMA: 'json_schema',
 } as const;
 
+export const OPENCODE_PROVIDER_ERROR = {
+  UNKNOWN_CODE: 'OPENCODE_PROVIDER_ERROR',
+  UNKNOWN_MESSAGE: 'OpenCode reported an unspecified provider error',
+} as const;
+
 export const OPENCODE_OUTPUT_MODE = {
   NATIVE: 'native',
   VALIDATED_TEXT: 'validated-text',

@@ -4,15 +4,10 @@ import { HTTP_METHOD } from '../../platform.constants.js';
 import type {
   AdapterOperationRequest,
   AdapterObservationRequest,
-  AdapterProfileReceipt,
   AdapterRunObservation,
-  AdapterCancellationReceipt,
-  AdapterSessionReceipt,
-  AdapterTurnReceipt,
   AdapterTurnRequest,
-  AgentAdapter,
+  AdapterRunFailure,
   ExecutionProfile,
-  RunSpec,
 } from '../gateway.types.js';
 import { ADAPTER_RUN_STATE } from '../gateway.types.js';
 import {
@@ -21,9 +16,9 @@ import {
   OPENCODE_MESSAGE_FIELD,
   OPENCODE_OUTPUT_MODE,
   OPENCODE_PART_TYPE,
+  OPENCODE_PROVIDER_ERROR,
   OPENCODE_TOOL_STATE,
   type OpenCodeOutputMode,
-  openCodeSessionAbortPath,
   openCodeSessionMessagePath,
   openCodeSessionPath,
   openCodeSessionPromptPath,
@@ -53,11 +48,16 @@ function record(value: unknown, label: string): Record<string, unknown> {
 }
 
 function requiredString(value: unknown, label: string): string {
-  if (typeof value !== 'string' || value.length === 0) throw new ContextError('INVALID_ADAPTER_RESPONSE', `${label} must be a string`);
-  return value;
+  const parsed = optionalString(value);
+  if (parsed === undefined) throw new ContextError('INVALID_ADAPTER_RESPONSE', `${label} must be a string`);
+  return parsed;
 }
 
-function adapterConfig(profile: ExecutionProfile): AdapterConfig {
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && Boolean(value) ? value : undefined;
+}
+
+export function adapterConfig(profile: ExecutionProfile): AdapterConfig {
   const baseUrl = requiredString(profile.adapterConfig.baseUrl, 'adapter baseUrl');
   const versions = profile.adapterConfig.allowedVersions;
   if (!Array.isArray(versions) || versions.some((version) => typeof version !== 'string')) {
@@ -74,7 +74,7 @@ function adapterConfig(profile: ExecutionProfile): AdapterConfig {
   };
 }
 
-function endpoint(config: AdapterConfig, path: string, directory?: string): string {
+export function endpoint(config: AdapterConfig, path: string, directory?: string): string {
   const url = new URL(`${config.baseUrl}${path}`);
   if (directory !== undefined) url.searchParams.set('directory', directory);
   return url.toString();
@@ -86,7 +86,7 @@ async function responseJson(response: Response, label: string): Promise<unknown>
   return value;
 }
 
-async function health(config: AdapterConfig): Promise<string> {
+export async function health(config: AdapterConfig): Promise<string> {
   const body = record(await responseJson(await fetch(endpoint(config, OPENCODE_API_PATH.HEALTH)), 'health'), 'health');
   if (body.healthy !== true) throw new ContextError('ADAPTER_UNHEALTHY', 'OpenCode health response is not healthy');
   const version = requiredString(body.version, 'server version');
@@ -94,7 +94,7 @@ async function health(config: AdapterConfig): Promise<string> {
   return version;
 }
 
-async function toolPolicy(config: AdapterConfig, profile: ExecutionProfile, directory: string): Promise<Record<string, boolean>> {
+export async function toolPolicy(config: AdapterConfig, profile: ExecutionProfile, directory: string): Promise<Record<string, boolean>> {
   const raw: unknown = await responseJson(await fetch(endpoint(config, OPENCODE_API_PATH.TOOL_IDS, directory)), 'tool ids');
   if (!Array.isArray(raw) || raw.some((tool) => typeof tool !== 'string')) {
     throw new ContextError('INVALID_ADAPTER_RESPONSE', 'tool ids must be a string array');
@@ -107,7 +107,7 @@ async function toolPolicy(config: AdapterConfig, profile: ExecutionProfile, dire
   return { ...profile.tools };
 }
 
-async function verifyAgent(config: AdapterConfig, profile: ExecutionProfile, directory: string): Promise<void> {
+export async function verifyAgent(config: AdapterConfig, profile: ExecutionProfile, directory: string): Promise<void> {
   const raw: unknown = await responseJson(await fetch(endpoint(config, OPENCODE_API_PATH.AGENT, directory)), 'agents');
   if (!Array.isArray(raw)) throw new ContextError('INVALID_ADAPTER_RESPONSE', 'agents must be an array');
   const agent = raw.map((value) => record(value, 'agent')).find((value) => value.name === profile.agentId);
@@ -136,7 +136,7 @@ function sessionBody(request: AdapterOperationRequest): Record<string, unknown> 
   };
 }
 
-async function createOpenCodeSession(config: AdapterConfig, request: AdapterOperationRequest): Promise<Record<string, unknown>> {
+export async function createOpenCodeSession(config: AdapterConfig, request: AdapterOperationRequest): Promise<Record<string, unknown>> {
   const response = await fetch(endpoint(config, OPENCODE_API_PATH.SESSION, request.directory), {
     method: HTTP_METHOD.POST, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sessionBody(request)),
   });
@@ -146,7 +146,7 @@ async function createOpenCodeSession(config: AdapterConfig, request: AdapterOper
   return record(await responseJson(confirmed, 'confirm session'), 'session');
 }
 
-function verifySession(session: Record<string, unknown>, request: AdapterOperationRequest): string {
+export function verifySession(session: Record<string, unknown>, request: AdapterOperationRequest): string {
   const sessionId = requiredString(session.id, SESSION_ID_LABEL);
   const profile = request.runSpec.executionProfile;
   if (session.agent !== profile.agentId || session.directory !== request.directory) {
@@ -167,7 +167,7 @@ function messageId(operationKey: string): string {
   return `msg_${digest(operationKey).slice('sha256:'.length)}`;
 }
 
-async function submitPrompt(config: AdapterConfig, request: AdapterTurnRequest, tools: Record<string, boolean>): Promise<string> {
+export async function submitPrompt(config: AdapterConfig, request: AdapterTurnRequest, tools: Record<string, boolean>): Promise<string> {
   const profile = request.runSpec.executionProfile;
   const id = messageId(request.operationKey);
   const body: Record<string, unknown> = {
@@ -254,6 +254,31 @@ function finalState(info: Record<string, unknown>): AdapterRunObservation['state
   return finish.length > 0 ? ADAPTER_RUN_STATE.COMPLETED : ADAPTER_RUN_STATE.RUNNING;
 }
 
+function providerFailure(info: Record<string, unknown> | undefined): AdapterRunFailure | undefined {
+  if (info?.error === undefined) return undefined;
+  const error = record(info.error, 'provider error');
+  const data = error.data === undefined ? {} : record(error.data, 'provider error data');
+  const code = optionalString(error.name) ?? OPENCODE_PROVIDER_ERROR.UNKNOWN_CODE;
+  const message = optionalString(data.message)
+    ?? optionalString(error.message)
+    ?? OPENCODE_PROVIDER_ERROR.UNKNOWN_MESSAGE;
+  return { code, message, evidence: error };
+}
+
+function providerError(failure: AdapterRunFailure | undefined): Readonly<Record<string, string>> | null {
+  return failure === undefined ? null : { code: failure.code, message: failure.message };
+}
+
+function withTerminalFields(
+  observation: AdapterRunObservation,
+  output: string | undefined,
+  failure: AdapterRunFailure | undefined,
+): AdapterRunObservation {
+  if (output !== undefined) observation.output = output;
+  if (failure !== undefined) observation.failure = failure;
+  return observation;
+}
+
 function messagesAfterParent(rawMessages: unknown, parentMessageId: string): Record<string, unknown>[] | undefined {
   const allMessages = messages(rawMessages);
   const parentIndex = allMessages.findIndex((message) => messageInfo(message).id === parentMessageId);
@@ -294,6 +319,7 @@ function toObservation(
     .map(executedToolId).filter((value): value is string => value !== undefined);
   const lastAssistant = assistants.at(-1);
   const lastInfo = lastAssistant === undefined ? undefined : messageInfo(lastAssistant);
+  const failure = providerFailure(lastInfo);
   const state = busy || lastInfo === undefined ? 'running' : finalState(lastInfo);
   const evidence = progressEvidence(relevant);
   const output = terminalOutput(lastAssistant, state);
@@ -309,73 +335,16 @@ function toObservation(
       activity: openCodeRunActivity(lastAssistant, state),
       responseCount: assistants.length,
       terminalFinish: lastInfo?.finish ?? null,
+      providerError: providerError(failure),
     },
   };
-  if (output !== undefined) observation.output = output;
-  return observation;
+  return withTerminalFields(observation, output, failure);
 }
 
-async function observeOpenCodeRun(config: AdapterConfig, request: AdapterObservationRequest): Promise<AdapterRunObservation> {
+export async function observeOpenCodeRun(config: AdapterConfig, request: AdapterObservationRequest): Promise<AdapterRunObservation> {
   const [rawMessages, rawStatuses] = await Promise.all([
     responseJson(await fetch(endpoint(config, openCodeSessionMessagePath(request.sessionId), request.directory)), 'session messages'),
     responseJson(await fetch(endpoint(config, OPENCODE_API_PATH.SESSION_STATUS, request.directory)), SESSION_STATUS_LABEL),
   ]);
   return toObservation(rawMessages, rawStatuses, request);
-}
-
-export class OpenCodeAdapter implements AgentAdapter {
-  readonly id = OPENCODE_ADAPTER_ID;
-
-  async verifyProfile(runSpec: RunSpec, directory: string): Promise<AdapterProfileReceipt> {
-    const config = adapterConfig(runSpec.executionProfile);
-    const serverVersion = await health(config);
-    await verifyAgent(config, runSpec.executionProfile, directory);
-    const tools = await toolPolicy(config, runSpec.executionProfile, directory);
-    const profileDigest = digest({ serverVersion, profile: runSpec.executionProfile, tools, directory });
-    return { adapterId: this.id, profileDigest, evidence: { serverVersion, tools } };
-  }
-
-  async createSession(request: AdapterOperationRequest, profile: AdapterProfileReceipt): Promise<AdapterSessionReceipt> {
-    const config = adapterConfig(request.runSpec.executionProfile);
-    const session = await createOpenCodeSession(config, request);
-    const sessionId = verifySession(session, request);
-    return {
-      adapterId: this.id,
-      sessionId,
-      profileDigest: profile.profileDigest,
-      sessionReceipt: { operationKey: request.operationKey, status: 'confirmed' },
-    };
-  }
-
-  async submitTurn(request: AdapterTurnRequest): Promise<AdapterTurnReceipt> {
-    const config = adapterConfig(request.runSpec.executionProfile);
-    const id = await submitPrompt(config, request, { ...request.runSpec.executionProfile.tools });
-    return {
-      adapterId: this.id,
-      sessionId: request.sessionId,
-      messageId: id,
-      submissionReceipt: {
-        operationKey: request.operationKey,
-        promptDigest: digest(request.prompt),
-        deliveryStatus: 'accepted',
-      },
-    };
-  }
-
-  async observeRun(request: AdapterObservationRequest): Promise<AdapterRunObservation> {
-    return observeOpenCodeRun(adapterConfig(request.runSpec.executionProfile), request);
-  }
-
-  async cancelRun(request: AdapterObservationRequest): Promise<AdapterCancellationReceipt> {
-    const config = adapterConfig(request.runSpec.executionProfile);
-    const response = await fetch(endpoint(config, openCodeSessionAbortPath(request.sessionId), request.directory), { method: HTTP_METHOD.POST });
-    if (!response.ok) throw new ContextError('ADAPTER_HTTP_ERROR', `abort session returned HTTP ${response.status}`);
-    return {
-      adapterId: this.id,
-      sessionId: request.sessionId,
-      messageId: request.messageId,
-      acknowledged: true,
-      evidence: { httpStatus: response.status },
-    };
-  }
 }

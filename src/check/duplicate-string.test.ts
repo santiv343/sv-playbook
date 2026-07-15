@@ -34,6 +34,19 @@ test('constant references do not duplicate their string value', () => {
   assert.equal(inventory.count, 0);
 });
 
+test('duplicate debt identity follows the repeated value rather than its file location', () => {
+  const before = inspectDuplicateStrings([
+    { path: 'src/first.ts', source: `export const first = 'shared-value';` },
+    { path: 'src/second.ts', source: `export const second = 'shared-value';` },
+  ]);
+  const after = inspectDuplicateStrings([
+    { path: 'src/moved-first.ts', source: `export const first = 'shared-value';` },
+    { path: 'src/moved-second.ts', source: `export const second = 'shared-value';` },
+  ]);
+
+  assert.equal(before.digest, after.digest);
+});
+
 test('syntax-only strings and test fixtures are outside the production inventory', () => {
   const inventory = inspectDuplicateStrings([
     {
