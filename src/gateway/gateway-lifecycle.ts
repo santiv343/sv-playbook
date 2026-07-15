@@ -1,9 +1,8 @@
 import type { Store } from '../db/store.types.js';
-import { canonicalJson, digest } from '../context/digest.js';
+import { digest } from '../context/digest.js';
 import { ContextError } from '../context/context.errors.js';
 import { parseAgentJsonOutput } from '../contracts/structured-output.js';
 import { validateArtifact } from '../contracts/artifacts.js';
-import { stringColumn } from '../db/rows.js';
 import type {
   AdapterCancellationReceipt,
   AdapterObservationRequest,
@@ -22,6 +21,12 @@ import {
   type GatewayRunStatus,
 } from './gateway.constants.js';
 import { isRunObserving, loadRunSnapshot } from './gateway-repository.js';
+import {
+  createObservingGatewayRun,
+  failGatewayRun,
+  finishGatewayRun,
+  recordGatewayObservation,
+} from './gateway-run-repository.js';
 
 const SYSTEM_RUNTIME: GatewayRuntime = {
   now: () => Date.now(),
@@ -29,7 +34,6 @@ const SYSTEM_RUNTIME: GatewayRuntime = {
 };
 const MISSING_OUTPUT_DETAIL = 'completed run has no output';
 const OUTPUT_INVALID_STATUS: TerminalStatus = GATEWAY_RUN_STATUS.OUTPUT_INVALID;
-const BEGIN_IMMEDIATE = 'BEGIN IMMEDIATE';
 
 type TerminalStatus = Exclude<GatewayRunStatus, typeof GATEWAY_RUN_STATUS.OBSERVING>;
 
@@ -82,11 +86,11 @@ function beginOrResumeObservation(store: Store, runSpec: RunSpec, turn: AdapterT
   }
   const progressToken = `submitted:${turn.messageId}`;
   const at = iso(nowMs);
-  store.db.prepare(`INSERT INTO gateway_run_state
-    (run_spec_id, adapter_session_id, message_id, status, progress_token, observed_tool_ids_json,
-     last_observed_at, last_progress_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?)`)
-    .run(runSpec.id, turn.sessionId, turn.messageId, GATEWAY_RUN_STATUS.OBSERVING, progressToken, at, at, at);
+  createObservingGatewayRun(store, {
+    runSpecId: runSpec.id,
+    sessionId: turn.sessionId,
+    messageId: turn.messageId,
+  }, progressToken, at);
   return { progressToken, lastProgressMs: nowMs };
 }
 
@@ -105,18 +109,17 @@ function recordObservation(
   const changed = observation.progressToken !== previous.progressToken;
   const next = changed ? { progressToken: observation.progressToken, lastProgressMs: nowMs } : previous;
   const at = iso(nowMs);
-  store.db.prepare(`UPDATE gateway_run_state SET progress_token = ?, observed_tool_ids_json = ?,
-    last_observed_at = ?, last_progress_at = ?, observation_receipt_json = ?, updated_at = ?
-    WHERE run_spec_id = ? AND status = ?`)
-    .run(observation.progressToken, canonicalJson(toolIds), at, iso(next.lastProgressMs),
-      canonicalJson(observation.evidence), at, runSpec.id, GATEWAY_RUN_STATUS.OBSERVING);
-  if (changed) {
-    store.db.prepare(`INSERT INTO gateway_run_events
-      (run_spec_id, status, progress_token, observed_tool_ids_json, receipt_json, observed_at)
-      VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(runSpec.id, GATEWAY_RUN_STATUS.OBSERVING, observation.progressToken,
-        canonicalJson(toolIds), canonicalJson(observation.evidence), at);
-  }
+  recordGatewayObservation(store, {
+    runSpecId: runSpec.id,
+    sessionId: observation.sessionId,
+    messageId: observation.messageId,
+    progressToken: observation.progressToken,
+    observedToolIds: toolIds,
+    observedAt: at,
+    lastProgressAt: iso(next.lastProgressMs),
+    evidence: observation.evidence,
+    progressChanged: changed,
+  });
   return next;
 }
 
@@ -131,26 +134,22 @@ function finishRun(
   output?: unknown,
 ): void {
   const at = iso(nowMs);
-  const outputJson = output === undefined ? null : canonicalJson(output);
-  const outputDigest = output === undefined ? null : digest(output);
   const toolIds = sortedToolIds(observation);
-  store.db.exec(BEGIN_IMMEDIATE);
-  try {
-    store.db.prepare(`UPDATE gateway_run_state SET status = ?, progress_token = ?, observed_tool_ids_json = ?,
-      last_observed_at = ?, terminal_at = ?, output_json = ?, output_digest = ?, observation_receipt_json = ?,
-      cancellation_receipt_json = ?, detail = ?, updated_at = ? WHERE run_spec_id = ? AND status = ?`)
-      .run(status, observation.progressToken, canonicalJson(toolIds), at, at, outputJson, outputDigest,
-        canonicalJson(observation.evidence), cancellation === undefined ? null : canonicalJson(cancellation.evidence),
-        detail ?? null, at, runSpec.id, GATEWAY_RUN_STATUS.OBSERVING);
-    store.db.prepare(`INSERT INTO gateway_run_events
-      (run_spec_id, status, progress_token, observed_tool_ids_json, receipt_json, observed_at)
-      VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(runSpec.id, status, observation.progressToken, canonicalJson(toolIds), canonicalJson(observation.evidence), at);
-    store.db.exec('COMMIT');
-  } catch (error: unknown) {
-    store.db.exec('ROLLBACK');
-    throw error;
-  }
+  finishGatewayRun(store, {
+    runSpecId: runSpec.id,
+    sessionId: observation.sessionId,
+    messageId: observation.messageId,
+    status,
+    progressToken: observation.progressToken,
+    observedToolIds: toolIds,
+    observedAt: at,
+    lastProgressAt: at,
+    evidence: observation.evidence,
+    progressChanged: false,
+    ...(detail === undefined ? {} : { detail }),
+    ...(cancellation === undefined ? {} : { cancellationEvidence: cancellation.evidence }),
+    ...(output === undefined ? {} : { output }),
+  });
 }
 
 function prohibitedTools(runSpec: RunSpec, observation: AdapterRunObservation): readonly string[] {
@@ -183,27 +182,7 @@ function adapterFailure(state: AdapterRunObservation['state']): ContextError {
 
 function failObservingRun(store: Store, runSpec: RunSpec, error: unknown, nowMs: number): void {
   const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  const row = store.db.prepare(`SELECT progress_token, observed_tool_ids_json FROM gateway_run_state
-    WHERE run_spec_id = ? AND status = ?`).get(runSpec.id, GATEWAY_RUN_STATUS.OBSERVING);
-  if (typeof row !== 'object' || row === null) return;
-  const progressToken = stringColumn(row, 'progress_token');
-  const toolIdsJson = stringColumn(row, 'observed_tool_ids_json');
-  const at = iso(nowMs);
-  store.db.exec(BEGIN_IMMEDIATE);
-  try {
-    store.db.prepare(`UPDATE gateway_run_state SET status = ?, terminal_at = ?, detail = ?, updated_at = ?
-      WHERE run_spec_id = ? AND status = ?`).run(
-      GATEWAY_RUN_STATUS.FAILED, at, detail, at, runSpec.id, GATEWAY_RUN_STATUS.OBSERVING,
-    );
-    store.db.prepare(`INSERT INTO gateway_run_events
-      (run_spec_id, status, progress_token, observed_tool_ids_json, receipt_json, observed_at)
-      VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(runSpec.id, GATEWAY_RUN_STATUS.FAILED, progressToken, toolIdsJson, canonicalJson({ error: detail }), at);
-    store.db.exec('COMMIT');
-  } catch (persistError: unknown) {
-    store.db.exec('ROLLBACK');
-    throw persistError;
-  }
+  failGatewayRun(store, { runSpecId: runSpec.id, failedAt: iso(nowMs), detail });
 }
 
 async function enforceToolPolicy(context: LifecycleContext, observation: AdapterRunObservation): Promise<void> {

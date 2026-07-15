@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { evaluateOrmBoundaryBaseline, inspectOrmBoundary } from './orm-boundary.js';
 import { ORM_BOUNDARY_VIOLATION } from './orm-boundary.constants.js';
+
+const GATEWAY_LIFECYCLE_SOURCE_PATH = 'src/gateway/gateway-lifecycle.ts';
+const GATEWAY_LIFECYCLE_FILE = fileURLToPath(new URL('../../src/gateway/gateway-lifecycle.ts', import.meta.url));
 
 test('application persistence rejects plain SQL outside the database boundary', () => {
   const violations = inspectOrmBoundary({
@@ -49,6 +54,15 @@ test('test modules are inside the ORM boundary unless they live under database i
     path: 'src/db/repository.test.ts',
     source: `store.db.prepare('SELECT id FROM packets').all();`,
   }), []);
+});
+
+test('gateway lifecycle persistence is outside the accepted raw SQL debt', () => {
+  const violations = inspectOrmBoundary({
+    path: GATEWAY_LIFECYCLE_SOURCE_PATH,
+    source: readFileSync(GATEWAY_LIFECYCLE_FILE, 'utf8'),
+  });
+
+  assert.deepEqual(violations, []);
 });
 
 test('ORM debt baseline must match exactly and can only be lowered explicitly', () => {
