@@ -6,7 +6,11 @@ import {
 
 export const PREFLIGHT_STATUS = { PASS: 'pass', FAIL: 'fail', SKIP: 'skip', UNKNOWN: 'unknown' } as const;
 export const HEAD_SHA_STATUS = { MATCH: 'match', MISMATCH: 'mismatch', UNKNOWN: 'unknown' } as const;
-export const PREFLIGHT_CHECK_NAME = { RED_TEST: 'red-test', VERIFY: 'verify' } as const;
+export const PREFLIGHT_CHECK_NAME = {
+  BASE_REFERENCE: 'base-reference',
+  RED_TEST: 'red-test',
+  VERIFY: 'verify',
+} as const;
 export const PREFLIGHT_EVENT_PREFIX = 'preflight:';
 
 export interface PreflightCheck {
@@ -22,6 +26,12 @@ export interface VerifyProcessResult {
   readonly spawnFailed: boolean;
   readonly timedOut: boolean;
   readonly durationMs: number;
+}
+
+export interface CleanVerificationPolicy {
+  readonly verifyCommand: string;
+  readonly preparationCommand: string;
+  readonly noOutputTimeoutMs: number;
 }
 
 export interface PreflightPhaseReceipt {

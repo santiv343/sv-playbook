@@ -13,7 +13,7 @@ import { PREFLIGHT_CHECK_NAME, PREFLIGHT_STATUS } from '../review/preflight.type
 
 async function setupPreflightRepo() {
   const root = await mkdtemp(join(tmpdir(), 'svp-preflight-'));
-  execFileSync('git', ['init'], { cwd: root });
+  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/preflight-test'], { cwd: root });
   await mkdir(join(root, 'src', 'redteam'), { recursive: true });
@@ -56,7 +56,11 @@ test('review preflight aggregates the mechanical checks and a write_set violatio
   const report2 = await runPreflight(store, 'GATE-004-TEST', root);
 
   assert.equal(report2.writeSetViolations.length, 0, 'no violations after fix');
-  assert.equal(report2.overall, 'pass', 'overall should be PASS after fix');
+  assert.equal(
+    report2.overall,
+    PREFLIGHT_STATUS.PASS,
+    `overall should pass after fix: ${JSON.stringify(report2.checks)}`,
+  );
   assert.ok(report2.checks.length >= 1, 'checks should be populated');
   assert.ok(report2.checks.every((c) => c.status !== PREFLIGHT_STATUS.UNKNOWN), 'every check should be populated');
 

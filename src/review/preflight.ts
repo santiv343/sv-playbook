@@ -17,6 +17,7 @@ import {
   PREFLIGHT_EVENT_PREFIX,
   PREFLIGHT_STATUS,
   type CleanVerificationReceipt,
+  type CleanVerificationPolicy,
   type PreflightCheck,
   type PreflightReport,
   type VerifyProcessResult,
@@ -135,6 +136,20 @@ function checkCiStatus(worktree: string, pr: string | undefined): PreflightCheck
   }
 }
 
+function checkBaseReference(baseReference: string, mergeBase: string | undefined): PreflightCheck {
+  return mergeBase === undefined
+    ? {
+      name: PREFLIGHT_CHECK_NAME.BASE_REFERENCE,
+      status: CHK_FAIL,
+      detail: `configured base reference is unavailable: ${baseReference}`,
+    }
+    : {
+      name: PREFLIGHT_CHECK_NAME.BASE_REFERENCE,
+      status: CHK_PASS,
+      detail: `configured base resolved to ${mergeBase}`,
+    };
+}
+
 function verifyWorktreeClean(worktree: string): PreflightCheck | undefined {
   try {
     const status = execFileSync(
@@ -222,6 +237,18 @@ function verificationCheck(receipt: CleanVerificationReceipt): PreflightCheck {
   };
 }
 
+function cleanVerificationPolicy(
+  configurationRoot: string,
+  config: ReturnType<typeof loadConfig>,
+): CleanVerificationPolicy | undefined {
+  if (!existsSync(join(configurationRoot, PLAYBOOK_CONFIG_FILE_NAME))) return undefined;
+  return {
+    verifyCommand: config.verifyCommand,
+    preparationCommand: config.reviewPreflight.preparationCommand,
+    noOutputTimeoutMs: config.reviewPreflight.noOutputTimeoutMs,
+  };
+}
+
 function preflightHeadStatus(sha: string, prSha: string | undefined): PreflightReport['headShaMatch'] {
   if (prSha === undefined) return HEAD_SHA_STATUS.UNKNOWN;
   return sha === prSha ? HEAD_SHA_STATUS.MATCH : HEAD_SHA_STATUS.MISMATCH;
@@ -249,9 +276,12 @@ export async function runPreflight(
   const definition = loadWorkDefinition(store, packetId);
   const writeSet = definition.value.writeSet;
   const configurationRoot = dirname(store.dir);
-  const baseReference = loadConfig(configurationRoot).reviewPreflight.baseReference;
+  const config = loadConfig(configurationRoot);
+  const baseReference = config.reviewPreflight.baseReference;
   const mergeBase = findMergeBase(worktree, baseReference);
   const changedFiles = mergeBase !== undefined ? getChangedFiles(worktree, baseReference) : [];
+
+  checks.push(checkBaseReference(baseReference, mergeBase));
 
   const ws = checkWriteSet(writeSet, changedFiles);
   checks.push(ws.check);
@@ -263,7 +293,12 @@ export async function runPreflight(
   const ciChecks = checkCiStatus(worktree, options?.pr);
   checks.push(...ciChecks);
 
-  const cleanVerification = await runCleanVerification(worktree, {}, configurationRoot);
+  const cleanVerification = await runCleanVerification(
+    worktree,
+    {},
+    cleanVerificationPolicy(configurationRoot, config),
+    configurationRoot,
+  );
   const verifyResult = verificationCheck(cleanVerification);
   checks.push(verifyResult);
 

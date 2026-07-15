@@ -16,7 +16,12 @@ import {
   PREFLIGHT_VERIFY_EXIT_CODE,
 } from './preflight.constants.js';
 import { executePreflightCommand } from './preflight-process.js';
-import { PREFLIGHT_STATUS, type CleanVerificationReceipt, type PreflightPhaseReceipt } from './preflight.types.js';
+import {
+  PREFLIGHT_STATUS,
+  type CleanVerificationPolicy,
+  type CleanVerificationReceipt,
+  type PreflightPhaseReceipt,
+} from './preflight.types.js';
 
 interface CleanWorktree {
   readonly candidateSha: string;
@@ -211,19 +216,27 @@ async function configuredPhases(
   worktree: string,
   configurationRoot: string,
   dependencies: CleanVerificationDependencies,
+  suppliedPolicy: CleanVerificationPolicy | undefined,
 ): Promise<readonly PreflightPhaseReceipt[]> {
-  if (!existsSync(join(configurationRoot, PLAYBOOK_CONFIG_FILE_NAME))) {
-    return [skipPhase(PREFLIGHT_PHASE.PREPARATION), skipPhase(PREFLIGHT_PHASE.VERIFICATION)];
-  }
-  let config: ReturnType<typeof loadConfig>;
-  try {
-    config = loadConfig(configurationRoot);
-  } catch (error: unknown) {
-    return [
-      systemFailurePhase(PREFLIGHT_PHASE.CONFIGURATION, error),
-      skipPhase(PREFLIGHT_PHASE.PREPARATION, PREFLIGHT_PHASE_DETAIL.UPSTREAM_PHASE_FAILED),
-      skipPhase(PREFLIGHT_PHASE.VERIFICATION, PREFLIGHT_PHASE_DETAIL.UPSTREAM_PHASE_FAILED),
-    ];
+  let policy = suppliedPolicy;
+  if (policy === undefined) {
+    if (!existsSync(join(configurationRoot, PLAYBOOK_CONFIG_FILE_NAME))) {
+      return [skipPhase(PREFLIGHT_PHASE.PREPARATION), skipPhase(PREFLIGHT_PHASE.VERIFICATION)];
+    }
+    try {
+      const config = loadConfig(configurationRoot);
+      policy = {
+        verifyCommand: config.verifyCommand,
+        preparationCommand: config.reviewPreflight.preparationCommand,
+        noOutputTimeoutMs: config.reviewPreflight.noOutputTimeoutMs,
+      };
+    } catch (error: unknown) {
+      return [
+        systemFailurePhase(PREFLIGHT_PHASE.CONFIGURATION, error),
+        skipPhase(PREFLIGHT_PHASE.PREPARATION, PREFLIGHT_PHASE_DETAIL.UPSTREAM_PHASE_FAILED),
+        skipPhase(PREFLIGHT_PHASE.VERIFICATION, PREFLIGHT_PHASE_DETAIL.UPSTREAM_PHASE_FAILED),
+      ];
+    }
   }
   const configuration: PreflightPhaseReceipt = {
     phase: PREFLIGHT_PHASE.CONFIGURATION,
@@ -234,9 +247,9 @@ async function configuredPhases(
   };
   const preparation = await commandPhase(
     PREFLIGHT_PHASE.PREPARATION,
-    config.reviewPreflight.preparationCommand,
+    policy.preparationCommand,
     worktree,
-    config.reviewPreflight.noOutputTimeoutMs,
+    policy.noOutputTimeoutMs,
     dependencies.executeCommand,
   );
   if (preparation.status === PREFLIGHT_STATUS.FAIL) {
@@ -247,9 +260,9 @@ async function configuredPhases(
   }
   const verification = await commandPhase(
     PREFLIGHT_PHASE.VERIFICATION,
-    config.verifyCommand,
+    policy.verifyCommand,
     worktree,
-    config.reviewPreflight.noOutputTimeoutMs,
+    policy.noOutputTimeoutMs,
     dependencies.executeCommand,
   );
   return [configuration, preparation, verification];
@@ -258,6 +271,7 @@ async function configuredPhases(
 export async function runCleanVerification(
   sourceWorktree: string,
   dependencyOverrides: Partial<CleanVerificationDependencies> = {},
+  policy?: CleanVerificationPolicy,
   configurationRoot: string = sourceWorktree,
 ): Promise<CleanVerificationReceipt> {
   const dependencies: CleanVerificationDependencies = { ...DEFAULT_DEPENDENCIES, ...dependencyOverrides };
@@ -287,7 +301,7 @@ export async function runCleanVerification(
     PREFLIGHT_PHASE_DETAIL.WORKTREE_CREATED,
   )];
   try {
-    phases.push(...await configuredPhases(clean.path, configurationRoot, dependencies));
+    phases.push(...await configuredPhases(clean.path, configurationRoot, dependencies, policy));
   } finally {
     phases.push(cleanupPhase(sourceWorktree, clean.path, dependencies));
   }
