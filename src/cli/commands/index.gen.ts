@@ -17,6 +17,7 @@ import { command as execution_profile } from './execution-profile.js';
 import { command as handoff } from './handoff.js';
 import { command as import_ } from './import.js';
 import { command as instructions } from './instructions.js';
+import { command as promotion } from './promotion.js';
 import { command as rebuild } from './rebuild.js';
 import { command as reconcile } from './reconcile.js';
 import { command as restore } from './restore.js';
@@ -29,4 +30,4 @@ import { command as task } from './task.js';
 import { command as workflow_policy } from './workflow-policy.js';
 import { command as workspace } from './workspace.js';
 
-export const allCommands: readonly Command[] = [adopt, backup, check, constitution, context, contract, daemon, decision, describe, dispatch, docs, doctor, execution_profile, handoff, import_, instructions, rebuild, reconcile, restore, review, role, serve, sprint, status, task, workflow_policy, workspace];
+export const allCommands: readonly Command[] = [adopt, backup, check, constitution, context, contract, daemon, decision, describe, dispatch, docs, doctor, execution_profile, handoff, import_, instructions, promotion, rebuild, reconcile, restore, review, role, serve, sprint, status, task, workflow_policy, workspace];

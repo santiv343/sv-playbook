@@ -23,6 +23,12 @@ export const PACKET_STATUSES: readonly PacketStatus[] = [
   STATUS.DROPPED,
 ];
 
+export const TRANSITION_COLUMN = {
+  AT: 'at',
+  FROM_STATUS: 'from_status',
+  TO_STATUS: 'to_status',
+} as const;
+
 export const EVENT_TRANSITION = 'transition';
 export const EVENT_NOTE = 'note';
 export const EVENT_TAKEOVER = 'takeover';
@@ -57,5 +63,5 @@ export const ALLOWED: ReadonlyMap<string, readonly PacketStatus[]> = new Map([
   [STATUS.READY, [STATUS.ACTIVE, STATUS.DROPPED, STATUS.DRAFT]],
   [STATUS.ACTIVE, [STATUS.REVIEW, STATUS.BLOCKED]],
   [STATUS.BLOCKED, [STATUS.READY, STATUS.DROPPED]],
-  [STATUS.REVIEW, [STATUS.ACTIVE, STATUS.DONE, STATUS.READY]],
+  [STATUS.REVIEW, [STATUS.ACTIVE, STATUS.READY]],
 ]);

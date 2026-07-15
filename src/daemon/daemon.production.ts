@@ -27,7 +27,7 @@ export function createProductionDaemonDeps(commandPort: CommandPort): DaemonDeps
     signalPort: productionSignalPort(),
     backgroundWorkerFactory: (store, root) => createWorkflowRuntime(store, root, {
       adapters,
-      operations: createDefaultRuntimeOperationRegistry(),
+      operations: createDefaultRuntimeOperationRegistry(store, root),
       workerId: `${DAEMON_WORKER_ID_PREFIX}${process.pid}`,
     }),
   };

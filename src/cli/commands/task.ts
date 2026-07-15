@@ -1,11 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
+import { TEXT_ENCODING } from '../../platform.constants.js';
 import { CLI_FORCE_FLAG, EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, worktreeRoot } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
-import { GITHUB_FIELD, PR_STATE } from '../../reconcile/reconcile.constants.js';
 import { createStateBackup, latestStateBackupAgeHours } from '../../db/backup.js';
 import { BACKUP_EVENT, BACKUP_REASON } from '../../db/backup.constants.js';
 import type { Store } from '../../db/store.types.js';
@@ -45,6 +44,10 @@ interface Subcommand {
 
 class UsageError extends Error {}
 
+const STRING_OPTION = { type: 'string' } as const;
+const STRING_LIST_OPTION = { type: STRING_OPTION.type, multiple: true } as const;
+const BODY_FILE_OPTION = 'body-file';
+
 function stringValue(value: string | boolean | string[] | undefined, name: string): string {
   if (typeof value !== 'string' || value === '') throw new UsageError(`missing --${name}`);
   return value;
@@ -74,16 +77,16 @@ function backupForEvent(repoRoot: string, event: BackupEvent, reason: BackupReas
 
 function handleCreate(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: true, options: {
-    type: { type: 'string' }, id: { type: 'string' }, title: { type: 'string' },
-    write: { type: 'string', multiple: true }, depends: { type: 'string', multiple: true },
-    req: { type: 'string', multiple: true }, evidence: { type: 'string', multiple: true },
-    'body-file': { type: 'string' },
+    type: STRING_OPTION, id: STRING_OPTION, title: STRING_OPTION,
+    write: STRING_LIST_OPTION, depends: STRING_LIST_OPTION,
+    req: STRING_LIST_OPTION, evidence: STRING_LIST_OPTION,
+    [BODY_FILE_OPTION]: STRING_OPTION,
   } });
   if (parsed.positionals.length !== 0) throw new UsageError('create takes no positional arguments');
   const writeSet = stringValues(parsed.values.write);
   if (writeSet.length === 0) throw new UsageError('missing --write');
   const title = stringValue(parsed.values.title, 'title');
-  const body = readFileSync(stringValue(parsed.values['body-file'], 'body-file'), 'utf8');
+  const body = readFileSync(stringValue(parsed.values[BODY_FILE_OPTION], BODY_FILE_OPTION), TEXT_ENCODING.UTF8);
   const dependsOn = stringValues(parsed.values.depends);
   const requirements = stringValues(parsed.values.req);
   const evidenceRequired = stringValues(parsed.values.evidence);
@@ -102,16 +105,16 @@ function handleCreate(args: string[], io: Io): number {
 
 function handleAmend(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: true, options: {
-    title: { type: 'string' }, write: { type: 'string', multiple: true },
-    depends: { type: 'string', multiple: true }, req: { type: 'string', multiple: true },
-    evidence: { type: 'string', multiple: true }, 'body-file': { type: 'string' },
+    title: STRING_OPTION, write: STRING_LIST_OPTION,
+    depends: STRING_LIST_OPTION, req: STRING_LIST_OPTION,
+    evidence: STRING_LIST_OPTION, [BODY_FILE_OPTION]: STRING_OPTION,
   } });
   const [packetId] = parsed.positionals;
   if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('amend requires <ID>');
   const updates: { title?: string; body?: string; writeSet?: string[]; dependsOn?: string[]; requirements?: string[]; evidenceRequired?: string[] } = {};
   if (parsed.values.write !== undefined) updates.writeSet = stringValues(parsed.values.write);
   if (parsed.values.title !== undefined) updates.title = parsed.values.title;
-  if (parsed.values['body-file'] !== undefined) updates.body = readFileSync(stringValue(parsed.values['body-file'], 'body-file'), 'utf8');
+  if (parsed.values[BODY_FILE_OPTION] !== undefined) updates.body = readFileSync(stringValue(parsed.values[BODY_FILE_OPTION], BODY_FILE_OPTION), TEXT_ENCODING.UTF8);
   if (parsed.values.depends !== undefined) updates.dependsOn = stringValues(parsed.values.depends);
   if (parsed.values.req !== undefined) updates.requirements = stringValues(parsed.values.req);
   if (parsed.values.evidence !== undefined) updates.evidenceRequired = stringValues(parsed.values.evidence);
@@ -160,7 +163,7 @@ function jsonShowPayload(store: Store, packetId: string, report: RecoveryReport)
   let requirements: string[] = []; let evidenceRequired: string[] = [];
   try {
     if (existsSync(path)) {
-      const parsed = parsePacketDocument(readFileSync(path, 'utf8'));
+      const parsed = parsePacketDocument(readFileSync(path, TEXT_ENCODING.UTF8));
       requirements = parsed.definition.requirements;
       evidenceRequired = parsed.definition.evidenceRequired;
     }
@@ -193,12 +196,12 @@ async function handleMove(args: string[], io: Io): Promise<number> {
   const [packetId, status] = args;
   if (packetId === undefined || status === undefined || args.length !== 2) throw new UsageError('move requires <ID> <status>');
   if (!isPacketStatus(status)) throw new UsageError(`unknown status: ${status}`);
-  return withStoreAsync(async (store, repoRoot) => {
+  if (status === STATUS.DONE) throw new UsageError('use `sv-playbook promotion close` to set a task as done');
+  return withStoreAsync(async (store) => {
     const sessionId = ensureSession(store, getCwd());
     const from = status === STATUS.REVIEW
       ? await movePacketToReview(store, sessionId, packetId)
       : movePacket(store, sessionId, packetId, status);
-    if (status === STATUS.DONE) backupForEvent(repoRoot, BACKUP_EVENT.DONE, BACKUP_REASON.AUTO_DONE);
     io.out(`moved ${packetId}: ${from} -> ${status}`);
     return EXIT.OK;
   });
@@ -277,36 +280,6 @@ function handleNote(args: string[], io: Io): number {
   });
 }
 
-function prStateOrThrow(pr: string): string {
-  try {
-    execFileSync('gh', ['--version'], { encoding: 'utf8' });
-    const raw: unknown = JSON.parse(execFileSync('gh', ['pr', 'view', pr, '--json', 'state'], { encoding: 'utf8' }).trim());
-    if (raw === null || typeof raw !== 'object') return '';
-    const found = Object.entries(raw).find(([k]) => k === GITHUB_FIELD.STATE);
-    return found !== undefined && typeof found[1] === 'string' ? found[1] : '';
-  } catch (error) {
-    const msg = error instanceof Error ? error.message.split('\n')[0] ?? error.message : String(error);
-    throw new LifecycleError(`failed to query PR #${pr}: ${msg}`);
-  }
-}
-
-function handleClose(args: string[], io: Io): number {
-  const parsed = parseArgs({ args, allowPositionals: true, options: { pr: { type: 'string' } } });
-  const [packetId] = parsed.positionals;
-  if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('close requires <ID> --pr <n>');
-  const pr = stringValue(parsed.values.pr, 'pr');
-  const prState = prStateOrThrow(pr);
-  if (prState !== PR_STATE.MERGED) throw new LifecycleError(`PR #${pr} is not merged (state: ${prState || 'unknown'}) — close requires a merged PR`);
-  return withStore((store, repoRoot) => {
-    const sessionId = ensureSession(store, getCwd());
-    store.db.prepare('UPDATE packets SET pr = ? WHERE id = ?').run(pr, packetId);
-    const from = movePacket(store, sessionId, packetId, STATUS.DONE);
-    backupForEvent(repoRoot, BACKUP_EVENT.DONE, BACKUP_REASON.AUTO_DONE);
-    io.out(`closed ${packetId}: ${from} -> done (PR #${pr} verified merged)`);
-    return EXIT.OK;
-  });
-}
-
 function handleBrief(args: string[], io: Io): number {
   const [packetId] = args;
   if (args.length !== 1 || packetId === undefined) throw new UsageError('brief requires <ID>');
@@ -337,7 +310,6 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   [EVENT_NOTE, { usage: 'sv-playbook task note <ID> <text...>', run: (rest, io) => handleNote(rest, io) }],
   ['brief', { usage: 'sv-playbook task brief <ID>', run: handleBrief }],
   ['import', { usage: 'sv-playbook task import <path|ID>', run: (rest, io) => handleImport(rest, io) }],
-  ['close', { usage: 'sv-playbook task close <ID> --pr <n>', run: (rest, io) => handleClose(rest, io) }],
 ]);
 
 const USAGE = ['Usage:', ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');

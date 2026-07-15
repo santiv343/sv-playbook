@@ -1,9 +1,11 @@
 import type { BoardStatus } from '../status/status.types.js';
 import type { WorkflowDashboard } from '../orchestration/observability.types.js';
+import type { PromotionDashboardItem } from '../promotion/promotion.types.js';
 
 export interface OperationalDashboard {
   board: BoardStatus;
   workflow: WorkflowDashboard;
+  promotions: readonly PromotionDashboardItem[];
   generatedAt: string;
 }
 

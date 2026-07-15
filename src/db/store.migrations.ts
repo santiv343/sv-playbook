@@ -17,6 +17,7 @@ import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import { ORCHESTRATION_STORE_SCHEMA } from './orchestration.schema.constants.js';
 import { migrateTableColumn } from './store.migration-helpers.js';
 import { addModelCapabilityEvaluations, addReviewCandidates, addRoleProjectionReceipts, addSemanticRoleContractFields, addTypedRunSpecReferences, addVersionedRoleCatalog, addVersionedWorkDefinitions } from './store.migration-functions.js';
+import { addPromotionTables } from './promotion.migrations.js';
 import { applyExclusiveStorePragmas, readStoreSchemaVersion } from './store.pragmas.js';
 import { STORE_PRAGMA } from './store.pragmas.constants.js';
 
@@ -268,6 +269,7 @@ const migrations = {
   [STORE_MIGRATION_ID.SEMANTIC_ROLE_CONTRACTS]: addSemanticRoleContractFields,
   [STORE_MIGRATION_ID.MODEL_CAPABILITY_EVALUATIONS]: addModelCapabilityEvaluations,
   [STORE_MIGRATION_ID.REVIEW_CANDIDATES]: addReviewCandidates,
+  [STORE_MIGRATION_ID.PROMOTION_TABLES]: addPromotionTables,
 } satisfies Readonly<Record<StoreMigrationId, StoreMigration>>;
 
 function runVersionMigration(db: Database.Database, repoRoot: string, fromVersion: number): void {

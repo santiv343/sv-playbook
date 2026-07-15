@@ -30,7 +30,9 @@ import {
   SESSION_FILE_NAME,
   STATUS,
   TASK_TYPE_PREFIX,
+  TRANSITION_COLUMN,
 } from './service.constants.js';
+import { DATABASE_COLUMN } from '../db/schema-vocabulary.constants.js';
 import type { LeaseInfo, PacketStatus, PreparedReviewCandidate, RecoveryReport, ImportResult } from './service.types.js';
 import { transact } from './transaction.js';
 import { assertDependenciesTerminal, currentPacketStatus } from './dependencies.js';
@@ -293,8 +295,8 @@ export function recoverPacket(store: Store, packetId: string): RecoveryReport {
   const noteRows = store.db.prepare('SELECT at, detail FROM events WHERE packet_id = ? AND command = ? ORDER BY seq DESC LIMIT 5').all(packetId, EVENT_NOTE);
   const dependsOn = getDeps(store, packetId);
   return { packetId, status, dependsOn, lease: leaseOf(store, packetId),
-    lastTransitions: transitionRows.map((row) => `${stringColumn(row, 'at')} ${stringColumn(row, 'from_status')}->${stringColumn(row, 'to_status')} (${stringColumn(row, 'session_id')})`),
-    lastNotes: noteRows.map((row) => `${stringColumn(row, 'at')} ${stringColumn(row, 'detail')}`) };
+    lastTransitions: transitionRows.map((row) => `${stringColumn(row, TRANSITION_COLUMN.AT)} ${stringColumn(row, TRANSITION_COLUMN.FROM_STATUS)}->${stringColumn(row, TRANSITION_COLUMN.TO_STATUS)} (${stringColumn(row, DATABASE_COLUMN.SESSION_ID)})`),
+    lastNotes: noteRows.map((row) => `${stringColumn(row, TRANSITION_COLUMN.AT)} ${stringColumn(row, 'detail')}`) };
 }
 export function takeoverPacket(
   store: Store, sessionId: string, worktree: string,

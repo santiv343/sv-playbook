@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { command as taskCommand } from './task.js';
@@ -140,7 +140,7 @@ test('note then show surfaces the breadcrumb', async () => {
   });
 });
 
-test('moving to done creates an automatic state backup', async () => {
+test('moving to done is blocked from task move; use promotion close instead', async () => {
   await inTempRepo(async () => {
     await writeFile('body.md', 'x');
     const io = fakeIo();
@@ -148,10 +148,7 @@ test('moving to done creates an automatic state backup', async () => {
     await taskCommand.run(['move', 'BK-001', 'ready'], io);
     await taskCommand.run(['start', 'BK-001'], io);
     await taskCommand.run(['move', 'BK-001', 'review'], io);
-    assert.equal(await taskCommand.run(['move', 'BK-001', 'done'], io), 0);
-    const files = await readdir(join(process.cwd(), '.svp', 'backups'));
-    assert.ok(files.some((file) => file.endsWith('.sqlite')));
-    assert.ok(files.some((file) => file.endsWith('.json')));
+    assert.notEqual(await taskCommand.run(['move', 'BK-001', 'done'], io), 0);
   });
 });
 

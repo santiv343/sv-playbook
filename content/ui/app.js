@@ -115,6 +115,12 @@ function renderAgents() {
   byId('agent-rows').innerHTML = runs.length ? runs.map((run) => `<tr><td><span class="status-badge ${escapeHtml(run.status)}">${escapeHtml(statusLabel(run.status))}</span></td><td>${escapeHtml(AGENT_ACTIVITY_LABEL[run.activity] ?? run.activity)}</td><td><strong>${escapeHtml(run.roleId)}</strong><div class="item-meta">${escapeHtml(run.phase)}</div></td><td>${escapeHtml(run.workflowId)}</td><td>${time(run.lastProgressAt)}</td><td>${escapeHtml(run.observedToolIds.join(', ') || '--')}</td><td><span class="agent-detail" title="${escapeHtml(run.detail ?? '')}">${escapeHtml(run.detail ?? '--')}</span></td></tr>`).join('') : `<tr><td colspan="7">${empty('Sin ejecuciones de agentes')}</td></tr>`;
 }
 
+function renderPromotions() {
+  const promotions = state.dashboard.promotions ?? [];
+  byId('promotion-count').textContent = String(promotions.length);
+  byId('promotion-rows').innerHTML = promotions.length ? promotions.map((promotion) => `<tr><td><span class="status-badge ${escapeHtml(promotion.status)}">${escapeHtml(statusLabel(promotion.status))}</span></td><td><strong>${escapeHtml(promotion.taskId)}</strong><div class="item-meta" title="${escapeHtml(promotion.candidateId)}">${escapeHtml(promotion.candidateId)}</div></td><td><code title="${escapeHtml(promotion.candidateSha)}">${escapeHtml(promotion.candidateSha.slice(0, 12))}</code></td><td>${escapeHtml(promotion.targetRef ?? '--')}</td><td>${escapeHtml(statusLabel(promotion.integrationOutcome ?? '--'))}</td><td><span title="${escapeHtml(promotion.receiptId ?? '')}">${escapeHtml(promotion.receiptId ?? '--')}</span></td><td>${time(promotion.updatedAt)}</td></tr>`).join('') : `<tr><td colspan="7">${empty('Sin promociones registradas')}</td></tr>`;
+}
+
 function notifyActions() {
   if (Notification.permission !== NOTIFICATION_PERMISSION.GRANTED) return;
   for (const action of state.dashboard.workflow.humanActions) {
@@ -132,6 +138,7 @@ function render(value) {
   renderWorkflowTable();
   renderTasks();
   renderAgents();
+  renderPromotions();
   byId('updated').textContent = time(value.generatedAt);
   createIcons({ icons });
   notifyActions();

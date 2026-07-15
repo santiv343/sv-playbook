@@ -44,7 +44,7 @@ test('red team: moving to done without captured evidence is refused by the evide
   store.db.prepare('DELETE FROM events WHERE packet_id = ? AND command = ?').run('RT-EVIDENCE-001', 'evidence');
   assert.throws(
     () => { movePacket(store, session, 'RT-EVIDENCE-001', 'done'); },
-    /evidence/,
+    /illegal transition/,
   );
 });
 

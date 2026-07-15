@@ -28,16 +28,16 @@
   },
   "baseline": {
     "ormApplicationSql": {
-      "count": 280,
-      "digest": "4f96a49e5505f3d23386fd62d5c64538d040a6119b7dde64d027ec13ac8bb826"
+      "count": 278,
+      "digest": "f3108cee2fbd38377d0d7c65b406f919ffa41801f2f1aa39c3e19bc4dccb2dcd"
     },
     "literalComparisons": {
-      "count": 277,
-      "digest": "befd4f30593c6b36cb3f5ab841d315d531e7eb57c78d29a312d9f956cd99c794"
+      "count": 276,
+      "digest": "b3693ff326051a74a6b06385cb1e0dd9498acb22ab415ab3c65c8771a37d9798"
     },
     "duplicateStrings": {
-      "count": 1383,
-      "digest": "865ce8aaef65883ca9e03ce714711c5f7cbc169de81eda4d9a9c0863a89807c4"
+      "count": 1359,
+      "digest": "689721aaa5ddb2c5e048ff2156c470a37c59d2cd61d098fa5079c39d90b379bc"
     },
     "fingerprints": [
       "docs/packets/ADOPT-AURORA-001.md",

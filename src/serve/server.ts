@@ -19,6 +19,7 @@ import type { HumanIntakeBody, HumanResolutionBody, OperationalDashboard, Operat
 import { prepareRunSpec } from '../gateway/run-spec.js';
 import type { WorkRunSpecRequest } from '../gateway/gateway.types.js';
 import { WorkDefinitionError } from '../tasks/work-definition.errors.js';
+import { readPromotionDashboard } from '../promotion/promotion.receipts.js';
 
 const UI_ROOT = fileURLToPath(new URL('../../content/ui', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -33,6 +34,7 @@ function dashboard(store: Store, repoRoot: string): OperationalDashboard {
   return {
     board: readBoardStatus(store, repoRoot),
     workflow: readWorkflowDashboard(store),
+    promotions: readPromotionDashboard(store),
     generatedAt: new Date().toISOString(),
   };
 }
