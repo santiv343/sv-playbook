@@ -24,13 +24,8 @@ import {
   amendPacket,
 } from './service.js';
 import { LifecycleError } from './service.errors.js';
-
+import { setupServiceTest as setup } from './service.test.support.js';
 const def = (id: string) => ({ id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'], requirements: [], evidenceRequired: ['final-sha'] });
-
-async function setup() {
-  const root = await mkdtemp(join(tmpdir(), 'svp-life-'));
-  return { root, store: openStore(root) };
-}
 
 test('createPacket writes markdown projection and DB row in draft', async () => {
   const { root, store } = await setup();

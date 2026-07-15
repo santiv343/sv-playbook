@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { loadConfig } from '../config.js';
 import { PLAYBOOK_CONFIG_FILE_NAME } from '../config.constants.js';
 import type { Store } from '../db/store.types.js';
-import { GIT_ARGUMENT, GIT_BASE_REFERENCE, GIT_EXECUTABLE, PROCESS_STDIO } from '../git.constants.js';
+import { GIT_ARGUMENT, GIT_EXECUTABLE, PROCESS_STDIO } from '../git.constants.js';
+import { changedFilesForBase, resolveGitMergeBase } from '../git.js';
 import { EMPTY_SIZE, TEXT_ENCODING } from '../platform.constants.js';
 import { taskEvents } from '../tasks/schema.constants.js';
 import { EVENT_EVIDENCE } from '../tasks/service.constants.js';
@@ -36,19 +37,17 @@ const GITHUB_CHECK_STATE = { SUCCESS: 'SUCCESS', NEUTRAL: 'neutral' } as const;
 
 const RED_TEST_SECTION_RE = /^## RED test\s*\n(.*?)(?=\n## |$)/ms;
 
-function findMergeBase(worktree: string): string | undefined {
-  for (const base of GIT_BASE_REFERENCE) {
-    try {
-      return execFileSync(GIT_EXECUTABLE, [GIT_ARGUMENT.MERGE_BASE, base, GIT_ARGUMENT.HEAD], { cwd: worktree, encoding: TEXT_ENCODING.UTF8, stdio: 'pipe' }).trim();
-    } catch { /* next */ }
+function findMergeBase(worktree: string, baseReference: string): string | undefined {
+  try {
+    return resolveGitMergeBase(worktree, baseReference);
+  } catch {
+    return undefined;
   }
-  return undefined;
 }
 
-function getChangedFiles(worktree: string, mergeBase: string): string[] {
+function getChangedFiles(worktree: string, baseReference: string): string[] {
   try {
-    const out = execFileSync(GIT_EXECUTABLE, [GIT_ARGUMENT.DIFF, GIT_ARGUMENT.NAME_ONLY, `${mergeBase}...HEAD`], { cwd: worktree, encoding: TEXT_ENCODING.UTF8 }).trim();
-    return out ? out.split('\n').filter(Boolean) : [];
+    return changedFilesForBase(worktree, baseReference);
   } catch {
     return [];
   }
@@ -263,8 +262,9 @@ export async function runPreflight(
 
   const definition = loadWorkDefinition(store, packetId);
   const writeSet = definition.value.writeSet;
-  const mergeBase = findMergeBase(worktree);
-  const changedFiles = mergeBase !== undefined ? getChangedFiles(worktree, mergeBase) : [];
+  const baseReference = loadConfig(worktree).reviewPreflight.baseReference;
+  const mergeBase = findMergeBase(worktree, baseReference);
+  const changedFiles = mergeBase !== undefined ? getChangedFiles(worktree, baseReference) : [];
 
   const ws = checkWriteSet(writeSet, changedFiles);
   checks.push(ws.check);

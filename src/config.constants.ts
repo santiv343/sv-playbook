@@ -9,6 +9,7 @@ export const MODEL_EVALUATION_DEFAULTS = {
 
 export const REVIEW_CANDIDATE_MAX_BYTES_DEFAULT = 16 * 1024 * 1024;
 export const REVIEW_PREFLIGHT_DEFAULTS = {
+  baseReference: 'main',
   preparationCommand: '',
   noOutputTimeoutMs: 10 * 60 * 1_000,
 } as const;

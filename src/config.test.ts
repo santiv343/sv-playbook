@@ -17,6 +17,7 @@ test('loadConfig returns defaults when the file is absent', () => {
     maxConcurrentWorkers: 3,
     reviewCandidateMaxBytes: 16 * 1024 * 1024,
     reviewPreflight: {
+      baseReference: 'main',
       preparationCommand: '',
       noOutputTimeoutMs: 600_000,
     },
@@ -49,6 +50,7 @@ test('loadConfig reads a valid config file', () => {
     autonomy: 'high',
     reviewCandidateMaxBytes: 8 * 1024 * 1024,
     reviewPreflight: {
+      baseReference: 'release/stable',
       preparationCommand: 'npm ci',
       noOutputTimeoutMs: 1_234,
     },
@@ -72,6 +74,7 @@ test('loadConfig reads a valid config file', () => {
     maxConcurrentWorkers: 3,
     reviewCandidateMaxBytes: 8 * 1024 * 1024,
     reviewPreflight: {
+      baseReference: 'release/stable',
       preparationCommand: 'npm ci',
       noOutputTimeoutMs: 1_234,
     },
@@ -167,6 +170,14 @@ test('config rejects non-numeric maxConcurrentWorkers', () => {
     maxConcurrentWorkers: 'three',
   }));
   assert.throws(() => loadConfig(dir), { name: 'ConfigError' });
+});
+
+test('loadConfig rejects an empty review base reference', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(dir, 'playbook.config.json'), JSON.stringify({
+    reviewPreflight: { baseReference: '   ' },
+  }));
+  assert.throws(() => loadConfig(dir), { name: 'ConfigError', message: /reviewPreflight\.baseReference/ });
 });
 
 test('config rejects a non-positive reviewCandidateMaxBytes', () => {

@@ -5,6 +5,7 @@
   "verifyCommand": "npm run verify",
   "reviewCandidateMaxBytes": 16777216,
   "reviewPreflight": {
+    "baseReference": "main",
     "preparationCommand": "npm ci",
     "noOutputTimeoutMs": 600000
   },
@@ -35,8 +36,8 @@
       "digest": "befd4f30593c6b36cb3f5ab841d315d531e7eb57c78d29a312d9f956cd99c794"
     },
     "duplicateStrings": {
-      "count": 1399,
-      "digest": "85e7fc1ae7fcfbc2ab9b3b5acf3d7cead1f4a160109147a92e1699a7665e93b5"
+      "count": 1385,
+      "digest": "a4d36d7fc1a8b243499d555db59599f1ba14dce9393957f48879b704348edf67"
     },
     "fingerprints": [
       "docs/packets/ADOPT-AURORA-001.md",

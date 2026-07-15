@@ -1,5 +1,4 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from '../db/store.types.js';
@@ -8,6 +7,8 @@ import { generatePacketDocument, parsePacketDocument } from '../packets/document
 import type { PacketDefinition } from '../packets/document.types.js';
 import { LifecycleError } from './service.errors.js';
 import { contentDir } from '../content.js';
+import { loadConfig } from '../config.js';
+import { changedFilesForBase } from '../git.js';
 import { FILE_EXTENSION, PATH_TOKEN } from '../platform.constants.js';
 import { getActiveCount, sprintWipLimit, taskSprintId } from '../sprints/service.js';
 import {
@@ -211,21 +212,21 @@ function checkWriteSetConflict(store: Store, packetId: string): void {
     if (conflictsWith(ours, row)) throw new LifecycleError(`write_set conflict with ${stringColumn(row, 'id')}`);
   }
 }
-function findMergeBase(worktree: string): string | undefined {
-  for (const base of ['origin/main', 'origin/master', 'main', 'master']) try { return execFileSync('git', ['merge-base', base, 'HEAD'], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' }).trim(); } catch { /* next */ }
-  return undefined;
-}
 function gateReview(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
   const lease = leaseOf(store, packetId);
   if (!lease) return;
   const glbs = ourGlobs(store, packetId);
   if (glbs.length === 0) return;
-  const mergeBase = findMergeBase(lease.worktree);
-  if (!mergeBase) return;
-  const changed = (() => { try { return execFileSync('git', ['diff', '--name-only', `${mergeBase}...HEAD`], { cwd: lease.worktree, encoding: 'utf8' }).trim(); } catch { return ''; } })();
-  if (!changed) return;
-  const offending = changed.split('\n').filter((f) => f !== '' && !glbs.some((g) => overlaps(g, f)));
+  let changed: readonly string[];
+  try {
+    const baseReference = loadConfig(lease.worktree).reviewPreflight.baseReference;
+    changed = changedFilesForBase(lease.worktree, baseReference);
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new LifecycleError(`configured review base is unavailable: ${detail}`);
+  }
+  const offending = changed.filter((file) => !glbs.some((glob) => overlaps(glob, file)));
   if (offending.length > 0) throw new LifecycleError(`write_set violation: branch changed files outside write_set: ${offending.join(', ')}`);
 }
 const gateEvidence = (store: Store, packetId: string, to: string): void => {

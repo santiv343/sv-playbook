@@ -13,6 +13,4 @@ export const GIT_ARGUMENT = {
   UNTRACKED_FILES_ALL: '--untracked-files=all',
 } as const;
 
-export const GIT_BASE_REFERENCE = ['origin/main', 'origin/master', 'main', 'master'] as const;
-
 export { PROCESS_STDIO } from './platform.constants.js';

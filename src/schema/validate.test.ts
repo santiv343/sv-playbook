@@ -7,6 +7,12 @@ import { SchemaError } from './core.errors.js';
 import { PacketRowSchema } from './store.constants.js';
 import { ConfigError } from '../config.errors.js';
 import { parsePlaybookConfig } from './config.constants.js';
+import { nonEmptyString } from './core.js';
+
+test('nonEmptyString trims valid input and refuses empty values', () => {
+  assert.equal(nonEmptyString().parse(' main '), 'main');
+  assert.throws(() => nonEmptyString().parse('   '), SchemaError);
+});
 
 test('config and store rows are schema-validated at the boundary and a corrupt field is refused by path', () => {
   const dir = mkdtempSync(join(tmpdir(), 'svp-schema-config-'));

@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { and, desc, eq } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import { validateArtifact } from '../contracts/artifacts.js';
@@ -9,9 +8,10 @@ import type { Store } from '../db/store.types.js';
 import { roleProjectionActivation, roleProjectionReceipts } from '../gateway/schema.constants.js';
 import { workflowArtifacts } from '../orchestration/schema.constants.js';
 import { WORKFLOW_EXECUTOR } from '../orchestration/orchestration.constants.js';
-import { EMPTY_SIZE, NODE_ERROR_CODE, TEXT_ENCODING } from '../platform.constants.js';
+import { EMPTY_SIZE, NODE_ERROR_CODE } from '../platform.constants.js';
 import { nodeErrorCode } from '../platform.js';
-import { GIT_ARGUMENT, GIT_BASE_REFERENCE, GIT_EXECUTABLE, PROCESS_STDIO } from '../git.constants.js';
+import { GIT_ARGUMENT } from '../git.constants.js';
+import { gitOutput, resolveGitMergeBase } from '../git.js';
 import { roleCatalogActivation, roleResponsibilities } from '../roles/schema.constants.js';
 import type { StoredWorkDefinition } from '../tasks/work-definition.types.js';
 import { packets } from '../tasks/schema.constants.js';
@@ -81,14 +81,9 @@ function assertPreflight(report: PreflightReport): void {
   }
 }
 
-function gitOutput(worktree: string, args: readonly string[], maxBuffer: number): string {
+function candidateGitOutput(worktree: string, args: readonly string[], maxBuffer: number): string {
   try {
-    return execFileSync(GIT_EXECUTABLE, args, {
-      cwd: worktree,
-      encoding: TEXT_ENCODING.UTF8,
-      maxBuffer,
-      stdio: PROCESS_STDIO.PIPE,
-    }).trim();
+    return gitOutput(worktree, args, { maxBuffer });
   } catch (error) {
     if (nodeErrorCode(error) === NODE_ERROR_CODE.BUFFER_EXCEEDED) {
       throw new ContextError(
@@ -100,24 +95,20 @@ function gitOutput(worktree: string, args: readonly string[], maxBuffer: number)
   }
 }
 
-function candidateContent(worktree: string, maxBuffer: number) {
-  const dirty = gitOutput(worktree, [GIT_ARGUMENT.STATUS, GIT_ARGUMENT.PORCELAIN], maxBuffer);
+function candidateContent(worktree: string, baseReference: string, maxBuffer: number) {
+  const dirty = candidateGitOutput(worktree, [GIT_ARGUMENT.STATUS, GIT_ARGUMENT.PORCELAIN], maxBuffer);
   if (dirty !== '') {
     throw new ContextError(REVIEW_CANDIDATE_ERROR.EVIDENCE_FAILED, 'candidate worktree has uncommitted changes');
   }
-  const baseSha = GIT_BASE_REFERENCE.map((base) => {
-    try {
-      return gitOutput(worktree, [GIT_ARGUMENT.MERGE_BASE, base, GIT_ARGUMENT.HEAD], maxBuffer);
-    } catch {
-      return '';
-    }
-  }).find((value) => value !== '');
-  if (baseSha === undefined) {
+  let baseSha: string;
+  try {
+    baseSha = resolveGitMergeBase(worktree, baseReference, { maxBuffer });
+  } catch {
     throw new ContextError(REVIEW_CANDIDATE_ERROR.EVIDENCE_FAILED, 'candidate merge base is unavailable');
   }
   const comparison = `${baseSha}...${GIT_ARGUMENT.HEAD}`;
-  const changedFilesText = gitOutput(worktree, [GIT_ARGUMENT.DIFF, GIT_ARGUMENT.NAME_ONLY, comparison], maxBuffer);
-  const diff = gitOutput(worktree, [GIT_ARGUMENT.DIFF, comparison], maxBuffer);
+  const changedFilesText = candidateGitOutput(worktree, [GIT_ARGUMENT.DIFF, GIT_ARGUMENT.NAME_ONLY, comparison], maxBuffer);
+  const diff = candidateGitOutput(worktree, [GIT_ARGUMENT.DIFF, comparison], maxBuffer);
   const changedFiles = changedFilesText.split('\n').filter(Boolean);
   if (changedFiles.length === EMPTY_SIZE || diff === '') {
     throw new ContextError(REVIEW_CANDIDATE_ERROR.EVIDENCE_FAILED, 'candidate diff is empty');
@@ -138,17 +129,21 @@ export async function assembleReviewCandidate(
   definition: StoredWorkDefinition,
   lease: LeaseInfo,
 ): Promise<PendingReviewCandidate> {
-  const maxBuffer = loadConfig(lease.worktree).reviewCandidateMaxBytes;
-  const content = candidateContent(lease.worktree, maxBuffer);
+  const config = loadConfig(lease.worktree);
+  const content = candidateContent(
+    lease.worktree,
+    config.reviewPreflight.baseReference,
+    config.reviewCandidateMaxBytes,
+  );
   const report = await runPreflight(store, definition.packetId, lease.worktree, {
     pr: undefined,
     persistEvent: false,
   });
   assertPreflight(report);
-  const branch = gitOutput(
+  const branch = candidateGitOutput(
     lease.worktree,
     [GIT_ARGUMENT.REV_PARSE, GIT_ARGUMENT.ABBREV_REF, GIT_ARGUMENT.HEAD],
-    maxBuffer,
+    config.reviewCandidateMaxBytes,
   );
   if (branch === '') throw new ContextError(REVIEW_CANDIDATE_ERROR.EVIDENCE_FAILED, 'candidate branch is unavailable');
   const catalog = activeCatalog(store);

@@ -52,6 +52,7 @@ export const ModelEvaluationConfigSchema = s.object({
 });
 
 export const ReviewPreflightConfigSchema = s.object({
+  baseReference: s.nonEmptyString(),
   preparationCommand: s.string(),
   noOutputTimeoutMs: s.positiveInteger(),
 });

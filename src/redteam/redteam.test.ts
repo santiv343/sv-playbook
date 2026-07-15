@@ -18,6 +18,7 @@ import {
   importPackets,
 } from '../tasks/service.js';
 import { STATUS } from '../tasks/service.constants.js';
+import { setupServiceTest } from '../tasks/service.test.support.js';
 
 const def = (id: string, deps: string[] = [], ws: string[] = ['src/redteam/**']) => ({
   id,
@@ -29,15 +30,7 @@ const def = (id: string, deps: string[] = [], ws: string[] = ['src/redteam/**'])
 });
 
 async function setupStore() {
-  const root = await mkdtemp(join(tmpdir(), 'svp-rt-'));
-  return { root, store: openStore(root) };
-}
-
-async function setupGitRepo() {
-  const root = await mkdtemp(join(tmpdir(), 'svp-rt-'));
-  execFileSync('git', ['init'], { cwd: root });
-  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
-  return { root, store: openStore(root) };
+  return setupServiceTest();
 }
 
 // ---- CHEAT 1: Evidence gate bypass ----
@@ -57,7 +50,7 @@ test('red team: moving to done without captured evidence is refused by the evide
 
 // ---- CHEAT 2: Write set violation on review and done ----
 test('red team: files changed outside write_set on review is refused by the write-set gate', async () => {
-  const { root, store } = await setupGitRepo();
+  const { root, store } = await setupStore();
   execFileSync('git', ['checkout', '-b', 'feature/rt-ws'], { cwd: root });
   await mkdir(join(root, 'outside'), { recursive: true });
   await writeFile(join(root, 'outside', 'sneaky.ts'), '', 'utf8');
