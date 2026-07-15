@@ -44,6 +44,8 @@ import {
   persistReviewCandidate,
   reviewCandidateRequired,
 } from '../review/review-candidate.js';
+import { PROCESS_STDIO } from '../git.constants.js';
+import { PREFLIGHT_VERIFY_TIMEOUT_MS } from '../review/preflight.constants.js';
 export { amendPacket } from './amend.js';
 export { overlaps } from './write-set.js';
 const now = (): string => new Date().toISOString();
@@ -237,14 +239,22 @@ const gateEvidence = (store: Store, packetId: string, to: string): void => {
 };
 function gateVerify(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
+  if (reviewCandidateRequired(store, to)) return;
   const lease = leaseOf(store, packetId);
   if (lease === undefined) return;
   const cfgPath = join(lease.worktree, 'playbook.config.json');
   if (!existsSync(cfgPath) || /enforceVerifyOnReview\s*:\s*false/.test(readFileSync(cfgPath, 'utf8'))) return;
   const config = loadConfig(lease.worktree);
   if (config.verifyCommand.trim() === '') return;
-  try { execSync(config.verifyCommand, { cwd: lease.worktree, timeout: 120_000, stdio: 'pipe' }); }
-  catch { throw new LifecycleError(`verify command failed: ${config.verifyCommand}`); }
+  try {
+    execSync(config.verifyCommand, {
+      cwd: lease.worktree,
+      timeout: PREFLIGHT_VERIFY_TIMEOUT_MS,
+      stdio: PROCESS_STDIO.PIPE,
+    });
+  } catch {
+    throw new LifecycleError(`verify command failed: ${config.verifyCommand}`);
+  }
 }
 function prepareReviewCandidate(store: Store, packetId: string, from: string, to: string) {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW || !reviewCandidateRequired(store, to)) return undefined;

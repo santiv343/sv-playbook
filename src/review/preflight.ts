@@ -1,5 +1,5 @@
 import { execFileSync, execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from '../config.js';
 import { stringColumn } from '../db/rows.js';
@@ -7,9 +7,9 @@ import type { Store } from '../db/store.types.js';
 import { overlaps } from '../tasks/write-set.js';
 import { EVENT_EVIDENCE, INSERT_EVENT_SQL } from '../tasks/service.constants.js';
 import { PREFLIGHT_CHECK_NAME, PREFLIGHT_EVENT_PREFIX, PREFLIGHT_STATUS, type PreflightCheck, type PreflightReport } from './preflight.types.js';
-import { REVIEW_WORKTREE_DIR } from '../cli/commands/review.constants.js';
-import { GIT_ARGUMENT, GIT_BASE_REFERENCE, GIT_EXECUTABLE } from '../git.constants.js';
-import { TEXT_ENCODING } from '../platform.constants.js';
+import { GIT_ARGUMENT, GIT_BASE_REFERENCE, GIT_EXECUTABLE, PROCESS_STDIO } from '../git.constants.js';
+import { EMPTY_SIZE, TEXT_ENCODING } from '../platform.constants.js';
+import { PREFLIGHT_VERIFY_DETAIL, PREFLIGHT_VERIFY_TIMEOUT_MS } from './preflight.constants.js';
 
 const CHK_PASS = PREFLIGHT_STATUS.PASS;
 const CHK_FAIL = PREFLIGHT_STATUS.FAIL;
@@ -128,6 +128,21 @@ function checkCiStatus(worktree: string, pr: string | undefined): PreflightCheck
   }
 }
 
+function verifyWorktreeClean(worktree: string): PreflightCheck | undefined {
+  try {
+    const status = execFileSync(
+      GIT_EXECUTABLE,
+      [GIT_ARGUMENT.STATUS, GIT_ARGUMENT.PORCELAIN],
+      { cwd: worktree, encoding: TEXT_ENCODING.UTF8, stdio: PROCESS_STDIO.PIPE },
+    ).trim();
+    return status.length > EMPTY_SIZE
+      ? { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_FAIL, detail: PREFLIGHT_VERIFY_DETAIL.DIRTY_WORKTREE }
+      : undefined;
+  } catch {
+    return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_UNKNOWN, detail: PREFLIGHT_VERIFY_DETAIL.STATUS_UNAVAILABLE };
+  }
+}
+
 function checkVerify(worktree: string): PreflightCheck {
   const cfgPath = join(worktree, 'playbook.config.json');
   if (!existsSync(cfgPath)) {
@@ -141,25 +156,19 @@ function checkVerify(worktree: string): PreflightCheck {
     return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_SKIP, detail: 'no verifyCommand configured' };
   }
 
-  const reviewDir = join(worktree, '.worktrees', REVIEW_WORKTREE_DIR);
-  const reviewWt = join(reviewDir, `verify-${Date.now()}`);
-
-  mkdirSync(reviewDir, { recursive: true });
-  try {
-    execFileSync(GIT_EXECUTABLE, ['worktree', 'add', '--detach', reviewWt, GIT_ARGUMENT.HEAD], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' });
-  } catch {
-    return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_UNKNOWN, detail: 'could not create review worktree' };
-  }
+  const dirtyBeforeVerify = verifyWorktreeClean(worktree);
+  if (dirtyBeforeVerify !== undefined) return dirtyBeforeVerify;
 
   try {
-    execSync(config.verifyCommand, { cwd: reviewWt, timeout: 120_000, stdio: 'pipe' });
-    return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_PASS, detail: `${config.verifyCommand} succeeded` };
+    execSync(config.verifyCommand, {
+      cwd: worktree,
+      timeout: PREFLIGHT_VERIFY_TIMEOUT_MS,
+      stdio: PROCESS_STDIO.PIPE,
+    });
+    return verifyWorktreeClean(worktree)
+      ?? { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_PASS, detail: `${config.verifyCommand} succeeded` };
   } catch {
     return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_FAIL, detail: `${config.verifyCommand} failed` };
-  } finally {
-    try {
-      execFileSync(GIT_EXECUTABLE, ['worktree', 'remove', '--force', reviewWt], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' });
-    } catch { /* cleanup failure is non-fatal */ }
   }
 }
 

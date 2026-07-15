@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -30,9 +30,18 @@ test('review dispatch is blocked until runtime creates an immutable SHA-bound ca
   git(root, ['config', 'user.email', 'test@example.com']);
   git(root, ['config', 'user.name', 'Test']);
   await writeFile(join(root, 'README.md'), 'base\n', 'utf8');
-  await writeFile(join(root, '.gitignore'), '.svp/\n.svp-session\n.worktrees/\n', 'utf8');
-  git(root, ['add', 'README.md', '.gitignore']);
+  await writeFile(join(root, '.gitignore'), '.svp/\n.svp-session\n.worktrees/\n.verify-*\n', 'utf8');
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node .verify-runner.cjs' }), 'utf8');
+  git(root, ['add', 'README.md', '.gitignore', 'playbook.config.json']);
   git(root, ['commit', '-m', 'base']);
+  await writeFile(join(root, '.verify-dependency'), 'available', 'utf8');
+  await writeFile(join(root, '.verify-runner.cjs'), [
+    "const fs = require('node:fs');",
+    "if (!fs.existsSync('.verify-dependency')) process.exit(2);",
+    "const path = '.verify-count';",
+    "const count = fs.existsSync(path) ? Number(fs.readFileSync(path, 'utf8')) : 0;",
+    "fs.writeFileSync(path, String(count + 1));",
+  ].join('\n'), 'utf8');
 
   const store = openStore(root);
   bootstrapBundledRoleCatalog(store);
@@ -85,6 +94,7 @@ test('review dispatch is blocked until runtime creates an immutable SHA-bound ca
   git(root, ['add', 'src/candidate.ts']);
   git(root, ['commit', '-m', 'candidate']);
   movePacket(store, sessionId, definition.packetId, 'review');
+  assert.equal(await readFile(join(root, '.verify-count'), 'utf8'), '1');
 
   const candidate = store.orm.select().from(reviewCandidates).get();
   assert.ok(candidate);
