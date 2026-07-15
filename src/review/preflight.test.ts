@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -220,9 +220,9 @@ test('preflight reads RED acceptance from the durable work definition when packe
   createPacket(store, root, {
     id: 'PREFLIGHT-RED-001', title: 'Durable RED fixture', dependsOn: [], writeSet: ['src.ts'],
     requirements: [], evidenceRequired: [], tags: [],
-  }, '## RED test\ndurable-red-marker\n\n## Acceptance\nThe marker is present.');
+  }, '## RED test\ncriteria remain authoritative without being copied into code\n\n## Acceptance\nThe change is reviewed.');
   git(root, ['checkout', '-b', 'feature/durable-red']);
-  await writeFile(join(root, 'src.ts'), 'durable-red-marker\n', 'utf8');
+  await writeFile(join(root, 'src.ts'), 'export const implemented = true;\n', 'utf8');
   git(root, ['add', 'src.ts']);
   git(root, ['commit', '-m', 'add durable RED marker']);
 
@@ -231,6 +231,58 @@ test('preflight reads RED acceptance from the durable work definition when packe
   assert.equal(report.redTestFound, true);
   assert.equal(report.checks.find((check) => check.name === PREFLIGHT_CHECK_NAME.RED_TEST)?.status, PREFLIGHT_STATUS.PASS);
   store.close();
+});
+
+test('preflight executes policy from the store-owning project rather than candidate config', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-preflight-trusted-policy-'));
+  git(root, ['init', '-b', 'main']);
+  git(root, ['config', 'user.email', 'test@example.com']);
+  git(root, ['config', 'user.name', 'Test']);
+  await writeFile(join(root, '.gitignore'), '.prepared\n.svp/\n.svp-session\n', 'utf8');
+  await writeFile(join(root, '.prepare.cjs'), "require('node:fs').writeFileSync('.prepared', 'yes');\n", 'utf8');
+  await writeFile(join(root, '.verify.cjs'), [
+    "const exists = require('node:fs').existsSync('.prepared');",
+    'process.exit(exists ? 0 : 9);',
+  ].join('\n'), 'utf8');
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({
+    verifyCommand: 'node .verify.cjs',
+    reviewPreflight: { baseReference: 'main', preparationCommand: '', noOutputTimeoutMs: 1_000 },
+  }), 'utf8');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'candidate without preparation policy']);
+  const candidateSha = gitText(root, ['rev-parse', 'HEAD']);
+  const store = openStore(root);
+  createPacket(store, root, {
+    id: 'PREFLIGHT-POLICY-001', title: 'Trusted policy fixture', dependsOn: [], writeSet: ['src/**'],
+    requirements: [], evidenceRequired: [], tags: [],
+  }, '## RED test\ntrusted policy is applied\n\n## Acceptance\nPreparation runs before verification.');
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({
+    verifyCommand: 'node .verify.cjs',
+    reviewPreflight: {
+      baseReference: 'main', preparationCommand: 'node .prepare.cjs', noOutputTimeoutMs: 1_000,
+    },
+  }), 'utf8');
+  git(root, ['add', 'playbook.config.json']);
+  git(root, ['commit', '-m', 'activate trusted preparation policy']);
+  const candidateWorktree = await mkdtemp(join(tmpdir(), 'svp-preflight-policy-candidate-'));
+  await rm(candidateWorktree, { recursive: true, force: true });
+  git(root, ['worktree', 'add', '--detach', candidateWorktree, candidateSha]);
+
+  try {
+    const report = await runPreflight(store, 'PREFLIGHT-POLICY-001', candidateWorktree, {
+      pr: undefined,
+      persistEvent: false,
+    });
+    const preparation = report.cleanVerification.phases.find(
+      (phase) => phase.phase === PREFLIGHT_PHASE.PREPARATION,
+    );
+    assert.equal(preparation?.status, PREFLIGHT_STATUS.PASS);
+    assert.equal(report.verifyResult.status, PREFLIGHT_STATUS.PASS);
+    assert.equal(report.redTestFound, true);
+  } finally {
+    git(root, ['worktree', 'remove', '--force', candidateWorktree]);
+    store.close();
+  }
 });
 
 test('invalid clean-worktree configuration returns a typed system failure', async () => {

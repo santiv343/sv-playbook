@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { loadConfig } from '../config.js';
 import { PLAYBOOK_CONFIG_FILE_NAME } from '../config.constants.js';
 import type { Store } from '../db/store.types.js';
@@ -184,36 +184,22 @@ export async function runSourceWorktreeVerifyCheck(worktree: string): Promise<Pr
     ?? { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_PASS, detail: `${config.verifyCommand} succeeded` };
 }
 
-function readRedTestName(body: string): string {
+function readRedTestCriteria(body: string): string {
   const match = RED_TEST_SECTION_RE.exec(body);
   if (match === null || match[1] === undefined) return '';
-  return match[1].trim().split('\n')[0] ?? '';
+  return match[1].trim();
 }
 
-function checkRedTest(
-  worktree: string,
-  mergeBase: string | undefined,
-  writeSet: readonly string[],
-  body: string,
-  changedFiles: readonly string[],
-): PreflightCheck {
-  if (mergeBase === undefined) {
-    return { name: PREFLIGHT_CHECK_NAME.RED_TEST, status: CHK_UNKNOWN, detail: 'could not determine merge base' };
-  }
-  const redTestName = readRedTestName(body);
-  if (redTestName === '') {
+function checkRedTest(body: string): PreflightCheck {
+  const criteria = readRedTestCriteria(body);
+  if (criteria === '') {
     return { name: PREFLIGHT_CHECK_NAME.RED_TEST, status: CHK_SKIP, detail: 'no RED test section in packet document' };
   }
-  for (const f of changedFiles) {
-    if (!writeSet.some((g) => overlaps(g, f))) continue;
-    try {
-      const diff = execFileSync(GIT_EXECUTABLE, [GIT_ARGUMENT.DIFF, `${mergeBase}...HEAD`, '--', f], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' }).trim();
-      if (diff.includes(redTestName)) {
-        return { name: PREFLIGHT_CHECK_NAME.RED_TEST, status: CHK_PASS, detail: 'found test in diff' };
-      }
-    } catch { /* continue */ }
-  }
-  return { name: PREFLIGHT_CHECK_NAME.RED_TEST, status: CHK_FAIL, detail: 'RED test not found in diff' };
+  return {
+    name: PREFLIGHT_CHECK_NAME.RED_TEST,
+    status: CHK_PASS,
+    detail: 'RED criteria loaded from durable work definition; semantic adequacy requires review',
+  };
 }
 
 const _db = (s: PreflightCheck['status'], d: string): PreflightCheck => ({ name: 'deviation-bullets', status: s, detail: d });
@@ -262,7 +248,8 @@ export async function runPreflight(
 
   const definition = loadWorkDefinition(store, packetId);
   const writeSet = definition.value.writeSet;
-  const baseReference = loadConfig(worktree).reviewPreflight.baseReference;
+  const configurationRoot = dirname(store.dir);
+  const baseReference = loadConfig(configurationRoot).reviewPreflight.baseReference;
   const mergeBase = findMergeBase(worktree, baseReference);
   const changedFiles = mergeBase !== undefined ? getChangedFiles(worktree, baseReference) : [];
 
@@ -276,11 +263,11 @@ export async function runPreflight(
   const ciChecks = checkCiStatus(worktree, options?.pr);
   checks.push(...ciChecks);
 
-  const cleanVerification = await runCleanVerification(worktree);
+  const cleanVerification = await runCleanVerification(worktree, {}, configurationRoot);
   const verifyResult = verificationCheck(cleanVerification);
   checks.push(verifyResult);
 
-  const redTestResult = checkRedTest(worktree, mergeBase, writeSet, definition.value.body, changedFiles);
+  const redTestResult = checkRedTest(definition.value.body);
   checks.push(redTestResult);
 
   const stopChecks: PreflightCheck[] = [];

@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from '../db/store.types.js';
 import { numberColumn, stringColumn } from '../db/rows.js';
@@ -220,7 +220,7 @@ function gateReview(store: Store, packetId: string, from: string, to: string): v
   if (glbs.length === 0) return;
   let changed: readonly string[];
   try {
-    const baseReference = loadConfig(lease.worktree).reviewPreflight.baseReference;
+    const baseReference = loadConfig(dirname(store.dir)).reviewPreflight.baseReference;
     changed = changedFilesForBase(lease.worktree, baseReference);
   } catch (error: unknown) {
     const detail = error instanceof Error ? error.message : String(error);

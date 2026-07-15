@@ -209,14 +209,15 @@ function receipt(candidateSha: string | null, phases: readonly PreflightPhaseRec
 
 async function configuredPhases(
   worktree: string,
+  configurationRoot: string,
   dependencies: CleanVerificationDependencies,
 ): Promise<readonly PreflightPhaseReceipt[]> {
-  if (!existsSync(join(worktree, PLAYBOOK_CONFIG_FILE_NAME))) {
+  if (!existsSync(join(configurationRoot, PLAYBOOK_CONFIG_FILE_NAME))) {
     return [skipPhase(PREFLIGHT_PHASE.PREPARATION), skipPhase(PREFLIGHT_PHASE.VERIFICATION)];
   }
   let config: ReturnType<typeof loadConfig>;
   try {
-    config = loadConfig(worktree);
+    config = loadConfig(configurationRoot);
   } catch (error: unknown) {
     return [
       systemFailurePhase(PREFLIGHT_PHASE.CONFIGURATION, error),
@@ -257,6 +258,7 @@ async function configuredPhases(
 export async function runCleanVerification(
   sourceWorktree: string,
   dependencyOverrides: Partial<CleanVerificationDependencies> = {},
+  configurationRoot: string = sourceWorktree,
 ): Promise<CleanVerificationReceipt> {
   const dependencies: CleanVerificationDependencies = { ...DEFAULT_DEPENDENCIES, ...dependencyOverrides };
   let candidateSha: string;
@@ -285,7 +287,7 @@ export async function runCleanVerification(
     PREFLIGHT_PHASE_DETAIL.WORKTREE_CREATED,
   )];
   try {
-    phases.push(...await configuredPhases(clean.path, dependencies));
+    phases.push(...await configuredPhases(clean.path, configurationRoot, dependencies));
   } finally {
     phases.push(cleanupPhase(sourceWorktree, clean.path, dependencies));
   }

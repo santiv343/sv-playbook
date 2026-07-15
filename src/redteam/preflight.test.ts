@@ -63,7 +63,7 @@ test('review preflight aggregates the mechanical checks and a write_set violatio
   store.close();
 });
 
-test('F1: checkRedTest returns FAIL when RED test name not in any changed file diff', async () => {
+test('F1: RED criteria provenance does not pretend literal diff matching proves semantic adequacy', async () => {
   const root = await setupPreflightRepo();
   const store = openStore(root);
 
@@ -75,11 +75,12 @@ test('F1: checkRedTest returns FAIL when RED test name not in any changed file d
 
   const report = await runPreflight(store, 'GATE-004-TEST', root);
 
-  assert.equal(report.redTestFound, false, 'should report RED test not found');
+  assert.equal(report.redTestFound, true, 'should load RED criteria from the durable work definition');
 
   const redCheck = report.checks.find((c) => c.name === PREFLIGHT_CHECK_NAME.RED_TEST);
   assert.ok(redCheck !== undefined, 'red-test check should exist');
-  assert.equal(redCheck.status, 'fail', 'red-test check should be FAIL when test not in diff');
+  assert.equal(redCheck.status, PREFLIGHT_STATUS.PASS, 'mechanical provenance should pass without a text heuristic');
+  assert.match(redCheck.detail, /semantic adequacy requires review/);
 
   store.close();
 });
