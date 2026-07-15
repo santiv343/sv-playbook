@@ -54,3 +54,31 @@ test('terminal provider failure detail is durable and uses a stable gateway erro
   assert.equal(snapshot.detail, 'UnknownError: unknown certificate verification error');
   store.close();
 });
+
+test('a review verdict missing payload.workDefinitionRef is rejected at completion', async () => {
+  const { root, store } = await gatewayFixture();
+  const runSpec = prepareRunSpec(store, workRequest());
+  const adapter = new FakeAdapter();
+  adapter.observations.push({
+    adapterId: adapter.id,
+    sessionId: 'session-1',
+    messageId: 'message-1',
+    state: 'completed',
+    progressToken: 'provider-completed',
+    observedToolIds: [],
+    output: JSON.stringify({
+      kind: 'review-verdict',
+      payload: { verdict: 'APPROVED', candidateSha: '330bd41d17ade0e00fdc3615d2f782ab77cd7680' },
+    }),
+    evidence: { source: 'fake' },
+  });
+
+  await assert.rejects(
+    dispatchRun(store, runSpec.id, new Map([[adapter.id, adapter]]), root),
+    (error: unknown) => error instanceof ContextError && error.message.includes('workDefinitionRef'),
+  );
+  const snapshot = loadRunSnapshot(store, runSpec.id);
+  assert.ok(snapshot);
+  assert.equal(snapshot.status, GATEWAY_RUN_STATUS.OUTPUT_INVALID);
+  store.close();
+});
