@@ -177,6 +177,22 @@ export function persistReviewCandidate(
   definition: StoredWorkDefinition,
   pending: PendingReviewCandidate,
 ): void {
+  const existing = store.orm.select({
+    workDefinitionDigest: reviewCandidates.workDefinitionDigest,
+  }).from(reviewCandidates).where(and(
+    eq(reviewCandidates.packetId, definition.packetId),
+    eq(reviewCandidates.workDefinitionVersion, definition.version),
+    eq(reviewCandidates.candidateSha, pending.value.candidate.sha),
+  )).get();
+  if (existing !== undefined) {
+    if (existing.workDefinitionDigest !== definition.digest) {
+      throw new ContextError(
+        REVIEW_CANDIDATE_ERROR.INVALID_STATE,
+        `candidate identity belongs to another work definition digest: ${definition.packetId}`,
+      );
+    }
+    return;
+  }
   store.orm.insert(workflowArtifacts).values({
     id: pending.artifactId,
     contractRef: REVIEW_CANDIDATE_CONTRACT_REF,

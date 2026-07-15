@@ -117,6 +117,13 @@ test('review dispatch is blocked until runtime creates an immutable SHA-bound ca
   assert.match(artifactRow.valueJson, /candidate = true/);
   assert.match(artifactRow.valueJson, /cleanVerification/);
 
+  movePacket(store, undefined, definition.packetId, 'ready');
+  startPacket(store, sessionId, root, definition.packetId);
+  await movePacketToReview(store, sessionId, definition.packetId);
+  const repeatedCandidates = store.orm.select().from(reviewCandidates).all();
+  assert.equal(repeatedCandidates.length, 1);
+  assert.equal(repeatedCandidates[0]?.artifactId, candidate.artifactId);
+
   addExecutionProfile(store, {
     id: 'fake-reviewer',
     roleId: BUNDLED_ROLE_ID.REVIEWER,
