@@ -45,11 +45,8 @@ npx sv-playbook task takeover P2-101 --force
 
 ## Development
 
-Node >= 22.13. Use an LTS release when available: `better-sqlite3` publishes
-prebuilt binaries for LTS releases, while other Node/platform combinations may
-need the native build tools required by `node-gyp`. Run `npm install`, then
-`npm run verify` (typecheck + lint + build + tests). CI runs the same on Windows
-and Linux.
+Node >= 22.13. `npm install`, then `npm run verify` (typecheck + lint +
+build + tests). CI runs the same on Windows and Linux.
 
 ## License
 
