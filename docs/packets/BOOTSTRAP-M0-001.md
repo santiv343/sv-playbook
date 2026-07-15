@@ -3,9 +3,10 @@
 id: BOOTSTRAP-M0-001
 title: M0 bootstrap: establish first clean audited baseline
 depends_on: []
-write_set: [".codegraph/**",".opencode/**",".gitignore","AGENTS.md","CLAUDE.md","CONTEXT.md","bin/**","content/**","docs/**","eslint.config.js","package.json","package-lock.json","playbook.config.json","src/**","tsconfig.json"]
+write_set: [".codegraph/**",".opencode/**",".gitignore","AGENTS.md","CLAUDE.md","CONTEXT.md","bin/**","content/**","docs/**","eslint.config.js","opencode.json","package.json","package-lock.json","playbook.config.json","src/**","tsconfig.json"]
 requirements: []
 evidence_required: ["final-sha"]
+tags: []
 ---
 
 ## Task
