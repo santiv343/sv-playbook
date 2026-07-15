@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../config.js';
 import { PLAYBOOK_CONFIG_FILE_NAME } from '../config.constants.js';
+import { gitOutput } from '../git.js';
 import { GIT_ARGUMENT, GIT_EXECUTABLE, PROCESS_STDIO } from '../git.constants.js';
-import { TEXT_ENCODING } from '../platform.constants.js';
 import {
   PREFLIGHT_CLEAN_WORKTREE_KIND,
   PREFLIGHT_FAILURE_CODE,
@@ -45,14 +45,6 @@ const NO_COMMAND: Pick<PreflightPhaseReceipt, 'command' | 'exitCode' | 'signal' 
   durationMs: 0,
   outputTail: '',
 };
-
-function gitOutput(worktree: string, args: readonly string[]): string {
-  return execFileSync(GIT_EXECUTABLE, args, {
-    cwd: worktree,
-    encoding: TEXT_ENCODING.UTF8,
-    stdio: PROCESS_STDIO.PIPE,
-  }).trim();
-}
 
 async function createCleanWorktree(sourceWorktree: string, candidateSha: string): Promise<CleanWorktree> {
   const path = await mkdtemp(join(tmpdir(), 'svp-preflight-'));

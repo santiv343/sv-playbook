@@ -156,7 +156,7 @@ function verifyFailureDetail(command: string, result: VerifyProcessResult, noOut
   return result.outputTail.length > EMPTY_SIZE ? `${summary}\n${result.outputTail}` : summary;
 }
 
-export async function runVerifyCheck(worktree: string): Promise<PreflightCheck> {
+export async function runSourceWorktreeVerifyCheck(worktree: string): Promise<PreflightCheck> {
   const cfgPath = join(worktree, PLAYBOOK_CONFIG_FILE_NAME);
   if (!existsSync(cfgPath)) {
     return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_SKIP, detail: 'no playbook.config.json' };

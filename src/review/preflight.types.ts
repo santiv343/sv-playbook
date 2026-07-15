@@ -1,3 +1,9 @@
+import {
+  PREFLIGHT_CLEAN_WORKTREE_KIND,
+  PREFLIGHT_FAILURE_CODE,
+  PREFLIGHT_PHASE,
+} from './preflight.constants.js';
+
 export const PREFLIGHT_STATUS = { PASS: 'pass', FAIL: 'fail', SKIP: 'skip', UNKNOWN: 'unknown' } as const;
 export const HEAD_SHA_STATUS = { MATCH: 'match', MISMATCH: 'mismatch', UNKNOWN: 'unknown' } as const;
 export const PREFLIGHT_CHECK_NAME = { RED_TEST: 'red-test', VERIFY: 'verify' } as const;
@@ -51,8 +57,3 @@ export interface PreflightReport {
   checks: PreflightCheck[];
   overall: typeof PREFLIGHT_STATUS.PASS | typeof PREFLIGHT_STATUS.FAIL;
 }
-import {
-  PREFLIGHT_CLEAN_WORKTREE_KIND,
-  PREFLIGHT_FAILURE_CODE,
-  PREFLIGHT_PHASE,
-} from './preflight.constants.js';

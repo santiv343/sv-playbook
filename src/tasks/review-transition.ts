@@ -1,6 +1,6 @@
 import type { Store } from '../db/store.types.js';
 import { assembleReviewCandidate, reviewCandidateRequired } from '../review/review-candidate.js';
-import { runVerifyCheck } from '../review/preflight.js';
+import { runSourceWorktreeVerifyCheck } from '../review/preflight.js';
 import { PREFLIGHT_STATUS } from '../review/preflight.types.js';
 import { captureLegacyReviewEvidence } from './legacy-review-evidence.js';
 import { STATUS } from './service.constants.js';
@@ -31,7 +31,7 @@ async function prepareReviewCandidate(
 async function verifyLegacyReview(store: Store, packetId: string, from: string): Promise<void> {
   const lease = leaseOf(store, packetId);
   if (lease !== undefined) {
-    const verify = await runVerifyCheck(lease.worktree);
+    const verify = await runSourceWorktreeVerifyCheck(lease.worktree);
     if (verify.status === PREFLIGHT_STATUS.FAIL || verify.status === PREFLIGHT_STATUS.UNKNOWN) {
       throw new LifecycleError(`verify command failed: ${verify.detail}`);
     }
