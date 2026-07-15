@@ -8,5 +8,6 @@ dist/
 .worktrees/
 .tmp/
 .tmp-*
-scripts/
+scripts/*
+!scripts/clean-dist.mjs
 *.tgz
