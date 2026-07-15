@@ -2,10 +2,11 @@
 ---
 id: GATE-012
 title: M0 deterministic promotion controller: candidate-bound verify, review, integration and atomic close
-depends_on: ["BUG-013","GATE-005","FLOW-013","AGENT-REPORT-001"]
-write_set: ["src/promotion/**","src/schema/promotion*","src/cli/commands/promotion*","src/orchestration/*promotion*","src/tasks/service*","src/serve/**","content/cli.md"]
+depends_on: []
+write_set: ["src/promotion/**","src/schema/promotion*","src/cli/commands/promotion*","src/orchestration/*promotion*","src/tasks/service*","src/serve/**","content/cli.md","docs/packets/GATE-012.md"]
 requirements: ["DEC-025","candidate-bound","deterministic-promotion","human-operable","single-operation-contract"]
-evidence_required: ["contract-conformance-receipts","candidate-binding-fixtures","recovery-fixtures","manual-workflow-parity","verify-root","final-sha","independent-review"]
+evidence_required: ["candidate-binding-fixtures","contract-conformance-receipts","final-sha","independent-review","manual-workflow-parity","recovery-fixtures","verify-root"]
+tags: []
 ---
 
 ## Problem
