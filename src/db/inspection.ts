@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { numberColumn, stringColumn } from './rows.js';
+import { SQLITE_INTEGRITY_OK } from './store.constants.js';
 
 const BUSY_TIMEOUT_SQL = 'PRAGMA busy_timeout = 5000';
 
@@ -24,8 +25,28 @@ export function assertSqliteIntegrity(dbPath: string): void {
   try {
     db.exec(BUSY_TIMEOUT_SQL);
     const integrity = stringColumn(db.prepare('PRAGMA integrity_check').get(), 'integrity_check');
-    if (integrity !== 'ok') throw new Error(`candidate integrity_check failed: ${integrity}`);
+    if (integrity !== SQLITE_INTEGRITY_OK) throw new Error(`candidate integrity_check failed: ${integrity}`);
   } finally {
     db.close();
+  }
+}
+
+function isLockContention(error: unknown): boolean {
+  return error instanceof Error && /locked|busy/i.test(error.message);
+}
+
+export function assertExclusiveStoreLock(dbPath: string): void {
+  const probe = new DatabaseSync(dbPath);
+  try {
+    try {
+      probe.exec('BEGIN IMMEDIATE');
+    } catch (error: unknown) {
+      if (isLockContention(error)) return;
+      throw error;
+    }
+    probe.exec('ROLLBACK');
+    throw new Error('exclusive lock not held: second connection acquired a write lock');
+  } finally {
+    probe.close();
   }
 }

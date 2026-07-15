@@ -5,4 +5,5 @@ export interface PacketDefinition {
   writeSet: string[];
   requirements: string[];
   evidenceRequired: string[];
+  tags?: string[];
 }

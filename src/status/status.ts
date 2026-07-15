@@ -1,7 +1,7 @@
 import { getBackupStatus } from '../db/backup.js';
-import { stringColumn } from '../db/rows.js';
+import { numberColumn, stringColumn } from '../db/rows.js';
 import type { Store } from '../db/store.types.js';
-import { LEASE_TTL_MS } from '../tasks/service.constants.js';
+import { LEASE_TTL_MS, STATUS } from '../tasks/service.constants.js';
 import {
   COL_ID,
   COL_LAST_EVENT,
@@ -160,6 +160,11 @@ export function readBoardStatus(store: Store, repoRoot: string): BoardStatus {
   return {
     counts: countsFor(packets),
     packets,
-    backup: getBackupStatus(repoRoot),
+    backup: getBackupStatus(repoRoot, {
+      liveTerminalPacketCount: numberColumn(
+        store.db.prepare('SELECT COUNT(*) AS n FROM packets WHERE status IN (?, ?)').get(STATUS.DONE, STATUS.DROPPED),
+        'n',
+      ),
+    }),
   };
 }

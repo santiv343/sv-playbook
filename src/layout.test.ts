@@ -7,6 +7,7 @@ import { loadConfig } from './config.js';
 
 const SRC_DIR = fileURLToPath(new URL('../src', import.meta.url));
 const gates = loadConfig(SRC_DIR).gates;
+const GENERATED_SOURCE_FILE = { INDEX: 'index.gen.ts', GENERATOR: 'generate-index.ts' } as const;
 
 function isLogicModule(file: string) {
   return file.endsWith('.ts')
@@ -14,8 +15,8 @@ function isLogicModule(file: string) {
     && !file.endsWith('.types.ts')
     && !file.endsWith('.constants.ts')
     && !file.endsWith('.errors.ts')
-    && file !== 'index.gen.ts'
-    && file !== 'generate-index.ts';
+    && file !== GENERATED_SOURCE_FILE.INDEX
+    && file !== GENERATED_SOURCE_FILE.GENERATOR;
 }
 
 function isCommandFile(file: string) {
@@ -24,8 +25,8 @@ function isCommandFile(file: string) {
     && !file.endsWith('.constants.ts')
     && !file.endsWith('.types.ts')
     && !file.endsWith('.errors.ts')
-    && file !== 'index.gen.ts'
-    && file !== 'generate-index.ts';
+    && file !== GENERATED_SOURCE_FILE.INDEX
+    && file !== GENERATED_SOURCE_FILE.GENERATOR;
 }
 
 const COMMANDS_REL = join('cli', 'commands') + sep;

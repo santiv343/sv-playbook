@@ -5,6 +5,7 @@ import { commonRoot, openStore } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
 import { runPreflight } from '../../review/preflight.js';
 import type { PreflightReport } from '../../review/preflight.types.js';
+import { PREFLIGHT_STATUS } from '../../review/preflight.types.js';
 
 import { REVIEW_CMD_NAME, REVIEW_PREFLIGHT_USAGE } from './review.constants.js';
 
@@ -18,7 +19,7 @@ function renderViolations(report: PreflightReport, io: Io): void {
     io.out(`write_set violations (${report.writeSetViolations.length}):`);
     for (const v of report.writeSetViolations) io.out(`  ${v}`);
   }
-  const failedStops = report.stopConditions.filter((c) => c.status === 'fail');
+  const failedStops = report.stopConditions.filter((c) => c.status === PREFLIGHT_STATUS.FAIL);
   if (failedStops.length > 0) {
     io.out('');
     io.out(`stop condition violations (${failedStops.length}):`);
@@ -36,7 +37,7 @@ function renderPreflightTable(report: PreflightReport, io: Io): void {
   ]);
   rows.push(['───', '───', '───']);
   rows.push(['overall', report.overall.toUpperCase(),
-    report.overall === 'pass' ? 'all checks passed' : 'some checks failed']);
+    report.overall === PREFLIGHT_STATUS.PASS ? 'all checks passed' : 'some checks failed']);
 
   const nameW = Math.max(...rows.map((r) => r[0].length), 10);
   const statusW = Math.max(...rows.map((r) => r[1].length), 8);
@@ -66,7 +67,7 @@ function handlePreflight(args: string[], io: Io): number {
     const report = runPreflight(store, packetId, getCwd(), { pr: parsed.values.pr });
     if (parsed.values.json === true) io.out(JSON.stringify(report));
     else renderPreflightTable(report, io);
-    return report.overall === 'pass' ? EXIT.OK : EXIT.GATE_FAIL;
+    return report.overall === PREFLIGHT_STATUS.PASS ? EXIT.OK : EXIT.GATE_FAIL;
   } finally {
     store.close();
   }

@@ -4,15 +4,19 @@ import { join } from 'node:path';
 import { loadConfig } from '../config.js';
 import { stringColumn } from '../db/rows.js';
 import type { Store } from '../db/store.types.js';
-import { overlaps } from '../tasks/service.js';
+import { overlaps } from '../tasks/write-set.js';
 import { EVENT_EVIDENCE, INSERT_EVENT_SQL } from '../tasks/service.constants.js';
-import type { PreflightCheck, PreflightReport } from './preflight.types.js';
+import { PREFLIGHT_CHECK_NAME, PREFLIGHT_EVENT_PREFIX, PREFLIGHT_STATUS, type PreflightCheck, type PreflightReport } from './preflight.types.js';
 import { REVIEW_WORKTREE_DIR } from '../cli/commands/review.constants.js';
+import { GIT_ARGUMENT, GIT_BASE_REFERENCE, GIT_EXECUTABLE } from '../git.constants.js';
+import { TEXT_ENCODING } from '../platform.constants.js';
 
-const CHK_PASS = 'pass' as const;
-const CHK_FAIL = 'fail' as const;
-const CHK_SKIP = 'skip' as const;
-const CHK_UNKNOWN = 'unknown' as const;
+const CHK_PASS = PREFLIGHT_STATUS.PASS;
+const CHK_FAIL = PREFLIGHT_STATUS.FAIL;
+const CHK_SKIP = PREFLIGHT_STATUS.SKIP;
+const CHK_UNKNOWN = PREFLIGHT_STATUS.UNKNOWN;
+const GITHUB_CHECK_FIELD = { ROLLUP: 'statusCheckRollup' } as const;
+const GITHUB_CHECK_STATE = { SUCCESS: 'SUCCESS', NEUTRAL: 'neutral' } as const;
 
 const STOP_CONDITION_PATTERNS = [
   { name: 'console.log', pattern: /console\.(log|debug|warn|error)/ },
@@ -24,12 +28,10 @@ const STOP_CONDITION_PATTERNS = [
 
 const RED_TEST_SECTION_RE = /^## RED test\s*\n(.*?)(?=\n## |$)/ms;
 
-const BASE_BRANCHES = ['origin/main', 'origin/master', 'main', 'master'];
-
 function findMergeBase(worktree: string): string | undefined {
-  for (const base of BASE_BRANCHES) {
+  for (const base of GIT_BASE_REFERENCE) {
     try {
-      return execFileSync('git', ['merge-base', base, 'HEAD'], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' }).trim();
+      return execFileSync(GIT_EXECUTABLE, [GIT_ARGUMENT.MERGE_BASE, base, GIT_ARGUMENT.HEAD], { cwd: worktree, encoding: TEXT_ENCODING.UTF8, stdio: 'pipe' }).trim();
     } catch { /* next */ }
   }
   return undefined;
@@ -37,7 +39,7 @@ function findMergeBase(worktree: string): string | undefined {
 
 function getChangedFiles(worktree: string, mergeBase: string): string[] {
   try {
-    const out = execFileSync('git', ['diff', '--name-only', `${mergeBase}...HEAD`], { cwd: worktree, encoding: 'utf8' }).trim();
+    const out = execFileSync(GIT_EXECUTABLE, [GIT_ARGUMENT.DIFF, GIT_ARGUMENT.NAME_ONLY, `${mergeBase}...HEAD`], { cwd: worktree, encoding: TEXT_ENCODING.UTF8 }).trim();
     return out ? out.split('\n').filter(Boolean) : [];
   } catch {
     return [];
@@ -63,7 +65,7 @@ function checkWriteSet(writeSet: string[], changedFiles: string[]): { check: Pre
 
 function checkHeadSha(worktree: string): string {
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: worktree, encoding: 'utf8' }).trim();
+    return execFileSync(GIT_EXECUTABLE, [GIT_ARGUMENT.REV_PARSE, GIT_ARGUMENT.HEAD], { cwd: worktree, encoding: TEXT_ENCODING.UTF8 }).trim();
   } catch {
     return '';
   }
@@ -95,7 +97,7 @@ function parseCiChecks(raw: unknown): PreflightCheck[] {
   if (raw === null || typeof raw !== 'object') {
     return [{ name: 'ci-checks', status: CHK_UNKNOWN, detail: 'could not parse CI status' }];
   }
-  const entries = Object.entries(raw).find(([k]) => k === 'statusCheckRollup');
+  const entries = Object.entries(raw).find(([k]) => k === GITHUB_CHECK_FIELD.ROLLUP);
   if (entries === undefined || !Array.isArray(entries[1]) || entries[1].length === 0) {
     return [{ name: 'ci-checks', status: CHK_SKIP, detail: 'no CI checks found' }];
   }
@@ -106,7 +108,7 @@ function parseCiChecks(raw: unknown): PreflightCheck[] {
     let state = 'unknown';
     if (typeof c.state === 'string') state = c.state;
     else if (typeof c.conclusion === 'string') state = c.conclusion;
-    const ok = state === 'SUCCESS' || state === 'neutral';
+    const ok = state === GITHUB_CHECK_STATE.SUCCESS || state === GITHUB_CHECK_STATE.NEUTRAL;
     return { name: `ci:${ctx}`, status: ok ? CHK_PASS : CHK_FAIL, detail: `${ctx}: ${state}` };
   });
 }
@@ -129,14 +131,14 @@ function checkCiStatus(worktree: string, pr: string | undefined): PreflightCheck
 function checkVerify(worktree: string): PreflightCheck {
   const cfgPath = join(worktree, 'playbook.config.json');
   if (!existsSync(cfgPath)) {
-    return { name: 'verify', status: CHK_SKIP, detail: 'no playbook.config.json' };
+    return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_SKIP, detail: 'no playbook.config.json' };
   }
   if (/enforceVerifyOnReview\s*:\s*false/.test(readFileSync(cfgPath, 'utf8'))) {
-    return { name: 'verify', status: CHK_SKIP, detail: 'verify enforcement disabled in config' };
+    return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_SKIP, detail: 'verify enforcement disabled in config' };
   }
   const config = loadConfig(worktree);
   if (config.verifyCommand.trim() === '') {
-    return { name: 'verify', status: CHK_SKIP, detail: 'no verifyCommand configured' };
+    return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_SKIP, detail: 'no verifyCommand configured' };
   }
 
   const reviewDir = join(worktree, '.worktrees', REVIEW_WORKTREE_DIR);
@@ -144,19 +146,19 @@ function checkVerify(worktree: string): PreflightCheck {
 
   mkdirSync(reviewDir, { recursive: true });
   try {
-    execFileSync('git', ['worktree', 'add', '--detach', reviewWt, 'HEAD'], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' });
+    execFileSync(GIT_EXECUTABLE, ['worktree', 'add', '--detach', reviewWt, GIT_ARGUMENT.HEAD], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' });
   } catch {
-    return { name: 'verify', status: CHK_UNKNOWN, detail: 'could not create review worktree' };
+    return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_UNKNOWN, detail: 'could not create review worktree' };
   }
 
   try {
     execSync(config.verifyCommand, { cwd: reviewWt, timeout: 120_000, stdio: 'pipe' });
-    return { name: 'verify', status: CHK_PASS, detail: `${config.verifyCommand} succeeded` };
+    return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_PASS, detail: `${config.verifyCommand} succeeded` };
   } catch {
-    return { name: 'verify', status: CHK_FAIL, detail: `${config.verifyCommand} failed` };
+    return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_FAIL, detail: `${config.verifyCommand} failed` };
   } finally {
     try {
-      execFileSync('git', ['worktree', 'remove', '--force', reviewWt], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' });
+      execFileSync(GIT_EXECUTABLE, ['worktree', 'remove', '--force', reviewWt], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' });
     } catch { /* cleanup failure is non-fatal */ }
   }
 }
@@ -177,32 +179,32 @@ function readRedTestName(docRoot: string, packetId: string): string {
 
 function checkRedTest(worktree: string, mergeBase: string | undefined, writeSet: string[], docRoot: string, packetId: string, changedFiles: string[]): PreflightCheck {
   if (mergeBase === undefined) {
-    return { name: 'red-test', status: CHK_UNKNOWN, detail: 'could not determine merge base' };
+    return { name: PREFLIGHT_CHECK_NAME.RED_TEST, status: CHK_UNKNOWN, detail: 'could not determine merge base' };
   }
   const redTestName = readRedTestName(docRoot, packetId);
   if (redTestName === '') {
-    return { name: 'red-test', status: CHK_SKIP, detail: 'no RED test section in packet document' };
+    return { name: PREFLIGHT_CHECK_NAME.RED_TEST, status: CHK_SKIP, detail: 'no RED test section in packet document' };
   }
   for (const f of changedFiles) {
     if (!writeSet.some((g) => overlaps(g, f))) continue;
     try {
-      const diff = execFileSync('git', ['diff', `${mergeBase}...HEAD`, '--', f], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' }).trim();
+      const diff = execFileSync(GIT_EXECUTABLE, [GIT_ARGUMENT.DIFF, `${mergeBase}...HEAD`, '--', f], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' }).trim();
       if (diff.includes(redTestName)) {
-        return { name: 'red-test', status: CHK_PASS, detail: 'found test in diff' };
+        return { name: PREFLIGHT_CHECK_NAME.RED_TEST, status: CHK_PASS, detail: 'found test in diff' };
       }
     } catch { /* continue */ }
   }
-  return { name: 'red-test', status: CHK_FAIL, detail: 'RED test not found in diff' };
+  return { name: PREFLIGHT_CHECK_NAME.RED_TEST, status: CHK_FAIL, detail: 'RED test not found in diff' };
 }
 
-function checkStopConditions(changedFiles: string[]): PreflightCheck[] {
+function checkStopConditions(worktree: string, changedFiles: string[]): PreflightCheck[] {
   if (changedFiles.length === 0) {
     return STOP_CONDITION_PATTERNS.map((sc) => ({ name: `stop:${sc.name}`, status: CHK_SKIP, detail: 'no changed files' }));
   }
   return STOP_CONDITION_PATTERNS.map((sc) => {
     for (const f of changedFiles) {
       try {
-        const content = readFileSync(f, 'utf8');
+        const content = readFileSync(join(worktree, f), 'utf8');
         if (sc.pattern.test(content)) {
           return { name: `stop:${sc.name}`, status: CHK_FAIL, detail: `found in ${f}` };
         }
@@ -218,7 +220,7 @@ function checkDeviationBullets(worktree: string): PreflightCheck {
   const base = findMergeBase(worktree);
   if (base === undefined) return _db(CHK_SKIP, 'could not find merge base');
   try {
-    const log = execFileSync('git', ['log', '--format=%B', `${base}...HEAD`], { cwd: worktree, encoding: 'utf8' }).trim();
+    const log = execFileSync(GIT_EXECUTABLE, ['log', '--format=%B', `${base}...HEAD`], { cwd: worktree, encoding: 'utf8' }).trim();
     const bullets = log.split('\n').filter((line) => /DEVIATION/i.test(line));
     if (bullets.length > 0) return _db(CHK_FAIL, `found ${bullets.length} DEVIATION mention(s)`);
     return _db(CHK_PASS, 'no DEVIATION mentions');
@@ -229,7 +231,7 @@ function checkDeviationBullets(worktree: string): PreflightCheck {
 
 function getDocRoot(worktree: string): string {
   try {
-    return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: worktree, encoding: 'utf8' }).trim();
+    return execFileSync(GIT_EXECUTABLE, [GIT_ARGUMENT.REV_PARSE, '--show-toplevel'], { cwd: worktree, encoding: 'utf8' }).trim();
   } catch {
     return worktree;
   }
@@ -248,7 +250,7 @@ export function runPreflight(
   store: Store,
   packetId: string,
   worktree: string,
-  options?: { pr: string | undefined },
+  options?: { pr: string | undefined; persistEvent?: boolean },
 ): PreflightReport {
   const checks: PreflightCheck[] = [];
 
@@ -273,7 +275,7 @@ export function runPreflight(
   const redTestResult = checkRedTest(worktree, mergeBase, writeSet, docRoot, packetId, changedFiles);
   checks.push(redTestResult);
 
-  const stopChecks = checkStopConditions(changedFiles);
+  const stopChecks = checkStopConditions(worktree, changedFiles);
   checks.push(...stopChecks);
 
   const devResult = checkDeviationBullets(worktree);
@@ -282,8 +284,11 @@ export function runPreflight(
   const failed = checks.some((c) => c.status === CHK_FAIL);
   const overall = failed ? CHK_FAIL : CHK_PASS;
 
-  const at = new Date().toISOString();
-  store.db.prepare(INSERT_EVENT_SQL).run(null, packetId, EVENT_EVIDENCE, `preflight:${overall}`, at);
+  if (options?.persistEvent !== false) {
+    store.db.prepare(INSERT_EVENT_SQL).run(
+      null, packetId, EVENT_EVIDENCE, `${PREFLIGHT_EVENT_PREFIX}${overall}`, new Date().toISOString(),
+    );
+  }
 
   return {
     packetId,

@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util';
-import { EXIT } from '../command.constants.js';
+import { CLI_OPTION_TYPE, EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
 import { commonRoot } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
@@ -17,7 +17,7 @@ export const command: Command = {
       io.err(BACKUP_USAGE);
       return Promise.resolve(EXIT.USAGE);
     }
-    const parsed = parseArgs({ args: rest, allowPositionals: true, options: { force: { type: 'boolean' } } });
+    const parsed = parseArgs({ args: rest, allowPositionals: true, options: { force: { type: CLI_OPTION_TYPE.BOOLEAN } } });
     if (parsed.positionals.length > 0) {
       io.err(BACKUP_USAGE);
       return Promise.resolve(EXIT.USAGE);

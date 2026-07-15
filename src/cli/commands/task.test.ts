@@ -8,6 +8,8 @@ import { command as taskCommand } from './task.js';
 import type { Io } from '../command.types.js';
 import { stringColumn } from '../../db/rows.js';
 
+const FULL_PACKET_ID = 'FULL-001';
+
 function arrayColumn(row: unknown, key: string): unknown[] {
   if (typeof row !== 'object' || row === null) throw new TypeError(`invalid row: expected object for ${key}`);
   for (const [candidate, value] of Object.entries(row)) {
@@ -176,7 +178,7 @@ test('task list and show json expose the full definition including write_set and
     if (!Array.isArray(listRaw)) throw new Error('expected array');
     const listArr = listRaw;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const fullPacket = listArr.find((p: unknown) => stringColumn(p, 'id') === 'FULL-001');
+    const fullPacket = listArr.find((p: unknown) => stringColumn(p, 'id') === FULL_PACKET_ID);
     assert.ok(fullPacket !== undefined, 'FULL-001 should be in list');
     assert.deepStrictEqual(arrayColumn(fullPacket, 'write_set'), ['src/**', 'test/**']);
     assert.deepStrictEqual(arrayColumn(fullPacket, 'depends_on'), ['DEP-001']);
@@ -250,12 +252,12 @@ test('an existing packet file can be imported into the DB through the CLI and ne
 
       const fileAfter = await readFile(join('docs', 'packets', 'FLOW-IMP-001.md'), 'utf8');
       assert.equal(fileAfter, content);
-
-      const io2 = fakeIo();
-      assert.notEqual(await taskCommand.run(['import', 'FLOW-IMP-001'], io2), 0);
-      assert.ok(io2.errLines.some((l) => l.includes('amend')), 're-import must hint at amend');
     } finally {
       store.close();
     }
+
+    const io2 = fakeIo();
+    assert.notEqual(await taskCommand.run(['import', 'FLOW-IMP-001'], io2), 0);
+    assert.ok(io2.errLines.some((l) => l.includes('amend')), 're-import must hint at amend');
   });
 });

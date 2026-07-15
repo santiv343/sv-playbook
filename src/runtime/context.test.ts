@@ -8,12 +8,13 @@ const ADAPTER_FILES = new Set([
   join('src', 'runtime', 'context.ts'),
   join('src', 'daemon', 'client.ts'),
 ]);
+const DEPENDENCY_DIRECTORY = 'node_modules';
 
 function* walkProductionFiles(dir: string): Generator<string> {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name !== 'node_modules' && !entry.name.startsWith('.')) {
+      if (entry.name !== DEPENDENCY_DIRECTORY && !entry.name.startsWith('.')) {
         yield* walkProductionFiles(full);
       }
     } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {

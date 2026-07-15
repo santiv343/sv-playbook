@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { ESLINT_CONFIG_SIGNAL } from './taste-infer.constants.js';
 import type { InferredConvention } from './taste-infer.types.js';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -48,21 +49,21 @@ function inferEslintConventions(root: string): InferredConvention[] {
   const eslintPath = join(root, 'eslint.config.js');
   try {
     const raw = readFileSync(eslintPath, 'utf-8');
-    if (raw.includes('typescript-eslint')) {
+    if (raw.includes(ESLINT_CONFIG_SIGNAL.TYPESCRIPT_ESLINT)) {
       conventions.push({
         statement: 'Uses typescript-eslint for TypeScript-aware linting',
         confidence: 0.9,
         evidence: ['eslint.config.js imports typescript-eslint'],
       });
     }
-    if (raw.includes('eslint.configs.recommended')) {
+    if (raw.includes(ESLINT_CONFIG_SIGNAL.RECOMMENDED)) {
       conventions.push({
         statement: 'ESLint recommended rules are enabled',
         confidence: 0.9,
         evidence: ['eslint.config.js uses eslint.configs.recommended'],
       });
     }
-    if (raw.includes('strictTypeChecked')) {
+    if (raw.includes(ESLINT_CONFIG_SIGNAL.STRICT_TYPE_CHECKED)) {
       conventions.push({
         statement: 'typescript-eslint strict type-checked rules are enabled',
         confidence: 0.9,

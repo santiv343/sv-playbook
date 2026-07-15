@@ -3,7 +3,7 @@
 id: STORE-003
 title: single blessed writer: the daemon owns the live store, worktree CLIs are clients - version skew becomes structurally impossible
 depends_on: []
-write_set: ["src/daemon/**","src/cli/commands/daemon*","src/db/store.ts","src/db/store.test.ts","src/redteam/**"]
+write_set: ["src/daemon/**","src/cli/commands/daemon*","src/db/store.ts","src/db/store.test.ts","src/db/store.constants.ts","src/db/backup.ts","src/cli/commands/index.gen.ts","src/redteam/**"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]
 ---

@@ -1,1 +1,10 @@
-export type { PlaybookConfig, BackupConfig, BaselineConfig, GatesConfig, Tier, Autonomy } from './schema/config.types.js';
+export type {
+  Autonomy,
+  BackupConfig,
+  BaselineConfig,
+  GatesConfig,
+  ModelEvaluationConfig,
+  OrmApplicationSqlBaseline,
+  PlaybookConfig,
+  Tier,
+} from './schema/config.types.js';

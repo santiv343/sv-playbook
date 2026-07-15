@@ -1,0 +1,858 @@
+{
+  "contract_version": "1.0.0",
+  "objective": "Enforce candidate-bound checks, reviewer verdict via controller-issued LaunchReceipt, and idempotent integration ; all append-only identity + event ; before closing a task. PR adapter records intent, invokes merge-commit API, observes result, and verifies parent lineage. Eliminates the public task-move->done bypass, blocks on unavailable required checks (with bounded retry, then InvestigationRequest), supports a one-time host self-install exception using a marker+ref scheme with no self-referential commit SHA, and recovers orphan active launches to unblock retries.",
+  "trust_boundary": "The BootstrapPromotionController owns supported gate effects: worktree and candidate lifecycle, checks, review acceptance, integration, and close. Local mode works without GitHub. PR mode is unavailable unless PR_CONTROL_PROOF verifies a repository control that authorizes the configured controller merge identity and merge-commit strategy. Agents return artifacts or verdicts but do not execute authoritative effects. Direct same-user SQLite/git mutation and privileged bypass of repository controls remain detectable residual risks, not prevented threats.",
+  "components": [
+    {
+      "name": "CandidateRecord",
+      "type": "data",
+      "immutable": true,
+      "description": "Immutable identity record for a candidate. Never updated; status derived from latest CandidateStateEvent.",
+      "fields": [
+        "candidate_id (uuid)",
+        "supersedes_candidate_id (uuid|null)",
+        "task_id",
+        "base_sha",
+        "candidate_sha",
+        "config_digest",
+        "contract_digest",
+        "created_at"
+      ],
+      "invariant": "candidate_id permanently binds base_sha, candidate_sha, config_digest, contract_digest. Any change to these fields requires a new candidate with supersedes_candidate_id. Effective status is deterministic reduction of CandidateStateEvent stream."
+    },
+    {
+      "name": "CandidateStateEvent",
+      "type": "data",
+      "append_only": true,
+      "description": "Append-only state transition event for a candidate. Sequence is the sole ordering key; created_at is audit metadata only.",
+      "fields": [
+        "event_id (uuid)",
+        "candidate_id",
+        "sequence (integer, monotonic per candidate_id)",
+        "from_status (enum: see state machine)",
+        "to_status (enum: see state machine)",
+        "trigger (string, matching transition name)",
+        "reason (string|null)",
+        "controller_digest",
+        "created_at"
+      ],
+      "invariant": "Append-only with unique (candidate_id, sequence). Effective candidate status is to_status of the highest contiguous sequence for candidate_id. Status transitions must follow the state machine."
+    },
+    {
+      "name": "CheckAttempt",
+      "type": "data",
+      "append_only": true,
+      "description": "Append-only check observation for a specific attempt_number per check_type per candidate.",
+      "fields": [
+        "check_attempt_id (uuid)",
+        "candidate_id",
+        "attempt_number (integer, starts at 1 per check_type per candidate)",
+        "check_type (string key from required_checks)",
+        "status (pass|fail|not_applicable|unavailable)",
+        "reason (string)",
+        "applicability_reason (string|null, required when status=not_applicable, typed per check policy)",
+        "sha_bound",
+        "timestamp",
+        "controller_digest"
+      ],
+      "invariant": "Append-only; never upsert or replace. The latest attempt per check_type (highest attempt_number) determines the current check state for the candidate. not_applicable requires a typed applicability_reason tied to the check\u0027s applicability policy (e.g., \u0027no_verify_contract\u0027, \u0027no_ci_configured\u0027, \u0027no_red_test_declared\u0027)."
+    },
+    {
+      "name": "ReviewVerdict",
+      "type": "data",
+      "append_only": true,
+      "fields": [
+        "verdict_id (uuid)",
+        "candidate_id",
+        "reviewer_launch_receipt_id",
+        "verdict (APPROVED|REQUEST_CHANGES)",
+        "findings",
+        "residual_risk",
+        "candidate_sha_bound",
+        "check_set_digest",
+        "timestamp",
+        "controller_digest"
+      ],
+      "invariant": "Bound to candidate_id, candidate_sha, and check_set_digest (hash of latest CheckAttempt per check_type at review time). Stale if check_set_digest diverges."
+    },
+    {
+      "name": "IntegrationAttempt",
+      "type": "data",
+      "immutable": true,
+      "description": "Immutable intent record for an integration attempt. Outcome is recorded separately as IntegrationOutcome.",
+      "fields": [
+        "attempt_id (uuid)",
+        "candidate_id",
+        "attempt_number (integer)",
+        "mode (local|pr)",
+        "integration_effect_key",
+        "idempotency_key",
+        "timestamp",
+        "controller_digest"
+      ],
+      "invariant": "Stable integration_effect_key = target_ref + base_sha + candidate_sha + mode. Attempt-specific idempotency_key = candidate_id + attempt_number + mode. Intent is immutable; outcome is an append-only IntegrationOutcome."
+    },
+    {
+      "name": "IntegrationOutcome",
+      "type": "data",
+      "append_only": true,
+      "description": "Append-only outcome of an IntegrationAttempt. At most one successful outcome per integration_effect_key.",
+      "fields": [
+        "outcome_id (uuid)",
+        "attempt_id",
+        "candidate_id",
+        "integration_effect_key",
+        "status (success|failed)",
+        "merge_result_sha (optional, set on success)",
+        "reason (string|null, set on failure)",
+        "timestamp",
+        "controller_digest"
+      ],
+      "invariant": "Stable integration_effect_key. A partial unique constraint allows at most one IntegrationOutcome with status=success per integration_effect_key. Multiple failed outcomes are append-only; only the first success is recorded."
+    },
+    {
+      "name": "IntegrationAdoption",
+      "type": "data",
+      "immutable": true,
+      "description": "Binds a later approved candidate to an already successful identical integration effect without repeating the git or PR effect.",
+      "fields": [
+        "adoption_id (uuid)",
+        "candidate_id",
+        "source_outcome_id",
+        "integration_effect_key",
+        "observed_result_sha",
+        "created_at",
+        "controller_digest"
+      ],
+      "invariant": "Unique per candidate_id. The source outcome must be successful for the same integration_effect_key, and current target state must still equal observed_result_sha."
+    },
+    {
+      "name": "InvalidationRecord",
+      "type": "data",
+      "append_only": true,
+      "fields": [
+        "invalidation_id (uuid)",
+        "superseded_candidate_id",
+        "superseding_candidate_id",
+        "cause (string)",
+        "previous_effective_status",
+        "timestamp",
+        "controller_digest"
+      ]
+    },
+    {
+      "name": "InvestigationRequest",
+      "type": "data",
+      "immutable": true,
+      "description": "Immutable investigation request identity. Resolution is recorded separately as InvestigationResolution.",
+      "fields": [
+        "investigation_id (uuid)",
+        "candidate_id (uuid|null)",
+        "trigger (retry_exhaustion|external_done|corruption|dirty_target|unsupported_pr|orphan_launch|external_pr_merge|etc.)",
+        "details",
+        "created_at",
+        "controller_digest"
+      ]
+    },
+    {
+      "name": "InvestigationResolution",
+      "type": "data",
+      "append_only": true,
+      "description": "Append-only resolution of an InvestigationRequest. Optional ; unresolved requests remain open.",
+      "fields": [
+        "resolution_id (uuid)",
+        "investigation_id",
+        "resolution (string)",
+        "resolved_at",
+        "controller_digest"
+      ]
+    },
+    {
+      "name": "LaunchIntent",
+      "type": "data",
+      "immutable": true,
+      "description": "Durable intent written before creating a worktree or spawning a harness process.",
+      "fields": [
+        "launch_request_id (uuid)",
+        "candidate_id",
+        "role (implementer|reviewer)",
+        "profile",
+        "launch_attempt",
+        "requested_worktree_path",
+        "created_at",
+        "controller_digest"
+      ],
+      "invariant": "Unique (candidate_id, role, launch_attempt). The launch_request_id is injected into harness/session metadata so recovery can correlate a spawned process even if LaunchReceipt persistence did not complete."
+    },
+    {
+      "name": "LaunchIntentOutcome",
+      "type": "data",
+      "immutable": true,
+      "description": "Terminal result of a LaunchIntent, allowing an intent with no receipt to fail durably and unblock a later launch attempt.",
+      "fields": [
+        "outcome_id (uuid)",
+        "launch_request_id",
+        "status (receipt_created|failed)",
+        "receipt_id (uuid|null)",
+        "reason (string|null)",
+        "created_at",
+        "controller_digest"
+      ],
+      "invariant": "Exactly one terminal outcome per launch_request_id. receipt_created requires a matching LaunchReceipt; failed requires no receipt and a typed reason."
+    },
+    {
+      "name": "LaunchReceipt",
+      "type": "data",
+      "immutable": true,
+      "description": "Immutable identity record for a session launch. Lifecycle is tracked via append-only LaunchLifecycleEvent.",
+      "fields": [
+        "receipt_id (uuid)",
+        "candidate_id",
+        "role (implementer|reviewer)",
+        "profile",
+        "harness_session_id",
+        "process_id",
+        "worktree_path",
+        "launch_attempt (integer)",
+        "created_at",
+        "controller_digest"
+      ],
+      "invariant": "Retries create new receipts with incremented launch_attempt. Reviewer receipt must differ from any implementer receipt in receipt_id, harness_session_id, and process_id. Only the controller issues and observes receipts. Effective lifecycle is deterministic reduction of LaunchLifecycleEvent stream."
+    },
+    {
+      "name": "LaunchLifecycleEvent",
+      "type": "data",
+      "append_only": true,
+      "description": "Append-only lifecycle event for a LaunchReceipt. Determines effective lifecycle state.",
+      "fields": [
+        "event_id (uuid)",
+        "receipt_id",
+        "sequence (integer, monotonic per receipt_id)",
+        "lifecycle (active|completed|failed|expired)",
+        "reason (string|null)",
+        "created_at",
+        "controller_digest"
+      ],
+      "invariant": "Append-only with unique (receipt_id, sequence). Effective lifecycle is the lifecycle at the highest contiguous sequence. completed, failed, and expired are terminal; no later active event is valid for the same receipt. A retry creates a new LaunchReceipt."
+    },
+    {
+      "name": "BootstrapPromotionController",
+      "type": "non-agent controller",
+      "description": "Singleton controller executing all gate operations. Reads task definitions, creates immutable candidate identities, appends check state events, runs preflight checks with bounded retry, accepts reviewer verdicts via distinct LaunchReceipts, performs idempotent integration (local ff-only merge or PR merge-commit via GitHub API/gh), and closes tasks via single SQLite transaction. Verifies its own pinned revision and config digest at startup, recording them in every state mutation. Recovers orphan active launches on startup by inspecting harness session/process state."
+    }
+  ],
+  "constants": {
+    "max_check_attempts": 3,
+    "max_integration_attempts": 5
+  },
+  "exception_budget": {
+    "total": 1,
+    "consumer": "root system host (not the human, not the controller)",
+    "mechanism": "The root system host runs the standalone acceptance suite against pinned controller source in a clean checkout. On full pass it creates an install commit containing controller artifacts, an acceptance receipt, and a marker with their digests; the marker never contains its own commit SHA. The host advances the expected target base to that commit, creates refs/sv-playbook/bootstrap-installed, and appends a BootstrapInstallReceipt containing prior target, installed commit, ref result, and digests. Normal operation refuses another install while marker, ref, or receipt exists.",
+    "controller_verification": "At startup the controller verifies that bootstrap-installed points to its revision and that marker, acceptance receipt, install receipt, source digest, and config digest agree. It does not claim durable historical proof that the ref was created from null; deletion or forgery by the same host user is part of the declared residual threat.",
+    "controller_policy": "The controller has zero exception budget. It promotes its replacement exclusively through the normal gate (all checks, review, integration).",
+    "renewal": "None. After consumption, the exception cannot be used again."
+  },
+  "candidate_state_machine": {
+    "states": [
+      "created",
+      "checks_required",
+      "checks_completed",
+      "review_required",
+      "approved",
+      "integration_pending",
+      "integrated",
+      "closed",
+      "rejected",
+      "invalidated",
+      "blocked"
+    ],
+    "transitions": [
+      {
+        "from": "created",
+        "to": "checks_required",
+        "trigger": "candidate_created",
+        "preconditions": [
+          "CandidateRecord exists with valid base_sha, candidate_sha, config_digest, contract_digest",
+          "controller_digest available"
+        ],
+        "effects": [
+          "Append CandidateStateEvent: created -> checks_required; controller begins running required checks (attempt 1 per check_type)"
+        ]
+      },
+      {
+        "from": "checks_required",
+        "to": "checks_required",
+        "trigger": "check_retry_unavailable",
+        "preconditions": [
+          "At least one required check_type\u0027s latest CheckAttempt is unavailable",
+          "attempt_number \u003c max_check_attempts for that check_type",
+          "No required check failed",
+          "Candidate SHAs and digests re-verified unchanged"
+        ],
+        "effects": [
+          "Append new CheckAttempt for unavailable check_type(s) with incremented attempt_number"
+        ]
+      },
+      {
+        "from": "checks_required",
+        "to": "checks_completed",
+        "trigger": "all_required_checks_satisfied",
+        "preconditions": [
+          "For every required check_type, the latest CheckAttempt has status pass or not_applicable (with valid applicability_reason)",
+          "Candidate SHAs and digests re-verified unchanged"
+        ],
+        "effects": [
+          "Append CandidateStateEvent: checks_required -> checks_completed"
+        ]
+      },
+      {
+        "from": "checks_required",
+        "to": "rejected",
+        "trigger": "required_check_failed",
+        "preconditions": [
+          "At least one required check_type\u0027s latest CheckAttempt has status fail",
+          "sha_bound matches candidate_sha"
+        ],
+        "effects": [
+          "Append CandidateStateEvent: checks_required -> rejected; no further checks for this candidate"
+        ]
+      },
+      {
+        "from": "checks_required",
+        "to": "blocked",
+        "trigger": "check_retry_exhausted",
+        "preconditions": [
+          "At least one required check_type is unavailable",
+          "attempt_number \u003e= max_check_attempts for that check_type",
+          "No retry budget remains (max_check_attempts exhausted)"
+        ],
+        "effects": [
+          "Create InvestigationRequest (trigger=retry_exhaustion); append CandidateStateEvent: checks_required -> blocked; no automatic retry"
+        ]
+      },
+      {
+        "from": "checks_completed",
+        "to": "review_required",
+        "trigger": "request_review",
+        "preconditions": [
+          "Candidate SHAs and digests re-verified unchanged",
+          "A reviewer LaunchReceipt exists for this candidate from a successful LaunchIntent",
+          "The receipt effective lifecycle is active or completed"
+        ],
+        "effects": [
+          "Append CandidateStateEvent from checks_completed to review_required only after the reviewer receipt is durable"
+        ]
+      },
+      {
+        "from": "review_required",
+        "to": "approved",
+        "trigger": "verdict_approved",
+        "preconditions": [
+          "ReviewVerdict with APPROVED exists for this candidate_id",
+          "Verdict\u0027s candidate_sha_bound matches candidate_sha",
+          "Verdict\u0027s check_set_digest matches current check set digest",
+          "Verdict\u0027s reviewer_launch_receipt_id references a valid reviewer LaunchReceipt for this candidate",
+          "Reviewer receipt differs from implementer receipt in receipt_id, harness_session_id, and process_id",
+          "Candidate SHAs and digests re-verified unchanged"
+        ],
+        "effects": ["Append CandidateStateEvent: review_required -> approved"]
+      },
+      {
+        "from": "review_required",
+        "to": "rejected",
+        "trigger": "verdict_changes_requested",
+        "preconditions": [
+          "ReviewVerdict with REQUEST_CHANGES from valid distinct reviewer receipt",
+          "SHA and check_set_digest match"
+        ],
+        "effects": ["Append CandidateStateEvent: review_required -> rejected"]
+      },
+      {
+        "from": "approved",
+        "to": "integrated",
+        "trigger": "adopt_existing_integration",
+        "preconditions": [
+          "A successful IntegrationOutcome already exists for the same integration_effect_key",
+          "Current target state still matches that outcome result",
+          "Candidate SHAs, checks, verdict, config, and contract remain valid"
+        ],
+        "effects": [
+          "Append IntegrationAdoption referencing the existing successful outcome",
+          "Append CandidateStateEvent from approved to integrated without repeating integration"
+        ]
+      },
+      {
+        "from": "approved",
+        "to": "integration_pending",
+        "trigger": "start_integration",
+        "preconditions": [
+          "Candidate SHAs and digests re-verified unchanged",
+          "Mode-specific preconditions met (see integrate operation)"
+        ],
+        "effects": [
+          "In one SQLite transaction append IntegrationAttempt attempt 1 and CandidateStateEvent from approved to integration_pending before any external effect"
+        ]
+      },
+      {
+        "from": "integration_pending",
+        "to": "integration_pending",
+        "trigger": "integration_retry",
+        "preconditions": [
+          "Previous IntegrationOutcome for attempt has status=failed",
+          "attempt_number \u003c max_integration_attempts",
+          "Fail reason is retryable: conflict, transient PR not-ready, or controller_crash_before_observed_effect",
+          "Target state re-read: no dirty local target or unsupported PR strategy detected mid-flight"
+        ],
+        "effects": [
+          "Create a new immutable IntegrationAttempt with incremented attempt_number as the durable retry intent"
+        ]
+      },
+      {
+        "from": "integration_pending",
+        "to": "integrated",
+        "trigger": "integration_success",
+        "preconditions": [
+          "Integration operation succeeded (local ff-only merge or PR merge-commit verified via API/gh with parent lineage check)",
+          "merge_result_sha observed and recorded",
+          "integration_effect_key partial unique constraint allows at most one successful IntegrationOutcome"
+        ],
+        "effects": [
+          "Append IntegrationOutcome success; record merge_result_sha; append CandidateStateEvent: integration_pending -> integrated"
+        ]
+      },
+      {
+        "from": "integration_pending",
+        "to": "blocked",
+        "trigger": "integration_retry_exhausted",
+        "preconditions": [
+          "Integration attempts exhausted (max_integration_attempts reached)",
+          "No automatic retry possible"
+        ],
+        "effects": [
+          "Create InvestigationRequest (trigger=retry_exhaustion); append CandidateStateEvent: integration_pending -> blocked"
+        ]
+      },
+      {
+        "from": "integrated",
+        "to": "closed",
+        "trigger": "close_task",
+        "preconditions": [
+          "merge_result_sha present and valid",
+          "Task status not already \u0027done\u0027 externally (verified in single SQLite transaction with conditional expected status)",
+          "Candidate SHAs and digests re-verified unchanged"
+        ],
+        "effects": [
+          "Controller executes single SQLite transaction: sets task to \u0027done\u0027 with conditional WHERE task_status = expected_status, requiring exactly one affected row; appends CandidateStateEvent: integrated -> closed; logs closure with controller_digest"
+        ]
+      },
+      {
+        "from": "*",
+        "to": "invalidated",
+        "trigger": "superseded_by_new_candidate",
+        "preconditions": [
+          "A new CandidateRecord is created with supersedes_candidate_id pointing to this candidate",
+          "This candidate\u0027s effective status is non-terminal (not closed, not already invalidated)"
+        ],
+        "effects": [
+          "Append CandidateStateEvent: * -> invalidated (capturing previous effective status); InvalidationRecord appended linking superseded and superseding candidates"
+        ]
+      }
+    ]
+  },
+  "operations": [
+    {
+      "name": "create_candidate",
+      "description": "Create an immutable CandidateRecord identity and append initial CandidateStateEvent.",
+      "intent": "Declare candidate with bound SHAs/digests; record intent before appending state event.",
+      "preconditions": [
+        "Task exists and is promotable",
+        "base_sha and candidate_sha are valid git commits",
+        "config_digest and contract_digest computed from current task config/contract",
+        "Controller digest available",
+        "If supersedes_candidate_id is set, the referenced candidate\u0027s effective status is non-terminal"
+      ],
+      "effect": "Write immutable CandidateRecord; append CandidateStateEvent with from_status=created, to_status=checks_required.",
+      "receipt": "CandidateRecord persisted; candidate_id returned; entry state event appended.",
+      "idempotency_key": "task_id + candidate_sha + config_digest + contract_digest",
+      "typed_failures": {
+        "InvalidTaskState": "Task not promotable",
+        "ShaInvalid": "SHA not in repo",
+        "DigestMismatch": "Digests changed between computation and persistence",
+        "AlreadyExists": "Idempotency key collision"
+      },
+      "bounded_attempts": 1,
+      "on_supersedes": "If supersedes_candidate_id is provided, the old candidate has CandidateStateEvent appended: effective_status -> invalidated, and an InvalidationRecord is appended."
+    },
+    {
+      "name": "record_check_attempt",
+      "description": "Append a CheckAttempt for a candidate. Never upserts.",
+      "intent": "Record check observation for a specific attempt_number.",
+      "preconditions": [
+        "CandidateRecord exists and effective status is created or checks_required",
+        "sha_bound matches candidate_sha (from immutable CandidateRecord)",
+        "check_type is a known key from required_checks",
+        "status is valid enum value",
+        "attempt_number is last_attempt_number + 1 for this candidate_id + check_type (or 1 if first)",
+        "If retrying unavailable: prior latest CheckAttempt for this check_type was unavailable, and attempt_number \u003c= max_check_attempts",
+        "If status is not_applicable: applicability_reason is required, typed to check policy"
+      ],
+      "effect": "Append CheckAttempt.",
+      "receipt": "CheckAttempt persisted; controller re-evaluates check set for possible state transition (append CandidateStateEvent if all checks satisfied).",
+      "idempotency_key": "candidate_id + check_type + attempt_number",
+      "typed_failures": {
+        "CandidateNotFound": "No such candidate",
+        "ShaMismatch": "sha_bound != candidate_sha",
+        "InvalidState": "Candidate effective status not in a check-accepting state",
+        "RetryExhausted": "attempt_number exceeds max_check_attempts",
+        "AlreadyRecorded": "CheckAttempt with this idempotency key already exists",
+        "MissingApplicabilityReason": "not_applicable status without applicability_reason"
+      },
+      "bounded_attempts": 1
+    },
+    {
+      "name": "record_verdict",
+      "description": "Append a reviewer verdict bound to candidate, SHA, and check-set digest.",
+      "intent": "Record reviewer decision for current candidate state.",
+      "preconditions": [
+        "Candidate effective status is review_required",
+        "candidate_sha_bound matches candidate_sha (from immutable CandidateRecord)",
+        "check_set_digest matches hash of current latest CheckAttempts per check_type",
+        "reviewer_launch_receipt_id references a valid LaunchReceipt with role=reviewer for this candidate whose effective lifecycle is completed",
+        "Reviewer receipt differs from any implementer receipt in receipt_id, harness_session_id, and process_id"
+      ],
+      "effect": "Append ReviewVerdict.",
+      "receipt": "ReviewVerdict persisted; controller evaluates transition to approved or rejected (appends CandidateStateEvent).",
+      "idempotency_key": "candidate_id + reviewer_launch_receipt_id + check_set_digest",
+      "typed_failures": {
+        "SelfReview": "Reviewer receipt matches implementer receipt",
+        "StaleCheckSet": "check_set_digest does not match current state",
+        "InvalidReceipt": "LaunchReceipt not found, wrong role, wrong candidate, or not in valid lifecycle",
+        "AlreadyVerdicted": "Verdict with this idempotency key exists"
+      },
+      "bounded_attempts": 1
+    },
+    {
+      "name": "integrate",
+      "description": "Idempotent integration with immutable intent followed by one terminal outcome. Local mode owns a clean target checkout and runs ff-only. PR mode is enabled only with a current PR_CONTROL_PROOF; the controller invokes merge-commit API or gh for the exact candidate and verifies observed parent lineage. Squash, rebase, or merge before intent blocks. A privileged actor that bypasses the verified repository control remains outside bootstrap containment.",
+      "intent": "Before any git or PR effect, one SQLite transaction appends the immutable IntegrationAttempt and, for attempt 1, the approved-to-integration_pending CandidateStateEvent. A retry appends only the next IntegrationAttempt while state remains integration_pending.",
+      "preconditions": [
+        "For attempt 1, candidate effective status is approved; for retry, status is integration_pending and the previous attempt has a failed retryable outcome",
+        "Candidate SHAs/digests re-verified unchanged against immutable CandidateRecord",
+        "For local mode: target checkout is clean, HEAD==base_sha, candidate_sha descends from base_sha. No stash/reset/update-ref behind the checkout.",
+        "For PR mode: a current PR_CONTROL_PROOF passed; controller has valid credentials; PR head matches candidate_sha; no merge occurred before the recorded intent."
+      ],
+      "effect": "Commit the intent transaction first. Then execute local ff-only or PR API merge-commit and append exactly one terminal IntegrationOutcome. On success verify the result and append integration_pending-to-integrated state. A crash after intent always leaves a durable integration_pending candidate that recovery can resume; no approved candidate can have a dangling IntegrationAttempt.",
+      "receipt": "Intent transaction contains IntegrationAttempt and required state event; terminal IntegrationOutcome follows the external effect; success also appends integration_pending-to-integrated state.",
+      "idempotency_key": "candidate_id + attempt_number + mode",
+      "integration_effect_key": "target_ref + base_sha + candidate_sha + mode",
+      "typed_failures": {
+        "NotApproved": "Candidate effective status not approved",
+        "ShaChanged": "SHA re-verification failed",
+        "DirtyTarget": "Local target checkout is dirty -> block, create InvestigationRequest",
+        "UnsupportedPrStrategy": "PR uses squash/rebase -> block, create InvestigationRequest",
+        "PrNotReady": "Merge API reports a transient not-ready or mergeability state after intent (retryable)",
+        "PrControlUnavailable": "PR_CONTROL_PROOF is absent or invalid; block PR mode",
+        "ExternalPrMerge": "PR was merged before controller intent or observed result violates candidate parent lineage; block and create InvestigationRequest(trigger=external_pr_merge)",
+        "IntegrationConflict": "ff-only merge conflict or target changed (retryable only after re-verification)",
+        "AlreadyIntegrated": "Integration effect key already has a success outcome",
+        "RetryExhausted": "All attempts exhausted (max_integration_attempts)"
+      },
+      "bounded_attempts": "max_integration_attempts",
+      "retry_policy": "Exponential backoff with jitter, base 1s, max 30s. Retryable: conflict, PR not ready. Non-retryable: dirty target, unsupported PR strategy, external PR merge -> blocked immediately."
+    },
+    {
+      "name": "close_candidate",
+      "description": "Close the task after successful integration via single SQLite transaction. The only path to \u0027done\u0027.",
+      "intent": "Declare intent to close; execute conditional transaction.",
+      "preconditions": [
+        "If a valid integrated-to-closed CandidateStateEvent already exists for this candidate, return its result as idempotent success",
+        "Candidate effective status is integrated",
+        "merge_result_sha present and valid (from successful IntegrationOutcome)",
+        "Task status re-read and verified not already \u0027done\u0027 externally",
+        "Candidate SHAs/digests re-verified unchanged against immutable CandidateRecord"
+      ],
+      "effect": "In one SQLite transaction, conditionally update the task from the expected pre-close status to done and append the unique integrated-to-closed CandidateStateEvent. Exactly one task row and one close event must result. A concurrent second controller call observes the existing close event and returns the same success. Task status done without that valid close event is external corruption and creates InvestigationRequest(trigger=external_done).",
+      "receipt": "CandidateStateEvent appended (integrated -> closed); task \u0027done\u0027; closure logged with controller_digest.",
+      "idempotency_key": "candidate_id",
+      "typed_failures": {
+        "NotIntegrated": "Candidate effective status not integrated",
+        "AlreadyClosed": "Candidate already closed (event already appended)",
+        "ExternalDoneDetected": "Task is done without a valid close event for this candidate; create InvestigationRequest(trigger=external_done) and do not append a close event"
+      },
+      "bounded_attempts": 1
+    },
+    {
+      "name": "adopt_existing_integration",
+      "description": "Reuse an already successful identical integration effect for a later approved candidate without executing git or PR integration again.",
+      "intent": "Append immutable IntegrationAdoption after verifying the prior outcome and current target state.",
+      "preconditions": [
+        "If IntegrationAdoption and the approved-to-integrated state event already exist, return the prior result as idempotent success",
+        "Candidate effective status is approved",
+        "A successful IntegrationOutcome exists for the same integration_effect_key",
+        "Current target ref or PR result still equals the prior merge_result_sha",
+        "Candidate SHA, contract/config digests, checks, and reviewer verdict are current"
+      ],
+      "effect": "In one SQLite transaction append the unique IntegrationAdoption and the approved-to-integrated CandidateStateEvent. Do not execute a git or PR merge. A retry after commit observes both records and returns the same success.",
+      "receipt": "IntegrationAdoption plus CandidateStateEvent to integrated.",
+      "idempotency_key": "candidate_id + source_outcome_id",
+      "typed_failures": {
+        "NoMatchingOutcome": "No successful outcome exists for the exact integration_effect_key",
+        "TargetDiverged": "Current target no longer matches the prior integration result",
+        "CandidateStale": "Candidate checks, verdict, SHA, or digests are stale"
+      },
+      "bounded_attempts": 1
+    },
+    {
+      "name": "launch_session",
+      "description": "Persist LaunchIntent, create worktree, launch the harness with launch_request_id metadata, then persist immutable LaunchReceipt and active lifecycle event.",
+      "intent": "Append immutable LaunchIntent before worktree creation or process spawn.",
+      "preconditions": [
+        "CandidateRecord exists and effective status allows the role",
+        "No LaunchReceipt for same candidate+role with effective lifecycle=active",
+        "Any prior receipts for this candidate+role are in terminal effective lifecycle (completed|failed|expired)"
+      ],
+      "effect": "After LaunchIntent is durable, create the worktree and spawn the harness with launch_request_id in session metadata. Persist LaunchReceipt, active LaunchLifecycleEvent, and LaunchIntentOutcome(receipt_created) together. If receipt persistence is interrupted, startup recovery finds the session by launch_request_id and reconstructs those records or terminates owned resources before writing LaunchIntentOutcome(failed).",
+      "receipt": "LaunchIntent has exactly one terminal LaunchIntentOutcome; success also has LaunchReceipt and active LaunchLifecycleEvent.",
+      "idempotency_key": "candidate_id + role + launch_attempt",
+      "typed_failures": {
+        "CandidateInvalid": "Candidate effective status is closed, invalidated, or blocked",
+        "DuplicateActive": "Active LaunchReceipt (effective lifecycle) already exists for this candidate+role",
+        "OrphanIntent": "LaunchIntent exists without a terminal receipt outcome; recovery must reconcile before retry"
+      },
+      "bounded_attempts": 1
+    },
+    {
+      "name": "invalidate_and_supersede",
+      "description": "Mark candidate invalidated and create a new superseding candidate with updated SHAs/digests.",
+      "intent": "Declare staleness and intent to supersede.",
+      "preconditions": [
+        "Existing CandidateRecord with effective status in non-terminal state",
+        "Re-verification detects SHA or digest mismatch with current repo state",
+        "New base_sha, candidate_sha, config_digest, contract_digest computed from current state"
+      ],
+      "effect": "Append CandidateStateEvent: * -> invalidated; append InvalidationRecord with previous_effective_status; create new CandidateRecord with supersedes_candidate_id.",
+      "receipt": "Old candidate effective status = invalidated; new candidate created and enters created->checks_required (CandidateStateEvent appended).",
+      "idempotency_key": "superseded_candidate_id",
+      "typed_failures": {
+        "AlreadyInvalidated": "Candidate effective status already invalidated",
+        "TerminalState": "Candidate effective status is closed or already invalidated (terminal)"
+      },
+      "bounded_attempts": 1
+    },
+    {
+      "name": "scan_corruption",
+      "description": "Periodic consistency scan detecting external \u0027done\u0027, missing records, inconsistent state, and orphan active launches.",
+      "intent": "Scan all candidates, tasks, and launch receipts for anomalies.",
+      "preconditions": ["Controller running"],
+      "effect": "For each anomaly: create InvestigationRequest (immutable), optionally append InvestigationResolution if resolution is known, optionally invalidate or block candidates. For recoverable inconsistencies: invoke recover_merge_to_close. For orphan active launches: inspect harness session/process; if process dead -> append LaunchLifecycleEvent with lifecycle=failed and reason=\u0027harness_process_exited\u0027; if session expired -> append LaunchLifecycleEvent with lifecycle=expired; optionally create InvestigationRequest(trigger=orphan_launch) for logging. After terminal lifecycle event appended, new launch_attempt is allowed.",
+      "receipt": "InvestigationRequests created for each anomaly; InvestigationResolutions appended where applicable; LaunchLifecycleEvents appended for orphan launches; scan marker updated.",
+      "idempotency_key": "scan_marker + anomaly_id",
+      "typed_failures": {},
+      "bounded_attempts": 1
+    },
+    {
+      "name": "recover_merge_to_close",
+      "description": "Crash recovery: reconcile integration_pending/integrated/closed candidates with git/PR reality.",
+      "intent": "Declare recovery attempt before observing state.",
+      "preconditions": [
+        "CandidateRecord with effective status in integration_pending, integrated, or closed, but missing expected IntegrationOutcome or CandidateStateEvent"
+      ],
+      "effect": "Observe git or PR state using integration_effect_key. If a successful IntegrationOutcome already exists, reuse it and append only missing state or close effects. If the integration result exists but no success outcome exists, append the single success outcome, then append missing state and close. If the latest IntegrationAttempt has no outcome and bounded probes confirm no external effect occurred, append IntegrationOutcome(failed, reason=controller_crash_before_observed_effect). The normal retry precondition is then satisfied and a new attempt may be scheduled if total attempts remain below max_integration_attempts. Recovery has no separate retry budget. Otherwise block and create InvestigationRequest.",
+      "receipt": "Consistent state restored; InvestigationRequest if unrecoverable.",
+      "idempotency_key": "candidate_id + recovery_marker",
+      "typed_failures": {
+        "Unrecoverable": "Cannot complete integration; candidate blocked"
+      },
+      "bounded_attempts": 1
+    },
+    {
+      "name": "recover_orphan_launches",
+      "description": "Startup recovery for LaunchIntents without receipts and LaunchReceipts still active.",
+      "intent": "Reconcile every nonterminal launch intent before accepting another launch for the same candidate and role.",
+      "preconditions": ["Controller starting up"],
+      "effect": "For LaunchIntent without LaunchIntentOutcome, query harness/session metadata by launch_request_id. If the owned session exists, reconstruct LaunchReceipt, active lifecycle, and receipt_created outcome atomically; otherwise clean owned resources and write LaunchIntentOutcome(failed) with a typed reason. For active receipts, inspect session/process and append failed or expired when terminal. Only then allow a new launch_attempt.",
+      "receipt": "Every examined LaunchIntent has one terminal LaunchIntentOutcome; every orphan active receipt has a terminal lifecycle event.",
+      "idempotency_key": "launch_request_id + recovery_marker",
+      "typed_failures": {},
+      "bounded_attempts": 1
+    }
+  ],
+  "required_checks": [
+    {
+      "id": "WRITE_SET_MATCH",
+      "type": "required",
+      "description": "Diff between base_sha and candidate_sha must match declared write set. Unavailable if diff cannot be computed -> retry; fail -> reject."
+    },
+    {
+      "id": "VERIFY_CLEAN",
+      "type": "required_if_verify_contract_present",
+      "description": "Execute verify command at candidate_sha in clean worktree. Unavailable if config missing/unexecutable -> retry; fail -> reject; not_applicable if no verify contract, with applicability_reason=\u0027no_verify_contract\u0027."
+    },
+    {
+      "id": "PREFLIGHT_CI",
+      "type": "conditional",
+      "description": "CI must pass at candidate_sha if declared required. Unavailable if CI service unreachable -> retry; fail -> reject; not_applicable if no CI configured, with applicability_reason=\u0027no_ci_configured\u0027."
+    },
+    {
+      "id": "RED_TEST",
+      "type": "conditional",
+      "description": "Declared red test must be present and fail before change. Unavailable if environment missing -> retry; not_applicable if no red test declared, with applicability_reason=\u0027no_red_test_declared\u0027; test passing before change -> fail."
+    },
+    {
+      "id": "PR_CONTROL_PROOF",
+      "type": "required_in_pr_mode",
+      "description": "PR mode requires a mechanically verified repository ruleset or branch-protection receipt showing that the configured controller identity is an authorized merge-commit promotion path. Missing or unverifiable control is unavailable and blocks PR mode; local mode records not_applicable with applicability_reason=\u0027local_mode\u0027."
+    }
+  ],
+  "check_retry_policy": {
+    "max_attempts_per_check_type": "max_check_attempts",
+    "description": "When a required check returns unavailable, the controller appends a new CheckAttempt (incrementing attempt_number) up to max_check_attempts. After exhaustion, the candidate transitions to blocked and an InvestigationRequest is created. Pass, fail, and not_applicable (with valid applicability_reason) are terminal for that check_type; no retry.",
+    "backoff": "Exponential backoff with jitter, base 2s, max 60s."
+  },
+  "integration_retry_policy": {
+    "max_attempts": "max_integration_attempts",
+    "description": "Integration retries on retryable failures (conflict, PR not ready) with exponential backoff. Non-retryable failures (dirty target, unsupported PR strategy, external PR merge) immediately block. On exhaustion, candidate transitions to blocked and InvestigationRequest is created.",
+    "backoff": "Exponential backoff with jitter, base 1s, max 30s."
+  },
+  "pr_integration_details": {
+    "description": "PR mode requires a current PR_CONTROL_PROOF. The controller records immutable intent, invokes GitHub merge-commit API or gh with the exact candidate head, observes the result, and verifies parent lineage. Missing repository control, squash/rebase, merge before intent, or incompatible result blocks PR mode. Local mode remains fully available without GitHub or branch protection."
+  },
+  "crash_recovery": {
+    "strategy": "On startup the controller scans integration_pending, integrated, and closed candidates, LaunchIntents without receipts, and active LaunchReceipts. Existing success outcomes are reused rather than appended again. Recovery schedules normal integration attempts against the same global max_integration_attempts. Launch recovery correlates by launch_request_id, reconstructs a receipt for an existing owned session, or records terminal failure and cleans owned resources before retry.",
+    "recovery_operations": [
+      "recover_merge_to_close",
+      "scan_corruption",
+      "recover_orphan_launches"
+    ],
+    "guarantees": "At-most-once integration success (by effect key partial unique constraint); at-most-once close (CAS transaction, 1 row); eventual consistency with git/PR reality; orphan launch recovery; corruption detection."
+  },
+  "acceptance_tests": [
+    {
+      "id": "AT-01",
+      "description": "Self-install: root system host runs the standalone suite in a clean checkout. It installs marker, acceptance receipt, controller artifacts, bootstrap-installed ref, and BootstrapInstallReceipt with mutually matching digests. Controller verifies current agreement without relying on reflog history. A second normal install is refused while any consumption artifact exists; hostile same-user deletion remains residual."
+    },
+    {
+      "id": "AT-02",
+      "description": "create_candidate with valid parameters produces immutable CandidateRecord and initial CandidateStateEvent. Idempotent on same key."
+    },
+    {
+      "id": "AT-03",
+      "description": "record_check_attempt rejects if sha_bound or candidate_id does not match. Absence keeps candidate effective status in checks_required."
+    },
+    {
+      "id": "AT-04",
+      "description": "Required check with status=fail on latest CheckAttempt causes CandidateStateEvent to rejected. Cannot close rejected candidate."
+    },
+    {
+      "id": "AT-05",
+      "description": "Required check with status=unavailable triggers retry within max_check_attempts (3). Exhaustion appends CandidateStateEvent to blocked + InvestigationRequest(trigger=retry_exhaustion)."
+    },
+    {
+      "id": "AT-06",
+      "description": "CandidateRecord is immutable. SHA/digest change requires new candidate with supersedes_candidate_id; old candidate gets CandidateStateEvent -> invalidated; InvalidationRecord appended with previous_effective_status. Old checks/verdicts stay with old candidate."
+    },
+    {
+      "id": "AT-07",
+      "description": "Fabricated sha_bound in CheckAttempt (mismatched with immutable CandidateRecord.candidate_sha) is rejected. Close fails if bound SHA mismatched."
+    },
+    {
+      "id": "AT-08",
+      "description": "record_verdict with reviewer receipt matching implementer receipt (same receipt_id, session, or process) is rejected as self-review."
+    },
+    {
+      "id": "AT-09",
+      "description": "PR integration: controller records intent (IntegrationAttempt), invokes API/gh with exact candidate_sha. PR not merged -> retryable; PR head != candidate_sha -> fail; merge result missing candidate_sha as parent -> blocked + InvestigationRequest(trigger=external_pr_merge) indicating external actor. Squash/rebase PR -> blocked + InvestigationRequest(trigger=unsupported_pr)."
+    },
+    {
+      "id": "AT-10",
+      "description": "Config/contract digest change after candidate creation triggers invalidation (new candidate with supersedes_candidate_id). Old candidate cannot be closed."
+    },
+    {
+      "id": "AT-11",
+      "description": "Concurrent integration attempts with same integration_effect_key: at most one success IntegrationOutcome due to partial unique constraint. Idempotent by effect key."
+    },
+    {
+      "id": "AT-12",
+      "description": "Kill/restart between merge and close: controller observes git state via integration_effect_key, reuses an existing success outcome or appends it only if absent, appends missing state, then closes atomically. No duplicate outcome or merge."
+    },
+    {
+      "id": "AT-13",
+      "description": "External \u0027done\u0027 (SQL/git bypass) detected by scan: InvestigationRequest(trigger=external_done) created; controller refuses to close from external done."
+    },
+    {
+      "id": "AT-14",
+      "description": "Integration retry exhaustion after max_integration_attempts (5) failures: InvestigationRequest(trigger=retry_exhaustion), CandidateStateEvent to blocked, no automatic retry."
+    },
+    {
+      "id": "AT-15",
+      "description": "Reviewer verdict only accepted if bound to a valid distinct reviewer LaunchReceipt with effective lifecycle completed for the same candidate. Active, expired, failed, or mismatched receipts are rejected."
+    },
+    {
+      "id": "AT-16",
+      "description": "Invalidation from non-terminal effective status appends CandidateStateEvent (with previous_effective_status captured) and InvalidationRecord linking old->new candidate. Old checks/verdicts stay append-only; new candidate starts fresh."
+    },
+    {
+      "id": "AT-17",
+      "description": "close_candidate fails if task already \u0027done\u0027 externally (CAS transaction returns 0 rows). InvestigationRequest(trigger=external_done) created; no double-close."
+    },
+    {
+      "id": "AT-18",
+      "description": "launch_session creates immutable LaunchReceipt and appends active LaunchLifecycleEvent. Duplicate active (effective lifecycle) for same candidate+role rejected. Retries permitted only after prior LaunchLifecycleEvent terminal."
+    },
+    {
+      "id": "AT-19",
+      "description": "Crash recovery: scan finds integration_pending with an observed merge; it reuses an existing success outcome or appends one if absent, appends missing CandidateStateEvent, then closes atomically."
+    },
+    {
+      "id": "AT-20",
+      "description": "Bootstrap controller promotes replacement through normal gate (all checks, review, integration) without consuming exception. Replacement verified; bootstrap retired."
+    },
+    {
+      "id": "AT-21",
+      "description": "Local integration: dirty target checkout blocks immediately (no stash/reset/update-ref). InvestigationRequest(trigger=dirty_target) created for dirty target."
+    },
+    {
+      "id": "AT-22",
+      "description": "CheckAttempts are append-only; multiple attempts per check_type accumulate. Latest attempt (highest attempt_number) determines state. No upsert."
+    },
+    {
+      "id": "AT-23",
+      "description": "Acceptance suite compiles and runs the candidate controller from source in a clean checkout and needs no previously installed controller or final runtime. PR cases use a deterministic fake adapter; a separate optional integration test may use gh/API credentials. The suite covers marker/ref self-install, append-only identity+event model, dirty target, unsupported PR, crash windows, orphan launch recovery, atomic close race, receipt independence, and normal-gate replacement."
+    },
+    {
+      "id": "AT-24",
+      "description": "Re-read before effect: every operation re-verifies candidate SHAs/digests against immutable CandidateRecord. Staleness causes failure; candidate may be invalidated."
+    },
+    {
+      "id": "AT-25",
+      "description": "Atomic close race: two concurrent close_candidate calls on the same integrated candidate produce one task update and one integrated-to-closed event. The second call observes that valid event and returns the same idempotent success. A task set to done without that event is separately detected as external corruption."
+    },
+    {
+      "id": "AT-26",
+      "description": "Orphan launch recovery covers both LaunchIntent without receipt and active receipt with dead process. Recovery correlates by launch_request_id, reconstructs a live owned session or records terminal failure and cleans owned resources before allowing a new attempt."
+    },
+    {
+      "id": "AT-27",
+      "description": "A superseding candidate with the same base_sha and candidate_sha but new contract/config digests passes fresh checks and review, adopts the existing successful integration through IntegrationAdoption, and closes without a second merge."
+    },
+    {
+      "id": "AT-28",
+      "description": "Crash after IntegrationOutcome success but before CandidateStateEvent integrated: recovery reuses the existing outcome, appends only missing state/close effects, and does not violate the unique success constraint. Recovery never exceeds max_integration_attempts."
+    },
+    {
+      "id": "AT-29",
+      "description": "Crash during adopt_existing_integration cannot leave an orphan adoption: IntegrationAdoption and approved-to-integrated state event commit atomically. Retry returns the same success and never repeats integration."
+    },
+    {
+      "id": "AT-30",
+      "description": "Reviewer launch failure or crash before LaunchReceipt never moves the candidate to review_required. Recovery reconciles LaunchIntent first; request_review transitions only after a durable reviewer receipt exists."
+    },
+    {
+      "id": "AT-31",
+      "description": "Crash after integration intent but before an observed effect leaves integration_pending with an outcome-less attempt. Recovery probes Git/PR; if no effect occurred it appends failed outcome reason=controller_crash_before_observed_effect, then schedules the next normal attempt within max_integration_attempts."
+    }
+  ],
+  "retirement_condition": "This contract retires when the BootstrapPromotionController has promoted a replacement controller through the normal gate, the replacement has assumed active duty, and the bootstrap exception has been consumed (marker+ref verified).",
+  "residual_limit": "Direct SQLite/git mutation by a same-user hostile actor is not prevented. A privileged repository actor may also bypass an otherwise verified PR control. Consistency scans can detect resulting divergence but cannot guarantee prevention without OS isolation and an external repository trust anchor. Bootstrap v1 makes no stronger claim."
+}

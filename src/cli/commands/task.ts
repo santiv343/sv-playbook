@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
-import { EXIT } from '../command.constants.js';
+import { CLI_FORCE_FLAG, EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore, worktreeRoot } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
+import { GITHUB_FIELD, PR_STATE } from '../../reconcile/reconcile.constants.js';
 import { createStateBackup, latestStateBackupAgeHours } from '../../db/backup.js';
 import { BACKUP_EVENT, BACKUP_REASON } from '../../db/backup.constants.js';
 import type { Store } from '../../db/store.types.js';
@@ -238,7 +239,7 @@ function handleTakeover(args: string[], io: Io): number {
   const hasConfirm = args.includes(CONFIRM_FLAG);
   if (hasConfirm) args = args.filter((a) => a !== CONFIRM_FLAG);
 
-  const hasForce = args.includes('--force');
+  const hasForce = args.includes(CLI_FORCE_FLAG);
 
   const parsed = parseArgs({ args, allowPositionals: true, options: { force: { type: 'boolean' } } });
   const [packetId] = parsed.positionals;
@@ -286,7 +287,7 @@ function prStateOrThrow(pr: string): string {
     execFileSync('gh', ['--version'], { encoding: 'utf8' });
     const raw: unknown = JSON.parse(execFileSync('gh', ['pr', 'view', pr, '--json', 'state'], { encoding: 'utf8' }).trim());
     if (raw === null || typeof raw !== 'object') return '';
-    const found = Object.entries(raw).find(([k]) => k === 'state');
+    const found = Object.entries(raw).find(([k]) => k === GITHUB_FIELD.STATE);
     return found !== undefined && typeof found[1] === 'string' ? found[1] : '';
   } catch (error) {
     const msg = error instanceof Error ? error.message.split('\n')[0] ?? error.message : String(error);
@@ -300,7 +301,7 @@ function handleClose(args: string[], io: Io): number {
   if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('close requires <ID> --pr <n>');
   const pr = stringValue(parsed.values.pr, 'pr');
   const prState = prStateOrThrow(pr);
-  if (prState !== 'MERGED') throw new LifecycleError(`PR #${pr} is not merged (state: ${prState || 'unknown'}) — close requires a merged PR`);
+  if (prState !== PR_STATE.MERGED) throw new LifecycleError(`PR #${pr} is not merged (state: ${prState || 'unknown'}) — close requires a merged PR`);
   return withStore((store, repoRoot) => {
     const sessionId = ensureSession(store, getCwd());
     store.db.prepare('UPDATE packets SET pr = ? WHERE id = ?').run(pr, packetId);

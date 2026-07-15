@@ -10,6 +10,7 @@ import { scaffold } from '../../adopt/scaffold.js';
 import { DEFAULTS } from '../../config.constants.js';
 import type { InventoryReport } from '../../adopt/inventory.types.js';
 import type { GapReport } from '../../adopt/gap.types.js';
+import { GAP_STATUS } from '../../adopt/gap.types.js';
 import type { Io } from '../command.types.js';
 
 function printInventory(io: Io, targetDir: string, inventory: InventoryReport): void {
@@ -25,7 +26,7 @@ function printInventory(io: Io, targetDir: string, inventory: InventoryReport): 
 function printGaps(io: Io, gaps: GapReport): void {
   io.out('Gap analysis:');
   for (const check of gaps.checks) {
-    if (check.status !== 'present') {
+    if (check.status !== GAP_STATUS.PRESENT) {
       io.out(`  gap: ${check.requirement} (${check.status}) — ${check.reason}`);
     }
   }

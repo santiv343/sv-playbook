@@ -10,6 +10,9 @@
     "maxAgeHours": 24,
     "onEvents": ["done"]
   },
+  "modelEvaluation": {
+    "evidenceValidityDays": 30
+  },
   "gates": {
     "maxLines": 350,
     "maxLinesPerFunction": 60,
@@ -18,6 +21,18 @@
     "layout": true
   },
   "baseline": {
+    "ormApplicationSql": {
+      "count": 296,
+      "digest": "513c4a9c97ab7ce0d2cd1bcd492f872e9670025910a7df20328944ba37118c58"
+    },
+    "literalComparisons": {
+      "count": 280,
+      "digest": "a798e6e5e8a17f78608355d14dcd9d8407a95c0565925bf87eeb7954c385cd85"
+    },
+    "duplicateStrings": {
+      "count": 1438,
+      "digest": "fb28dfba380737e0ff7108d3f7ab9baedf9e29096fb09960b7bcacf2d277a654"
+    },
     "fingerprints": [
       "docs/packets/ADOPT-AURORA-001.md",
       "docs/packets/CLI-QUIET-001.md",

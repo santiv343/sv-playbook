@@ -4,6 +4,10 @@ import { main } from '../main.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 
+const EXPECTED_COMMAND = {
+  DOCS: 'docs', TASK: 'task', DOCTOR: 'doctor', BACKUP: 'backup', RESTORE: 'restore', STATUS: 'status', REBUILD: 'rebuild',
+} as const;
+
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = [];
   const errLines: string[] = [];
@@ -31,13 +35,13 @@ test('describe prints a JSON catalog containing docs, task, doctor, backup, rest
   const code = await main(['describe'], io);
   assert.equal(code, EXIT.OK, io.errLines.join('\n'));
   const catalog = parseCatalog(io.outLines.join('\n'));
-  const docs = catalog.find((e) => e.name === 'docs');
-  const task = catalog.find((e) => e.name === 'task');
-  const doctor = catalog.find((e) => e.name === 'doctor');
-  const backup = catalog.find((e) => e.name === 'backup');
-  const restore = catalog.find((e) => e.name === 'restore');
-  const status = catalog.find((e) => e.name === 'status');
-  const rebuild = catalog.find((e) => e.name === 'rebuild');
+  const docs = catalog.find((e) => e.name === EXPECTED_COMMAND.DOCS);
+  const task = catalog.find((e) => e.name === EXPECTED_COMMAND.TASK);
+  const doctor = catalog.find((e) => e.name === EXPECTED_COMMAND.DOCTOR);
+  const backup = catalog.find((e) => e.name === EXPECTED_COMMAND.BACKUP);
+  const restore = catalog.find((e) => e.name === EXPECTED_COMMAND.RESTORE);
+  const status = catalog.find((e) => e.name === EXPECTED_COMMAND.STATUS);
+  const rebuild = catalog.find((e) => e.name === EXPECTED_COMMAND.REBUILD);
   assert.ok(docs, 'missing docs entry');
   assert.ok(task, 'missing task entry');
   assert.ok(doctor, 'missing doctor entry');

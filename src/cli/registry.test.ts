@@ -7,6 +7,7 @@ import { commands } from './registry.js';
 
 const DIST_DIR = fileURLToPath(new URL('..', import.meta.url));
 const COMMANDS_DIST = join(DIST_DIR, 'cli', 'commands');
+const GENERATED_COMMAND_FILE = { INDEX: 'index.gen.js', GENERATOR: 'generate-index.js' } as const;
 
 function isCompiledCommandFile(name: string): boolean {
   return name.endsWith('.js')
@@ -14,8 +15,8 @@ function isCompiledCommandFile(name: string): boolean {
     && !name.endsWith('.constants.js')
     && !name.endsWith('.types.js')
     && !name.endsWith('.errors.js')
-    && name !== 'index.gen.js'
-    && name !== 'generate-index.js';
+    && name !== GENERATED_COMMAND_FILE.INDEX
+    && name !== GENERATED_COMMAND_FILE.GENERATOR;
 }
 
 function isFixtureFileName(name: string): boolean {

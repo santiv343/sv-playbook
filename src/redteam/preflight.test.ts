@@ -9,6 +9,7 @@ import { openStore } from '../db/store.js';
 import { stringColumn } from '../db/rows.js';
 import { createPacket, movePacket, ensureSession, startPacket } from '../tasks/service.js';
 import { runPreflight } from '../review/preflight.js';
+import { PREFLIGHT_CHECK_NAME, PREFLIGHT_STATUS } from '../review/preflight.types.js';
 
 async function setupPreflightRepo() {
   const root = await mkdtemp(join(tmpdir(), 'svp-preflight-'));
@@ -57,7 +58,7 @@ test('review preflight aggregates the mechanical checks and a write_set violatio
   assert.equal(report2.writeSetViolations.length, 0, 'no violations after fix');
   assert.equal(report2.overall, 'pass', 'overall should be PASS after fix');
   assert.ok(report2.checks.length >= 1, 'checks should be populated');
-  assert.ok(report2.checks.every((c) => c.status !== 'unknown'), 'every check should be populated');
+  assert.ok(report2.checks.every((c) => c.status !== PREFLIGHT_STATUS.UNKNOWN), 'every check should be populated');
 
   store.close();
 });
@@ -80,7 +81,7 @@ test('F1: checkRedTest returns FAIL when RED test name not in any changed file d
 
   assert.equal(report.redTestFound, false, 'should report RED test not found');
 
-  const redCheck = report.checks.find((c) => c.name === 'red-test');
+  const redCheck = report.checks.find((c) => c.name === PREFLIGHT_CHECK_NAME.RED_TEST);
   assert.ok(redCheck !== undefined, 'red-test check should exist');
   assert.equal(redCheck.status, 'fail', 'red-test check should be FAIL when test not in diff');
 
@@ -112,7 +113,7 @@ test('F4: verify step runs in a disposable worktree that is cleaned up', async (
 
   const report = runPreflight(store, 'GATE-004-TEST', root);
 
-  const v = report.checks.find((c) => c.name === 'verify');
+  const v = report.checks.find((c) => c.name === PREFLIGHT_CHECK_NAME.VERIFY);
   assert.ok(v !== undefined, 'verify check should exist');
 
   const afterEntries = existsSync(reviewDir) ? readdirSync(reviewDir) : [];

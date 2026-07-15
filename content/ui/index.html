@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>sv-playbook</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">sv</span><strong>playbook</strong></div>
+    <div class="topbar-actions">
+      <button id="new-work" class="primary-button new-work-button" type="button"><i data-lucide="plus"></i><span>Nuevo trabajo</span></button>
+      <span id="connection" class="connection" title="Conexión en tiempo real con el runtime"><i data-lucide="radio"></i><span>Conectando</span></span>
+      <span id="updated" class="updated" title="Hora de la última actualización recibida">--:--</span>
+      <button id="notifications" class="icon-button" type="button" title="Activar notificaciones de decisiones pendientes" aria-label="Activar notificaciones"><i data-lucide="bell"></i></button>
+      <button id="refresh" class="icon-button" type="button" title="Actualizar ahora" aria-label="Actualizar ahora"><i data-lucide="refresh-cw"></i></button>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Vistas">
+    <button class="tab active" data-view="overview" type="button"><i data-lucide="activity"></i><span>Resumen</span></button>
+    <button class="tab" data-view="workflows" type="button"><i data-lucide="workflow"></i><span>Pedidos</span></button>
+    <button class="tab" data-view="agents" type="button"><i data-lucide="cpu"></i><span>Agentes</span></button>
+    <button class="tab" data-view="tasks" type="button"><i data-lucide="list-checks"></i><span>Tareas</span></button>
+    <button class="tab" data-view="events" type="button"><i data-lucide="history"></i><span>Historial</span></button>
+  </nav>
+
+  <main>
+    <section id="metrics" class="metrics" aria-label="Indicadores operativos"></section>
+
+    <section class="view active" data-panel="overview">
+      <header class="view-header">
+        <div><h1>Resumen operativo</h1><p>Qué está ocurriendo ahora, qué necesita tu decisión y qué cambió recientemente.</p></div>
+      </header>
+
+      <section class="flow-guide" aria-labelledby="flow-guide-title">
+        <div class="flow-guide-copy">
+          <div class="heading-with-help"><h2 id="flow-guide-title">Cómo fluye un pedido</h2><button class="info-button" type="button" aria-label="Acerca del diagrama" data-tooltip="Este diagrama explica el proceso esperado. No afirma que todas las etapas estén implementadas ni que un pedido concreto haya llegado a ellas."><i data-lucide="circle-help"></i></button></div>
+          <p>Cada pedido se convierte en un proceso trazable. El runtime controla los pasos mecánicos; los agentes intervienen donde hace falta juicio.</p>
+        </div>
+        <ol class="flow-steps" aria-label="Etapas esperadas de un pedido">
+          <li><i data-lucide="message-square-text"></i><span>Pedido</span></li>
+          <li><i data-lucide="search"></i><span>Aclaración</span></li>
+          <li><i data-lucide="circle-check"></i><span>Confirmación</span></li>
+          <li><i data-lucide="route"></i><span>Plan</span></li>
+          <li><i data-lucide="terminal-square"></i><span>Ejecución</span></li>
+          <li><i data-lucide="scan-search"></i><span>Revisión</span></li>
+          <li><i data-lucide="package-check"></i><span>Resultado</span></li>
+        </ol>
+      </section>
+
+      <div id="status-legend" class="status-legend" aria-label="Significado de estados"></div>
+
+      <div class="overview-grid">
+        <section class="panel">
+          <div class="panel-heading"><div class="heading-with-help"><h2>En curso</h2><button class="info-button" type="button" aria-label="Acerca de procesos en curso" data-tooltip="Pedidos que todavía están avanzando o esperan una intervención. Un pedido terminado no aparece aquí."><i data-lucide="circle-help"></i></button></div><span id="running-count" class="count"></span></div>
+          <div id="running" class="workflow-list"></div>
+        </section>
+        <section class="panel attention-panel">
+          <div class="panel-heading"><div class="heading-with-help"><h2>Requiere tu decisión</h2><button class="info-button" type="button" aria-label="Acerca de decisiones pendientes" data-tooltip="Puntos donde el runtime se detuvo porque no debe inventar una decisión humana o semántica."><i data-lucide="circle-help"></i></button></div><span id="action-count" class="count accent"></span></div>
+          <div id="human-actions" class="action-list"></div>
+        </section>
+      </div>
+      <section class="panel event-preview">
+        <div class="panel-heading"><div class="heading-with-help"><h2>Actividad reciente</h2><button class="info-button" type="button" aria-label="Acerca de actividad reciente" data-tooltip="Registro técnico de los últimos cambios. Sirve para explicar qué ocurrió; no es una lista de tareas pendientes."><i data-lucide="circle-help"></i></button></div><button class="text-button" data-open-view="events" type="button">Ver historial</button></div>
+        <div id="recent-events" class="event-list compact"></div>
+      </section>
+    </section>
+
+    <section class="view" data-panel="workflows">
+      <header class="view-header"><div><h1>Pedidos y procesos</h1><p>Una fila por pedido iniciado, con su etapa actual y el avance registrado por el runtime.</p></div></header>
+      <section class="panel">
+        <div class="panel-heading"><h2>Todos los procesos</h2><span id="workflow-count" class="count"></span></div>
+        <div class="table-wrap"><table><thead><tr>
+          <th><span class="column-heading">Estado<button class="info-button" type="button" aria-label="Acerca del estado del proceso" data-tooltip="Situación global del pedido: en curso, esperando una decisión, completado o fallido."><i data-lucide="circle-help"></i></button></span></th>
+          <th><span class="column-heading">Pedido<button class="info-button" type="button" aria-label="Acerca del pedido" data-tooltip="Referencia legible del pedido. El identificador técnico completo está en Ver detalle."><i data-lucide="circle-help"></i></button></span></th>
+          <th><span class="column-heading">Etapa actual<button class="info-button" type="button" aria-label="Acerca de la etapa actual" data-tooltip="Último paso del workflow que el runtime está procesando o procesó."><i data-lucide="circle-help"></i></button></span></th>
+          <th><span class="column-heading">Pasos completados<button class="info-button" type="button" aria-label="Acerca de pasos completados" data-tooltip="Cantidad de efectos completados sobre el total creado para este proceso. No mide calidad ni porcentaje de código."><i data-lucide="circle-help"></i></button></span></th>
+          <th>Último cambio</th><th>Detalle</th>
+        </tr></thead><tbody id="workflow-rows"></tbody></table></div>
+      </section>
+    </section>
+
+    <section class="view" data-panel="tasks">
+      <header class="view-header"><div><h1>Tareas</h1><p>Unidades de trabajo durables que pueden ser preparadas, ejecutadas, revisadas o cerradas.</p></div></header>
+      <section class="panel">
+        <div class="panel-heading"><h2>Tablero completo</h2><div class="panel-tools"><input id="task-search" class="compact-input" type="search" placeholder="Buscar por ID o título" aria-label="Buscar tareas"><select id="task-status-filter" class="compact-input" aria-label="Filtrar por estado"><option value="">Todos los estados</option></select><span id="task-count" class="count"></span></div></div>
+        <div class="table-wrap"><table><thead><tr>
+          <th><span class="column-heading">Estado<button class="info-button" type="button" aria-label="Acerca del estado de la tarea" data-tooltip="Lugar de la tarea dentro del ciclo de trabajo: borrador, lista, activa, en revisión, bloqueada, terminada o descartada."><i data-lucide="circle-help"></i></button></span></th>
+          <th>ID</th><th>Tarea</th>
+          <th><span class="column-heading">Asignación<button class="info-button" type="button" aria-label="Acerca de la asignación" data-tooltip="Sesión que posee temporalmente la tarea. Vacío significa que nadie tiene una lease activa."><i data-lucide="circle-help"></i></button></span></th>
+          <th>Último movimiento</th><th>Detalle</th>
+        </tr></thead><tbody id="task-rows"></tbody></table></div>
+      </section>
+    </section>
+
+    <section class="view" data-panel="agents">
+      <header class="view-header"><div><h1>Ejecuciones de agentes</h1><p>Cada fila es una ejecución limitada de un rol. No representa un agente permanente ni una conversación completa.</p></div></header>
+      <section class="panel">
+        <div class="panel-heading"><h2>Ejecuciones registradas</h2><span id="agent-count" class="count"></span></div>
+        <div class="table-wrap"><table><thead><tr>
+          <th><span class="column-heading">Resultado<button class="info-button" type="button" aria-label="Acerca del resultado del agente" data-tooltip="Resultado de esta ejecución concreta, incluido si fue bloqueada por política o produjo una salida inválida."><i data-lucide="circle-help"></i></button></span></th>
+          <th><span class="column-heading">Actividad actual<button class="info-button" type="button" aria-label="Acerca de la actividad actual" data-tooltip="Señal resumida y determinista de actividad. No transmite el razonamiento ni todo el output del agente."><i data-lucide="circle-help"></i></button></span></th>
+          <th>Rol</th><th>Pedido</th>
+          <th><span class="column-heading">Último progreso<button class="info-button" type="button" aria-label="Acerca del último progreso" data-tooltip="Última evidencia observada de avance. El límite de inactividad se calcula desde esta señal, no desde el inicio total."><i data-lucide="circle-help"></i></button></span></th>
+          <th>Herramientas observadas</th><th>Detalle</th>
+        </tr></thead><tbody id="agent-rows"></tbody></table></div>
+      </section>
+    </section>
+
+    <section class="view" data-panel="events">
+      <header class="view-header"><div><h1>Historial de eventos</h1><p>Registro cronológico y auditable de lo que el runtime aceptó. No es una transcripción del razonamiento de los agentes.</p></div></header>
+      <section class="panel">
+        <div class="panel-heading"><h2>Eventos registrados</h2><span id="event-count" class="count"></span></div>
+        <div id="all-events" class="event-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="resolution-dialog">
+    <form id="resolution-form" method="dialog">
+      <div class="dialog-heading"><div><span class="eyebrow">Acción humana</span><h2 id="resolution-title">Resolver</h2></div><button class="icon-button" value="cancel" title="Cerrar" aria-label="Cerrar"><i data-lucide="x"></i></button></div>
+      <dl class="contract-pair"><div><dt>Formato de entrada</dt><dd id="input-contract"></dd></div><div><dt>Formato de salida requerido</dt><dd id="output-contract"></dd></div></dl>
+      <label>Quién resuelve<input id="resolved-by" name="resolvedBy" autocomplete="name" required value="human"></label>
+      <label>Salida estructurada (JSON)<textarea id="resolution-output" name="output" spellcheck="false" required></textarea></label>
+      <p id="resolution-error" class="form-error" role="alert"></p>
+      <div class="dialog-actions"><button class="secondary-button" value="cancel" type="button" id="cancel-resolution">Cancelar</button><button class="primary-button" type="submit"><i data-lucide="check"></i>Confirmar</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="intake-dialog">
+    <form id="intake-form" class="dialog-form" method="dialog">
+      <div class="dialog-heading"><div><span class="eyebrow">Interfaz humana</span><h2>Nuevo trabajo</h2></div><button class="icon-button" value="cancel" title="Cerrar" aria-label="Cerrar"><i data-lucide="x"></i></button></div>
+      <label>¿Qué querés hacer?<textarea id="intake-message" class="message-input" name="message" required autofocus></textarea></label>
+      <p class="field-help">Podés escribirlo en lenguaje natural. La interfaz humana debe aclarar ambigüedades antes de que se planifique trabajo.</p>
+      <p id="intake-error" class="form-error" role="alert"></p>
+      <div class="dialog-actions"><button class="secondary-button" value="cancel" type="button" id="cancel-intake">Cancelar</button><button class="primary-button" type="submit"><i data-lucide="send"></i>Enviar</button></div>
+    </form>
+  </dialog>
+
+  <script type="module" src="/assets/app.js"></script>
+</body>
+</html>

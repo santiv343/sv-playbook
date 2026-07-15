@@ -3,14 +3,15 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { basename, join, dirname, isAbsolute } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { DB_FILE, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
-import { BACKUP_PREFIX, BACKUPS_DIR, BACKUP_REASON, BACKUP_RETENTION_DEFAULT, BACKUP_RETENTION_FLOOR_DEFAULT } from './backup.constants.js';
-import type { BackupOptions, BackupReport, BackupStatus, RestoreReport } from './backup.types.js';
+import { DB_FILE, SCHEMA_VERSION, SQLITE_FILE_HEADER, SQLITE_INTEGRITY_OK, SVP_DIR } from './store.constants.js';
+import { BACKUP_MANIFEST_FIELD, BACKUP_PREFIX, BACKUP_REFUSED_PREFIX, BACKUPS_DIR, BACKUP_REASON, BACKUP_RETENTION_DEFAULT, BACKUP_RETENTION_FLOOR_DEFAULT } from './backup.constants.js';
+import type { BackupOptions, BackupReport, BackupStatus, BackupStatusOptions, RestoreReport } from './backup.types.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import { stringColumn, numberColumn } from './rows.js';
 import { RestoreError } from './backup.errors.js';
 import { loadConfig } from '../config.js';
 import { terminalPacketCountAt } from './inspection.js';
+import { FILE_EXTENSION } from '../platform.constants.js';
 
 const now = (): string => new Date().toISOString();
 const MIN_RESTORABLE_SCHEMA_VERSION = 3;
@@ -55,7 +56,7 @@ function freshLeaseCountDirect(dbPath: string): number {
 function trimBackups(resolvedDir: string, retention: number, floor?: number): void {
   const effectiveFloor = floor ?? BACKUP_RETENTION_FLOOR_DEFAULT;
   const entries = readdirSync(resolvedDir)
-    .filter((n) => n.endsWith('.sqlite'))
+    .filter((n) => n.endsWith(FILE_EXTENSION.SQLITE))
     .map((name) => {
       const mp = join(resolvedDir, name.replace(/\.sqlite$/, '.json'));
       let verified = false;
@@ -121,7 +122,7 @@ function metadataTerminalPacketCount(raw: Record<string, unknown>): number | und
 
 function newestBackupMeta(dir: string): NewestBackupMeta {
   if (!existsSync(dir)) return { verified: false, failedCycles: 0, terminalPacketCount: undefined };
-  const newest = readdirSync(dir).filter((n) => n.endsWith('.sqlite'))
+  const newest = readdirSync(dir).filter((n) => n.endsWith(FILE_EXTENSION.SQLITE))
     .map((n) => ({ n, t: statSync(join(dir, n)).mtimeMs }))
     .sort((a, b) => b.t - a.t).at(0);
   if (!newest) return { verified: false, failedCycles: 0, terminalPacketCount: undefined };
@@ -147,14 +148,14 @@ function newestBackupMeta(dir: string): NewestBackupMeta {
   }
 }
 
-export function getBackupStatus(repoRoot: string, maxAgeHours?: number): BackupStatus {
+export function getBackupStatus(repoRoot: string, options: BackupStatusOptions = {}): BackupStatus {
   const config = loadConfig(repoRoot);
   const age = latestStateBackupAgeHours(repoRoot);
-  const stale = age !== undefined && age >= (maxAgeHours ?? config.backup.maxAgeHours);
+  const stale = age !== undefined && age >= (options.maxAgeHours ?? config.backup.maxAgeHours);
   const meta = age !== undefined
     ? newestBackupMeta(resolveBackupsDir(repoRoot))
     : { verified: false, failedCycles: 0, terminalPacketCount: undefined };
-  const liveTerminalPacketCount = terminalPacketCountAt(dbPath(repoRoot));
+  const liveTerminalPacketCount = options.liveTerminalPacketCount ?? terminalPacketCountAt(dbPath(repoRoot));
   const terminalCountRegressed = meta.terminalPacketCount !== undefined
     && liveTerminalPacketCount !== undefined
     && meta.terminalPacketCount < liveTerminalPacketCount;
@@ -173,7 +174,7 @@ export function getBackupStatus(repoRoot: string, maxAgeHours?: number): BackupS
 export function verifyLatestBackup(repoRoot: string): boolean {
   const dir = resolveBackupsDir(repoRoot);
   if (!existsSync(dir)) return false;
-  const newest = readdirSync(dir).filter((n) => n.endsWith('.sqlite'))
+  const newest = readdirSync(dir).filter((n) => n.endsWith(FILE_EXTENSION.SQLITE))
     .map((n) => ({ n, t: statSync(join(dir, n)).mtimeMs })).sort((a, b) => b.t - a.t).at(0);
   if (!newest) return false;
   try { validateBackup(join(dir, newest.n)); markBackupVerified(join(dir, newest.n)); return true; } catch { return false; }
@@ -205,7 +206,7 @@ export function latestStateBackupAgeHours(repoRoot: string, resolvedDir?: string
   const dir = resolvedDir ?? resolveBackupsDir(repoRoot);
   if (!existsSync(dir)) return undefined;
   const newest = readdirSync(dir)
-    .filter((name) => name.endsWith('.sqlite'))
+    .filter((name) => name.endsWith(FILE_EXTENSION.SQLITE))
     .map((name) => statSync(join(dir, name)).mtimeMs)
     .sort((a, b) => b - a)
     .at(0);
@@ -301,7 +302,7 @@ function checkDbIntegrity(db: DatabaseSync): void {
     throw new RestoreError(`backup integrity_check failed: ${error instanceof Error ? error.message : String(error)}; restore a known-good backup instead`);
   }
   const integrityCheck = stringColumn(integrityRow, 'integrity_check');
-  if (integrityCheck !== 'ok') {
+  if (integrityCheck !== SQLITE_INTEGRITY_OK) {
     throw new RestoreError(`backup integrity_check failed: ${integrityCheck}; restore a known-good backup instead`);
   }
   const userVersion = numberColumn(versionRow, 'user_version');
@@ -317,7 +318,7 @@ interface BackupMetadata {
 function isBackupMetadata(value: unknown): value is BackupMetadata {
   if (typeof value !== 'object' || value === null) return false;
   for (const [key, val] of Object.entries(value)) {
-    if (key === 'sha256') return typeof val === 'string';
+    if (key === BACKUP_MANIFEST_FIELD.SHA256) return typeof val === 'string';
   }
   return false;
 }
@@ -353,14 +354,14 @@ function validateBackup(backupPath: string): void {
 function isValidSQLite(path: string): boolean {
   if (!existsSync(path)) return false;
   const fd = openSync(path, 'r');
-  try { const buf = Buffer.alloc(16); return readSync(fd, buf, 0, 16, 0) === 16 && buf.toString('utf8', 0, 16) === 'SQLite format 3\0'; } finally { closeSync(fd); }
+  try { const buf = Buffer.alloc(16); return readSync(fd, buf, 0, 16, 0) === 16 && buf.toString('utf8', 0, 16) === SQLITE_FILE_HEADER; } finally { closeSync(fd); }
 }
 
 function preRestoreBackup(repoRoot: string, force: boolean, retention?: number, resolvedDir?: string): BackupReport {
   try {
     return createStateBackup(repoRoot, { reason: BACKUP_REASON.PRE_RESTORE, allowFreshLeases: force, ...(retention === undefined ? {} : { retention }) }, resolvedDir);
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith('backup refused:')) throw error;
+    if (error instanceof Error && error.message.startsWith(BACKUP_REFUSED_PREFIX)) throw error;
     return rawPreRestoreBackup(repoRoot, retention, resolvedDir);
   }
 }

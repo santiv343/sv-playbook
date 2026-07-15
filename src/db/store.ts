@@ -1,19 +1,21 @@
-import { DatabaseSync } from 'node:sqlite';
+import Database from 'better-sqlite3';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
-import { numberColumn, stringColumn } from './rows.js';
-import { DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT, sqlInList } from './store.constants.js';
+import { stringColumn } from './rows.js';
+import { DB_FILE, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
+import { OS_PLATFORM } from '../platform.constants.js';
 import { getCwd } from '../runtime/context.js';
 import { StoreVersionError } from './store.errors.js';
-import { createStateBackup } from './backup.js';
-import { BACKUP_REASON } from './backup.constants.js';
-import type { BackupReason } from './backup.types.js';
-import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import { DAEMON_DEFAULT_PORT, DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE } from '../daemon/daemon.constants.js';
 import { forwardToDaemonSync } from '../daemon/client.js';
-import type { Store } from './store.types.js';
+import type { OpenStoreOptions, Store } from './store.types.js';
+import { checkVersionAndMigrate, migratePacketColumn } from './store.migrations.js';
+import { createStoreOrm } from './orm.js';
+import { applyExclusiveStorePragmas, applyReadOnlyStorePragmas, readStoreSchemaVersion } from './store.pragmas.js';
+import { STORE_PRAGMA } from './store.pragmas.constants.js';
+
+export { migrateStore } from './store.migrations.js';
 
 const GIT_COMMON_DIR_ARGS = ['rev-parse', '--git-common-dir'];
 const GIT_TOPLEVEL_ARGS = ['rev-parse', '--show-toplevel'];
@@ -40,7 +42,7 @@ function execGitTopLevel(s: string): string {
 // win32 — normalize both sides (separators and drive-letter case) before
 // comparing, or every repo root is misclassified as a worktree on Windows.
 function normalizePathForCompare(p: string): string {
-  return process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p);
+  return process.platform === OS_PLATFORM.WINDOWS ? resolve(p).toLowerCase() : resolve(p);
 }
 
 export function isWorktree(s: string): boolean {
@@ -86,11 +88,73 @@ export function readDaemonPort(repoRoot: string): number {
   return DAEMON_DEFAULT_PORT;
 }
 
+export function canonicalWorkspace(cwd: string): string {
+  try {
+    const topLevel = execGitTopLevel(cwd);
+    const commonDirPath = dirname(resolve(cwd, execGitCommonDir(cwd)));
+    if (normalizePathForCompare(commonDirPath) !== normalizePathForCompare(topLevel)) {
+      return normalizePathForCompare(commonDirPath);
+    }
+    return normalizePathForCompare(topLevel);
+  } catch {
+    return normalizePathForCompare(cwd);
+  }
+}
+
+function resolveAlias(workspace: string): string {
+  try {
+    return resolve(workspace);
+  } catch {
+    return workspace;
+  }
+}
+
+function boundSession(store: Store, workspace: string): string | undefined {
+  const row = store.db.prepare('SELECT session_id FROM workspace_bindings WHERE workspace = ?').get(workspace);
+  return row === undefined ? undefined : stringColumn(row, 'session_id');
+}
+
+function assertMatchingBinding(workspace: string, actual: string, expected: string, detail?: string): void {
+  if (actual === expected) return;
+  const resolved = detail === undefined ? '' : ` ${detail}`;
+  throw new StoreVersionError(`workspace binding mismatch: ${workspace}${resolved} is bound to session ${actual}, received ${expected}`);
+}
+
+export function resolveAndBindWorkspace(store: Store, sessionId: string | null, cwd: string): { workspace: string; sessionId: string } {
+  const canonical = canonicalWorkspace(cwd);
+  const canonicalBinding = boundSession(store, canonical);
+  if (sessionId === null) return { workspace: canonical, sessionId: canonicalBinding ?? '' };
+  if (canonicalBinding !== undefined) {
+    assertMatchingBinding(resolveAlias(cwd), canonicalBinding, sessionId);
+    return { workspace: canonical, sessionId };
+  }
+  const alias = resolveAlias(cwd);
+  const aliasBinding = alias === canonical ? undefined : boundSession(store, alias);
+  if (aliasBinding !== undefined) assertMatchingBinding(alias, aliasBinding, sessionId, `resolves to ${canonical}`);
+  return { workspace: canonical, sessionId };
+}
+
+export function bindWorkspace(store: Store, sessionId: string, workspace: string): void {
+  const canonical = canonicalWorkspace(workspace);
+  const existing = boundSession(store, canonical);
+
+  if (existing !== undefined) {
+    if (existing === sessionId) return;
+    throw new StoreVersionError(
+      `workspace ${canonical} is already bound to session ${existing}`,
+    );
+  }
+
+  store.db.prepare(
+    'INSERT INTO workspace_bindings (workspace, session_id, bound_at) VALUES (?, ?, ?)',
+  ).run(canonical, sessionId, new Date().toISOString());
+}
+
 function tryAutoForward(): void {
   try {
     const cwd = getCwd();
     const args = process.argv.slice(2);
-    if (args[0] === 'daemon') return;
+    if (args[0] === STORE_PROCESS_KIND.DAEMON) return;
 
     const br = blessedRoot(cwd);
     // br is non-null in worktrees, null at root (where .git IS the common dir)
@@ -116,187 +180,8 @@ if (!process.env.NODE_TEST_CONTEXT) {
   tryAutoForward();
 }
 
-function getCurrentBranch(repoRoot: string): string {
-  try {
-    return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
-  } catch {
-    return '';
-  }
-}
-
-function isOnDefaultBranch(repoRoot: string): boolean {
-  const branch = getCurrentBranch(repoRoot);
-  if (branch === '' || branch === 'main' || branch === 'master') return true;
-  try {
-    const remoteRef = execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
-    return branch === remoteRef.replace('refs/remotes/origin/', '');
-  } catch { return false; }
-}
-
-function applyPragmas(db: DatabaseSync): void {
-  db.exec('PRAGMA busy_timeout = 5000;');
-  db.exec('PRAGMA journal_mode = WAL;');
-  db.exec('PRAGMA foreign_keys = ON;');
-  db.exec('PRAGMA locking_mode = EXCLUSIVE;');
-}
-
-interface OpenStoreOptions {
-  skipVersionCheck?: boolean;
-  migrateLive?: boolean;
-}
-
-const MIGRATION_REFUSED_TEXT = (branch: string): string =>
-  `migration refused: on branch "${branch}" which is not the default branch — switch to main or pass --migrate-live to migrate the live store from this branch`;
-
-function migratePacketColumn(db: DatabaseSync, column: string, type: string, notNull: boolean, defaultValue?: string): void {
-  const cols = db.prepare(`SELECT name FROM pragma_table_info('packets') WHERE name = ?`).all(column);
-  if (cols.length === 0) {
-    const def = defaultValue !== undefined ? ` DEFAULT ${defaultValue}` : '';
-    const nn = notNull ? ' NOT NULL' : '';
-    db.exec(`ALTER TABLE packets ADD COLUMN ${column} ${type}${nn}${def}`);
-  }
-}
-
-const TABLES_SQL = "SELECT name FROM sqlite_master WHERE type='table'";
-
-function migrateConstitutionTables(db: DatabaseSync): void {
-  const tables = new Set(
-    db.prepare(TABLES_SQL)
-      .all()
-      .map((row) => stringColumn(row, 'name')),
-  );
-  if (!tables.has('constitution_sections')) {
-    db.exec(`
-      CREATE TABLE constitution_sections (
-        section TEXT PRIMARY KEY,
-        body TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )
-    `);
-  }
-  if (!tables.has('constitution_principles')) {
-    db.exec(`
-      CREATE TABLE constitution_principles (
-        id TEXT PRIMARY KEY,
-        rule TEXT NOT NULL,
-        rationale TEXT NOT NULL DEFAULT '',
-        sort_order INTEGER NOT NULL
-      )
-    `);
-  }
-}
-
-function migrateSprintsTables(db: DatabaseSync): void {
-  const tables = new Set(
-    db.prepare(TABLES_SQL)
-      .all()
-      .map((row) => stringColumn(row, 'name')),
-  );
-  if (!tables.has('sprints')) {
-    db.exec(`
-      CREATE TABLE sprints (
-        id TEXT PRIMARY KEY,
-        goal TEXT NOT NULL DEFAULT '',
-        budget_cap REAL NOT NULL DEFAULT 0,
-        wip_limit INTEGER,
-        state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'closed')),
-        created_at TEXT NOT NULL,
-        closed_at TEXT
-      )
-    `);
-  }
-  if (!tables.has('sprint_tasks')) {
-    db.exec(`
-      CREATE TABLE sprint_tasks (
-        sprint_id TEXT NOT NULL REFERENCES sprints(id),
-        packet_id TEXT NOT NULL REFERENCES packets(id),
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (sprint_id, packet_id)
-      )
-    `);
-  }
-  if (!tables.has('task_costs')) {
-    db.exec(`
-      CREATE TABLE task_costs (
-        seq INTEGER PRIMARY KEY AUTOINCREMENT,
-        packet_id TEXT NOT NULL REFERENCES packets(id),
-        amount REAL NOT NULL,
-        recorded_by TEXT,
-        recorded_at TEXT NOT NULL
-      )
-    `);
-  }
-}
-function runVersionMigration(db: DatabaseSync, fromVersion: number): void {
-  if (fromVersion === 3) {
-    migratePacketColumn(db, 'body', 'TEXT', true, "''");
-    db.exec('PRAGMA user_version = 4');
-    migratePacketColumn(db, 'type', 'TEXT', true, "''");
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-  } else if (fromVersion === 4) {
-    migratePacketColumn(db, 'type', 'TEXT', true, "''");
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-  } else if (fromVersion === 5) {
-    migrateConstitutionTables(db);
-    migrateSprintsTables(db);
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-  } else if (fromVersion === 6) {
-    migrateSprintsTables(db);
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-  } else if (fromVersion === 7) {
-    const eventCheck = `command TEXT NOT NULL CHECK (command IN (${sqlInList(EVENT_COMMANDS)}))`;
-    db.exec(`CREATE TABLE events_new (
-      seq INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT,
-      packet_id TEXT,
-      ${eventCheck},
-      detail TEXT,
-      at TEXT NOT NULL
-    )`);
-    db.exec('INSERT INTO events_new (seq, session_id, packet_id, command, detail, at) SELECT seq, session_id, packet_id, command, detail, at FROM events');
-    db.exec('DROP TABLE events');
-    db.exec('ALTER TABLE events_new RENAME TO events');
-    db.exec('PRAGMA user_version = 8');
-  }
-}
-function emitSchemaMigrated(db: DatabaseSync): void {
-  try { db.prepare('INSERT INTO events (command, at) VALUES (?, ?)').run(EVENT_SCHEMA_MIGRATED, new Date().toISOString()); }
-  catch (err) { console.error(`failed to emit schema-migrated event: ${String(err)}`); }
-}
-
-function createVerifiedBackup(repoRoot: string, reason: BackupReason): void {
-  const backup = createStateBackup(repoRoot, { reason, allowFreshLeases: true });
-  if (backup.sha256 !== createHash('sha256').update(readFileSync(backup.sqlitePath)).digest('hex')) {
-    throw new Error('pre-migration backup verification failed (sha256 mismatch)');
-  }
-  const vacDb = new DatabaseSync(backup.sqlitePath);
-  const integrityCheck = stringColumn(vacDb.prepare('PRAGMA integrity_check').get(), 'integrity_check');
-  vacDb.close();
-  if (integrityCheck !== 'ok') {
-    throw new Error('pre-migration backup verification failed (integrity check)');
-  }
-}
-
-const TOO_NEW_TEXT = (currentVersion: number): string =>
-  `store unusable (schema v${currentVersion} does not match v${SCHEMA_VERSION}): a migration PR is likely open or just merged — git pull and retry. Restore a verified backup with 'restore state --file <snap>' (primary), or 'rebuild' from git (last resort) — never delete .svp`;
-
-function performMigration(db: DatabaseSync, repoRoot: string, currentVersion: number, options?: OpenStoreOptions): void {
-  if (!isOnDefaultBranch(repoRoot)) {
-    if (options?.migrateLive) {
-      console.error(`bypassing branch guard: migrating live from "${getCurrentBranch(repoRoot)}"`);
-    } else {
-      db.close();
-      throw new StoreVersionError(MIGRATION_REFUSED_TEXT(getCurrentBranch(repoRoot)));
-    }
-  }
-  createVerifiedBackup(repoRoot, BACKUP_REASON.STORE_OPEN);
-  runVersionMigration(db, currentVersion);
-  emitSchemaMigrated(db);
-}
-
 function assertStoreNotHeldByDaemon(repoRoot: string): void {
-  if (process.argv[2] === 'daemon' || daemonStarting) return;
+  if (process.argv[2] === STORE_PROCESS_KIND.DAEMON || daemonStarting) return;
   if (isDaemonRunning(repoRoot)) {
     throw new StoreVersionError(`store is held by the daemon — run commands from the blessed root or start the daemon with \`sv-playbook daemon\``);
   }
@@ -305,18 +190,6 @@ function assertStoreNotHeldByDaemon(repoRoot: string): void {
     if (br !== null && !isDaemonRunning(br)) {
       throw new StoreVersionError(WORKTREE_DAEMON_REQUIRED_TEXT);
     }
-  }
-}
-
-function checkVersionAndMigrate(db: DatabaseSync, repoRoot: string, options?: OpenStoreOptions): void {
-  const row = db.prepare('PRAGMA user_version').get();
-  const currentVersion = numberColumn(row, 'user_version');
-
-  if (currentVersion >= 3 && currentVersion < SCHEMA_VERSION) {
-    performMigration(db, repoRoot, currentVersion, options);
-  } else if (currentVersion !== SCHEMA_VERSION) {
-    db.close();
-    throw new StoreVersionError(TOO_NEW_TEXT(currentVersion));
   }
 }
 
@@ -329,6 +202,7 @@ export function setDaemonStore(s: Store | null): void {
   } else {
     daemonStore = {
       db: s.db,
+      orm: s.orm,
       dir: s.dir,
       close: () => {},
     };
@@ -351,48 +225,29 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   const dir = join(repoRoot, SVP_DIR); mkdirSync(dir, { recursive: true });
   const dbPath = join(dir, DB_FILE);
   const isNew = !existsSync(dbPath);
-  const db = new DatabaseSync(dbPath);
-  applyPragmas(db);
+  const db = new Database(dbPath);
+  applyExclusiveStorePragmas(db);
   db.exec(SCHEMA);
   if (isNew) {
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    db.exec(`${STORE_PRAGMA.USER_VERSION} = ${SCHEMA_VERSION}`);
   } else if (!options?.skipVersionCheck) {
     checkVersionAndMigrate(db, repoRoot, options);
   }
   migratePacketColumn(db, 'pr', 'TEXT', false);
-  return { db, dir, close: () => { db.close(); } };
+  return { db, orm: createStoreOrm(db), dir, close: () => { db.close(); } };
 }
-
-interface MigrateStoreOptions {
-  currentSessionId?: string;
-  migrateLive?: boolean;
-}
-
-function assertNoForeignLeases(dbPath: string, currentSessionId?: string): void {
-  const liveDb = new DatabaseSync(dbPath);
-  const leaseRows = liveDb.prepare('SELECT session_id, heartbeat_at FROM leases').all();
-  liveDb.close();
-  let foreignCount = 0;
-  for (const row of leaseRows) {
-    const sid = stringColumn(row, 'session_id');
-    if (currentSessionId !== undefined && sid === currentSessionId) continue;
-    if (Date.now() - Date.parse(stringColumn(row, 'heartbeat_at')) <= LEASE_TTL_MS) foreignCount++;
+export function openStoreReadOnly(repoRoot: string): Store {
+  if (daemonStore !== null) return daemonStore;
+  assertStoreNotHeldByDaemon(repoRoot);
+  const dir = join(repoRoot, SVP_DIR);
+  const path = join(dir, DB_FILE);
+  if (!existsSync(path)) openStore(repoRoot).close();
+  const db = new Database(path, { readonly: true, fileMustExist: true });
+  applyReadOnlyStorePragmas(db);
+  const version = readStoreSchemaVersion(db);
+  if (version !== SCHEMA_VERSION) {
+    db.close();
+    throw new StoreVersionError(`store schema version ${String(version)} does not match runtime version ${SCHEMA_VERSION}`);
   }
-  if (foreignCount > 0) {
-    throw new Error(`migration blocked: ${foreignCount} other worktree/session(s) are live on the shared store — pause them or isolate state per worktree before migrating`);
-  }
-}
-
-export function migrateStore(repoRoot: string, options?: MigrateStoreOptions): void {
-  const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
-  if (!isOnDefaultBranch(repoRoot)) {
-    if (options?.migrateLive) { console.error(`bypassing branch guard: migrating live from "${getCurrentBranch(repoRoot)}"`); }
-    else { throw new StoreVersionError(MIGRATION_REFUSED_TEXT(getCurrentBranch(repoRoot))); }
-  }
-  createVerifiedBackup(repoRoot, BACKUP_REASON.MANUAL);
-  assertNoForeignLeases(dbPath, options?.currentSessionId);
-  const db = new DatabaseSync(dbPath);
-  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-  emitSchemaMigrated(db);
-  db.close();
+  return { db, orm: createStoreOrm(db), dir, close: () => { db.close(); } };
 }

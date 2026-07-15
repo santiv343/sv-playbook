@@ -7,6 +7,7 @@ import type { ExecutionContext } from '../runtime/context.types.js';
 import { checkDestructiveGate, queryDestructiveCounts } from './destructive-gate.js';
 
 const CONFIRM_FLAG = '--confirm-destructive';
+const HELP_FLAG = { LONG: '--help', SHORT: '-h' } as const;
 
 const defaultIo: Io = {
   out: (l) => void process.stdout.write(`${l}\n`),
@@ -36,7 +37,7 @@ export async function main(argv: string[], io: Io = defaultIo, ctx?: ExecutionCo
   }
 
   const [name, ...args] = argv;
-  if (name === undefined || name === '--help' || name === '-h') {
+  if (name === undefined || name === HELP_FLAG.LONG || name === HELP_FLAG.SHORT) {
     usage(io);
     return EXIT.USAGE;
   }

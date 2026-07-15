@@ -163,17 +163,20 @@ test('red team: takeover without force on a live lease is refused', async () => 
 });
 
 // ---- CHEAT 6: Unmet dependencies ----
-test('red team: starting work with unmet dependencies is not enforced (known gap)', async () => {
+test('red team: starting work with unmet dependencies is refused', async () => {
   const { root, store } = await setupStore();
   createPacket(store, root, def('RT-DEP-CHILD-001'), 'a');
-  store.db.prepare('UPDATE packets SET status = ? WHERE id = ?').run(STATUS.DRAFT, 'RT-DEP-CHILD-001');
   createPacket(store, root, { ...def('RT-DEP-PARENT-001', ['RT-DEP-CHILD-001']), writeSet: ['src/other/**'] }, 'a');
-  movePacket(store, undefined, 'RT-DEP-PARENT-001', 'ready');
+  store.db.prepare('UPDATE packets SET status = ? WHERE id = ?').run(STATUS.READY, 'RT-DEP-PARENT-001');
   const session = ensureSession(store, root);
-  startPacket(store, session, root, 'RT-DEP-PARENT-001');
+  assert.throws(
+    () => { startPacket(store, session, root, 'RT-DEP-PARENT-001'); },
+    /unmet dependencies: RT-DEP-CHILD-001 \(draft\)/,
+  );
   const row = store.db.prepare('SELECT status FROM packets WHERE id = ?').get('RT-DEP-PARENT-001');
   const status = stringColumn(row, 'status');
-  assert.equal(status, STATUS.ACTIVE, 'packet starts despite dep in draft - dep readiness is not enforced');
+  assert.equal(status, STATUS.READY);
+  assert.equal(leaseOf(store, 'RT-DEP-PARENT-001'), undefined);
 });
 
 // ---- CHEAT 7: Illegal transitions ----

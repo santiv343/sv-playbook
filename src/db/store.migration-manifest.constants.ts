@@ -1,0 +1,47 @@
+export const STORE_INITIAL_SCHEMA_VERSION = 3;
+
+export const STORE_MIGRATION_ID = {
+  VERSIONED_WORK_DEFINITIONS: 'versioned-work-definitions',
+  TYPED_RUN_SPEC_REFERENCES: 'typed-run-spec-references',
+  VERSIONED_ROLE_CATALOG: 'versioned-role-catalog',
+  ROLE_PROJECTION_RECEIPTS: 'role-projection-receipts',
+  SEMANTIC_ROLE_CONTRACTS: 'semantic-role-contracts',
+  MODEL_CAPABILITY_EVALUATIONS: 'model-capability-evaluations',
+  REVIEW_CANDIDATES: 'review-candidates',
+} as const;
+
+export const STORE_MIGRATION_IDS = [
+  'packet-content-columns',
+  'packet-type-column',
+  'constitution-and-sprints',
+  'sprints',
+  'event-commands-1',
+  'event-commands-2',
+  'event-commands-3',
+  'schema-11',
+  'schema-12',
+  'schema-13',
+  'schema-14',
+  'remove-role-route-tables',
+  'remove-role-escalation-tables',
+  'remove-dispatch-sessions',
+  'schema-18',
+  'schema-19',
+  'protocol-proposal-status',
+  'protocol-proposal-batches',
+  'gateway-run-observation',
+  'durable-workflow-coordinator',
+  'workflow-runtime-configuration',
+  'run-spec-dispatch-ref',
+  'run-spec-profile-snapshot',
+  'run-spec-dispatch-identity',
+  STORE_MIGRATION_ID.VERSIONED_WORK_DEFINITIONS,
+  STORE_MIGRATION_ID.TYPED_RUN_SPEC_REFERENCES,
+  STORE_MIGRATION_ID.VERSIONED_ROLE_CATALOG,
+  STORE_MIGRATION_ID.ROLE_PROJECTION_RECEIPTS,
+  STORE_MIGRATION_ID.SEMANTIC_ROLE_CONTRACTS,
+  STORE_MIGRATION_ID.MODEL_CAPABILITY_EVALUATIONS,
+  STORE_MIGRATION_ID.REVIEW_CANDIDATES,
+] as const;
+
+export const SCHEMA_VERSION = STORE_INITIAL_SCHEMA_VERSION + STORE_MIGRATION_IDS.length;

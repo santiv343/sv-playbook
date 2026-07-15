@@ -11,6 +11,7 @@ import { startDaemon } from './daemon.js';
 import { DAEMON_TOKEN_FILE } from './daemon.constants.js';
 import { EXIT } from '../cli/command.constants.js';
 import { SVP_DIR } from '../db/store.constants.js';
+import { OS_PLATFORM } from '../platform.constants.js';
 
 // Run the shipped sync transport (client.js forwardToDaemonSync) from a child
 // process — exactly how production auto-forwarding uses it (worktree CLI
@@ -107,7 +108,7 @@ test('a worktree CLI cannot open the live store directly and is served through t
       `], { encoding: 'utf8', timeout: 10000 });
       assert.ok(!subResult.includes('OK'), 'child process must be blocked by exclusive lock');
     } finally {
-      daemon.stop();
+      await daemon.stop();
     }
   });
 });
@@ -128,12 +129,12 @@ test('concurrent daemon starts: atomic lock file causes the second to refuse (ST
         /already running/,
       );
     } finally {
-      daemon1.stop();
+      await daemon1.stop();
     }
   });
 });
 
-test('daemon auth token file is created owner-only (mode 0600)', { skip: process.platform === 'win32' }, async () => {
+test('daemon auth token file is created owner-only (mode 0600)', { skip: process.platform === OS_PLATFORM.WINDOWS }, async () => {
   await inTempRepo(async (root) => {
     openStore(root).close();
 
@@ -145,7 +146,7 @@ test('daemon auth token file is created owner-only (mode 0600)', { skip: process
       const mode = statSync(tokenPath).mode & 0o777;
       assert.equal(mode, 0o600, `token file must be owner-only, got 0${mode.toString(8)}`);
     } finally {
-      daemon.stop();
+      await daemon.stop();
     }
   });
 });
@@ -180,7 +181,7 @@ test('daemon forwarded task note is persisted to the store (STORE-003)', async (
       ).get(packetId);
       assert.ok(row !== undefined, 'note event must exist in the store');
     } finally {
-      daemon.stop();
+      await daemon.stop();
     }
   });
 });

@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
-import { EXIT } from '../command.constants.js';
+import { CLI_OPTION_TYPE, EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
-import { commonRoot, openStore } from '../../db/store.js';
+import { commonRoot, openStoreReadOnly } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
 import {
   formatCountsHeader,
@@ -29,13 +29,13 @@ export const command: Command = {
   name: 'status',
     summary: 'Print board, lease, event, and backup status',
     run(args, io): Promise<number> {
-      const parsed = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } });
+      const parsed = parseArgs({ args, allowPositionals: true, options: { json: { type: CLI_OPTION_TYPE.BOOLEAN } } });
       if (parsed.positionals.length > 0) {
         io.err(USAGE);
         return Promise.resolve(EXIT.USAGE);
       }
       const repoRoot = commonRoot(getCwd());
-      const store = openStore(repoRoot);
+      const store = openStoreReadOnly(repoRoot);
       try {
         const status = readBoardStatus(store, repoRoot);
         if (parsed.values.json === true) io.out(JSON.stringify(status));

@@ -21,7 +21,7 @@ test('openStore creates .svp/playbook.sqlite and the schema tables', async () =>
     .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     .all()
     .map((row) => stringColumn(row, 'name'));
-  for (const t of ['events', 'leases', 'packets', 'sessions', 'transitions']) {
+  for (const t of ['context_items', 'context_packs', 'events', 'leases', 'packets', 'sessions', 'transitions']) {
     assert.ok(tables.includes(t), `missing table ${t}`);
   }
   store.close();
@@ -188,7 +188,7 @@ test('schema migration from v5 creates constitution tables', async () => {
   store.close();
 });
 
-test('schema migration from v7 to v8 rebuilds events table with extended CHECK including imported', async () => {
+test('schema migration rebuilds events with every current event command', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-mig7-'));
   openStore(root).close();
   const dbPath = join(root, '.svp', 'playbook.sqlite');
@@ -217,7 +217,7 @@ test('schema migration from v7 to v8 rebuilds events table with extended CHECK i
 
   const store = openStore(root);
   const ver = numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version');
-  assert.equal(ver, 8);
+  assert.equal(ver, SCHEMA_VERSION);
   const count = numberColumn(store.db.prepare('SELECT COUNT(*) as c FROM events').get(), 'c');
   assert.equal(count, 5, '4 old events + schema-migrated event must survive migration');
   store.db.exec("INSERT INTO events (command, at) VALUES ('imported', datetime('now'))");

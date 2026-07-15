@@ -1,9 +1,12 @@
 node_modules/
+pnpm-lock.yaml
 dist/
 .svp/
 .svp-session
 .svp-session-role
 .svp-destructive-events.log
 .worktrees/
+.tmp/
+.tmp-*
 scripts/
 *.tgz

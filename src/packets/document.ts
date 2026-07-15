@@ -1,4 +1,4 @@
-import { ID_RE } from './document.constants.js';
+import { GENERATED_PACKET_PREFIX, ID_RE, PACKET_FIELD, PACKET_FIELD_SEPARATOR, PACKET_LINE_SEPARATOR } from './document.constants.js';
 import { PacketFormatError } from './document.errors.js';
 import type { PacketDefinition } from './document.types.js';
 
@@ -12,6 +12,10 @@ function jsonArray(values: string[]): string {
   return JSON.stringify(values);
 }
 
+function tagLines(def: PacketDefinition): string[] {
+  return def.tags === undefined ? [] : [`tags: ${jsonArray(def.tags)}`];
+}
+
 export function generatePacketDocument(def: PacketDefinition, body: string): string {
   assertValid(def);
   return [
@@ -23,6 +27,7 @@ export function generatePacketDocument(def: PacketDefinition, body: string): str
     `write_set: ${jsonArray(def.writeSet)}`,
     `requirements: ${jsonArray(def.requirements)}`,
     `evidence_required: ${jsonArray(def.evidenceRequired)}`,
+    ...tagLines(def),
     '---',
     '',
     body,
@@ -44,8 +49,8 @@ function parseStringArray(raw: string, key: string): string[] {
 
 export function parsePacketDocument(text: string): { definition: PacketDefinition; body: string } {
   let content = text;
-  if (content.startsWith('<!-- GENERATED')) {
-    const nl = content.indexOf('\n');
+  if (content.startsWith(GENERATED_PACKET_PREFIX)) {
+    const nl = content.indexOf(PACKET_LINE_SEPARATOR);
     if (nl !== -1) content = content.slice(nl + 1);
   }
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n\r?\n?([\s\S]*)$/.exec(content);
@@ -54,7 +59,7 @@ export function parsePacketDocument(text: string): { definition: PacketDefinitio
   }
   const fields = new Map<string, string>();
   for (const line of m[1].split(/\r?\n/)) {
-    const idx = line.indexOf(': ');
+    const idx = line.indexOf(PACKET_FIELD_SEPARATOR);
     if (idx === -1) throw new PacketFormatError(`malformed frontmatter line: ${line}`);
     fields.set(line.slice(0, idx), line.slice(idx + 2));
   }
@@ -64,13 +69,16 @@ export function parsePacketDocument(text: string): { definition: PacketDefinitio
     return v;
   };
   const definition: PacketDefinition = {
-    id: get('id'),
-    title: get('title'),
-    dependsOn: parseStringArray(get('depends_on'), 'depends_on'),
-    writeSet: parseStringArray(get('write_set'), 'write_set'),
-    requirements: parseStringArray(get('requirements'), 'requirements'),
-    evidenceRequired: parseStringArray(get('evidence_required'), 'evidence_required'),
+    id: get(PACKET_FIELD.ID),
+    title: get(PACKET_FIELD.TITLE),
+    dependsOn: parseStringArray(get(PACKET_FIELD.DEPENDS_ON), PACKET_FIELD.DEPENDS_ON),
+    writeSet: parseStringArray(get(PACKET_FIELD.WRITE_SET), PACKET_FIELD.WRITE_SET),
+    requirements: parseStringArray(get(PACKET_FIELD.REQUIREMENTS), PACKET_FIELD.REQUIREMENTS),
+    evidenceRequired: parseStringArray(get(PACKET_FIELD.EVIDENCE_REQUIRED), PACKET_FIELD.EVIDENCE_REQUIRED),
   };
+  if (fields.has(PACKET_FIELD.TAGS)) {
+    definition.tags = parseStringArray(get(PACKET_FIELD.TAGS), PACKET_FIELD.TAGS);
+  }
   assertValid(definition);
   return { definition, body: m[2] };
 }

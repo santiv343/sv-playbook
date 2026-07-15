@@ -1,8 +1,26 @@
 import { EVENT_EVIDENCE, EVENT_IMPORTED, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES, STATUS } from '../tasks/service.constants.js';
+import { CONTEXT_STORE_SCHEMA } from './context.schema.constants.js';
+import { ORCHESTRATION_STORE_SCHEMA } from './orchestration.schema.constants.js';
+import { ROLE_CATALOG_STORE_SCHEMA } from './role-catalog.schema.constants.js';
+import { ROLE_PROJECTION_STORE_SCHEMA } from './role-projection.schema.constants.js';
+import { MODEL_CAPABILITY_EVALUATION_STORE_SCHEMA } from './model-capability-evaluation.schema.constants.js';
+import { REVIEW_CANDIDATE_STORE_SCHEMA } from './review-candidate.schema.constants.js';
+export { SCHEMA_VERSION } from './store.migration-manifest.constants.js';
 
-export const SCHEMA_VERSION = 8;
 export const SVP_DIR = '.svp';
+export const SQLITE_FILE_HEADER = 'SQLite format 3\0';
+export const SQLITE_INTEGRITY_OK = 'ok';
+export const DIGEST_ALGORITHM = { SHA256: 'sha256' } as const;
+export const DEFAULT_GIT_BRANCH = { MAIN: 'main', LEGACY: 'master' } as const;
+export const STORE_PROCESS_KIND = { DAEMON: 'daemon' } as const;
 export const DB_FILE = 'playbook.sqlite';
+export const STORE_TABLE = {
+  CONSTITUTION_SECTIONS: 'constitution_sections',
+  CONSTITUTION_PRINCIPLES: 'constitution_principles',
+  SPRINTS: 'sprints',
+  SPRINT_TASKS: 'sprint_tasks',
+  TASK_COSTS: 'task_costs',
+} as const;
 
 export const sqlString = (value: string): string => `'${value.replaceAll("'", "''")}'`;
 export const sqlInList = (values: readonly string[]): string => values.map(sqlString).join(', ');
@@ -101,4 +119,19 @@ CREATE TABLE IF NOT EXISTS task_costs (
   recorded_by TEXT,
   recorded_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS packet_definitions (
+  packet_id TEXT NOT NULL REFERENCES packets(id),
+  version INTEGER NOT NULL CHECK (version > 0),
+  definition_digest TEXT NOT NULL,
+  definition_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (packet_id, version),
+  UNIQUE (packet_id, definition_digest)
+);
+${CONTEXT_STORE_SCHEMA}
+${ORCHESTRATION_STORE_SCHEMA}
+${ROLE_CATALOG_STORE_SCHEMA}
+${ROLE_PROJECTION_STORE_SCHEMA}
+${MODEL_CAPABILITY_EVALUATION_STORE_SCHEMA}
+${REVIEW_CANDIDATE_STORE_SCHEMA}
 `;

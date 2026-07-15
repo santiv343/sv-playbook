@@ -6,9 +6,12 @@ import { getCwd } from '../../runtime/context.js';
 import { parsePacketDocument } from '../../packets/document.js';
 import { contentDir } from '../../content.js';
 import { loadConfig } from '../../config.js';
-import { checkRoles } from '../../check/roles.js';
 import { checkViolation } from '../../baseline.js';
+import { BASELINE_RESULT } from '../../baseline.constants.js';
 import type { BaselineConfig } from '../../config.types.js';
+import { FILE_EXTENSION } from '../../platform.constants.js';
+import { commonRoot, openStore } from '../../db/store.js';
+import { checkRoleSystem } from '../../roles/system-check.js';
 
 const PACKETS_DIR = 'docs/packets';
 
@@ -20,7 +23,7 @@ async function listMarkdownFiles(root: string, dir: string): Promise<string[]> {
   const dirPath = join(root, dir);
   try {
     const entries = await readdir(dirPath);
-    return entries.filter((e) => e.endsWith('.md'));
+    return entries.filter((e) => e.endsWith(FILE_EXTENSION.MARKDOWN));
   } catch {
     return [];
   }
@@ -49,7 +52,7 @@ function checkPacketSections(file: string, body: string, io: Io, baselined?: boo
 async function checkOnePacket(root: string, file: string, baseline: BaselineConfig | undefined, io: Io): Promise<boolean> {
   const content = await readFile(join(root, PACKETS_DIR, file), 'utf-8');
   const fingerprint = `${PACKETS_DIR}/${file}`;
-  const isGrandfathered = checkViolation(fingerprint, baseline) === 'grandfathered';
+  const isGrandfathered = checkViolation(fingerprint, baseline) === BASELINE_RESULT.GRANDFATHERED;
   let body: string;
   try {
     body = parsePacketDocument(content).body;
@@ -116,13 +119,16 @@ const TARGETS: Record<string, (root: string, io: Io) => Promise<boolean>> = {
   roles: checkRolesTarget,
 };
 
-async function checkRolesTarget(_root: string, io: Io): Promise<boolean> {
-  const rolesDir = join(contentDir(), 'roles');
-  const violations = await checkRoles(rolesDir);
-  for (const v of violations) {
-    io.out(`content/roles/${v.file}: ${v.message}`);
+async function checkRolesTarget(root: string, io: Io): Promise<boolean> {
+  const repoRoot = commonRoot(root);
+  const store = openStore(repoRoot);
+  try {
+    const result = await checkRoleSystem(store, repoRoot);
+    for (const violation of result.violations) io.out(`roles: ${violation}`);
+    return !result.valid;
+  } finally {
+    store.close();
   }
-  return violations.length > 0;
 }
 
 async function runTarget(root: string, target: string, io: Io): Promise<number | null> {

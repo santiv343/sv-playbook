@@ -1,6 +1,11 @@
+export const PREFLIGHT_STATUS = { PASS: 'pass', FAIL: 'fail', SKIP: 'skip', UNKNOWN: 'unknown' } as const;
+export const HEAD_SHA_STATUS = { MATCH: 'match', MISMATCH: 'mismatch', UNKNOWN: 'unknown' } as const;
+export const PREFLIGHT_CHECK_NAME = { RED_TEST: 'red-test', VERIFY: 'verify' } as const;
+export const PREFLIGHT_EVENT_PREFIX = 'preflight:';
+
 export interface PreflightCheck {
   name: string;
-  status: 'pass' | 'fail' | 'skip' | 'unknown';
+  status: typeof PREFLIGHT_STATUS[keyof typeof PREFLIGHT_STATUS];
   detail: string;
 }
 
@@ -8,7 +13,7 @@ export interface PreflightReport {
   packetId: string;
   pr: string | undefined;
   headSha: string;
-  headShaMatch: 'match' | 'mismatch' | 'unknown';
+  headShaMatch: typeof HEAD_SHA_STATUS[keyof typeof HEAD_SHA_STATUS];
   ciChecks: PreflightCheck[];
   verifyResult: PreflightCheck;
   writeSetViolations: string[];
@@ -16,5 +21,5 @@ export interface PreflightReport {
   stopConditions: PreflightCheck[];
   deviationBullets: string[];
   checks: PreflightCheck[];
-  overall: 'pass' | 'fail';
+  overall: typeof PREFLIGHT_STATUS.PASS | typeof PREFLIGHT_STATUS.FAIL;
 }

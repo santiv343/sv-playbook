@@ -21,6 +21,9 @@ test('loadConfig returns defaults when the file is absent', () => {
       maxAgeHours: 6,
       onEvents: ['done', 'force-takeover', 'restore', 'schema-mismatch'],
     },
+    modelEvaluation: {
+      evidenceValidityDays: 30,
+    },
     gates: {
       maxLines: 350,
       maxLinesPerFunction: 60,
@@ -45,6 +48,9 @@ test('loadConfig reads a valid config file', () => {
       maxAgeHours: 12,
       onEvents: ['done'],
     },
+    modelEvaluation: {
+      evidenceValidityDays: 45,
+    },
   }));
   const config = loadConfig(dir);
   assert.deepEqual(config, {
@@ -59,6 +65,9 @@ test('loadConfig reads a valid config file', () => {
       retention: 3,
       maxAgeHours: 12,
       onEvents: ['done'],
+    },
+    modelEvaluation: {
+      evidenceValidityDays: 45,
     },
     gates: {
       maxLines: 350,
@@ -165,4 +174,39 @@ test('gate thresholds and the layout rule come from config, not hardcoded', () =
   assert.equal(config2.gates.complexity, 10);
   assert.equal(config2.gates.cognitiveComplexity, 10);
   assert.equal(config2.gates.layout, false);
+});
+
+test('source debt baselines are validated as non-negative counts and SHA-256 digests', () => {
+  const validDir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(validDir, 'playbook.config.json'), JSON.stringify({
+    baseline: {
+      ormApplicationSql: { count: 0, digest: 'a'.repeat(64) },
+      literalComparisons: { count: 0, digest: 'b'.repeat(64) },
+      duplicateStrings: { count: 0, digest: 'c'.repeat(64) },
+    },
+  }));
+  assert.deepEqual(loadConfig(validDir).baseline?.ormApplicationSql, {
+    count: 0,
+    digest: 'a'.repeat(64),
+  });
+  assert.deepEqual(loadConfig(validDir).baseline?.literalComparisons, {
+    count: 0,
+    digest: 'b'.repeat(64),
+  });
+  assert.deepEqual(loadConfig(validDir).baseline?.duplicateStrings, {
+    count: 0,
+    digest: 'c'.repeat(64),
+  });
+
+  const invalidCountDir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(invalidCountDir, 'playbook.config.json'), JSON.stringify({
+    baseline: { ormApplicationSql: { count: -1, digest: 'a'.repeat(64) } },
+  }));
+  assert.throws(() => loadConfig(invalidCountDir), { name: 'ConfigError', message: /non-negative/ });
+
+  const invalidDigestDir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(invalidDigestDir, 'playbook.config.json'), JSON.stringify({
+    baseline: { ormApplicationSql: { count: 0, digest: 'not-a-digest' } },
+  }));
+  assert.throws(() => loadConfig(invalidDigestDir), { name: 'ConfigError', message: /SHA-256/ });
 });

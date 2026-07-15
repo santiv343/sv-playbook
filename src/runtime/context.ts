@@ -3,7 +3,7 @@ import type { ExecutionContext } from './context.types.js';
 
 const storage = new AsyncLocalStorage<ExecutionContext>();
 
-export function createContext(cwd: string, sessionId: string): ExecutionContext {
+export function createContext(cwd: string, sessionId: string | null = null): ExecutionContext {
   return { cwd, sessionId };
 }
 

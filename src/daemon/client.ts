@@ -15,7 +15,7 @@ function buildForwardScript(body: string, port: number): string {
 // Single forwarding transport — used by production (store.ts auto-forward)
 // and exercised directly by the daemon tests.
 export function forwardToDaemonSync(argv: string[], token: string, port: number, ctx?: ExecutionContext): number {
-  const context = ctx ?? getContext() ?? { cwd: process.cwd(), sessionId: '' };
+  const context = ctx ?? getContext() ?? { cwd: process.cwd(), sessionId: null };
   const body = JSON.stringify({ token, argv, context });
   const result = spawnSync(process.execPath, ['-e', buildForwardScript(body, port)], {
     stdio: ['ignore', 'inherit', 'inherit'],

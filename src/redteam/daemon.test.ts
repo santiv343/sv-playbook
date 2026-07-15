@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { openStore, isDaemonRunning } from '../db/store.js';
 import { startDaemon } from '../daemon/daemon.js';
+import { OS_PLATFORM } from '../platform.constants.js';
 
 // Env for child processes that must behave like a real (non-test) CLI invocation.
 function realCliEnv(): NodeJS.ProcessEnv {
@@ -92,7 +93,7 @@ async function stopDaemonChild(child: ReturnType<typeof spawn>, root: string, po
   if (alive()) await waitMs(5000);
   const pid = child.pid;
   if (pid !== undefined && alive()) {
-    const cmd = process.platform === 'win32' ? () => spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)]) : () => child.kill('SIGKILL');
+    const cmd = process.platform === OS_PLATFORM.WINDOWS ? () => spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)]) : () => child.kill('SIGKILL');
     cmd(); await waitMs(5000);
   }
 }
@@ -154,7 +155,7 @@ test('red team: a worktree process cannot open the store directly while the daem
     `], { encoding: 'utf8', timeout: 10000 });
     assert.ok(childResult.includes('FAIL:'), 'child process must be blocked by exclusive lock');
   } finally {
-    daemon.stop();
+    await daemon.stop();
   }
 });
 
@@ -394,7 +395,7 @@ test('red team: forwarded exec request preserves cwd and sessionId in daemon con
     assert.ok(typeof parsed === 'object' && parsed !== null);
     assert.equal(Reflect.get(parsed, 'exitCode'), 0);
     assert.ok(typeof Reflect.get(parsed, 'stdout') === 'string');
-  } finally { daemon.stop(); }
+  } finally { await daemon.stop(); }
 });
 
 // ---- STORE-003: Two concurrent exec requests with different contexts ----
@@ -420,5 +421,5 @@ test('red team: concurrent exec requests with distinct contexts are isolated (ST
     assert.equal(Reflect.get(p2, 'exitCode'), 0);
     assert.equal(Reflect.get(p1, 'daemonVersion'), '0.1.0');
     assert.equal(Reflect.get(p2, 'daemonVersion'), '0.1.0');
-  } finally { daemon.stop(); }
+  } finally { await daemon.stop(); }
 });

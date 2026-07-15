@@ -1,0 +1,718 @@
+{
+  "metadata_version": "1.0.0",
+  "schema_id": "urn:sv-playbook:role-protocol:shared:1.0.0",
+  "canonicalization": {
+    "description": "Deterministic canonical byte representation for JSON artifacts, based on RFC 8785 (JSON Canonicalization Scheme), suitable for whole-artifact digest computation.",
+    "scope": "whole-artifact",
+    "scheme": "RFC 8785",
+    "preconditions": {
+      "json_conformance": "JSON text MUST conform to I-JSON (RFC 7493): no duplicate object member names; all strings are valid Unicode; numbers MUST be representable within IEEE 754-2008 binary64 range (finite). Values outside that range (e.g., higher-precision integers) MUST be encoded as strings.",
+      "rfc8785_unicode": "RFC 8785 does NOT normalize Unicode. It preserves Unicode strings exactly as present in the input JSON. No NFC/NFD/NFKC/NFKD normalization is applied before or during canonicalization.",
+      "validation_order": "Schema validation is applied strictly before canonicalization. Validation either accepts the artifact as-is or rejects it entirely. If validation passes, the artifact proceeds to RFC 8785 canonicalization with exactly the set of properties it contains. Validation does NOT filter, remove, add, or mutate any properties. An invalid artifact is rejected at the validation stage and never reaches canonicalization.",
+      "numeric_encoding": "I-JSON restricts numbers to finite IEEE 754 binary64. RFC 8785 serializes numbers according to ECMAScript JSON.stringify semantics. No custom exponent notation restrictions beyond I-JSON are imposed.",
+      "artifact_encoding": "Every ArtifactRef governed by this contract resolves to a JSON protocol envelope. Non-JSON payloads MUST be represented by a validated JSON manifest whose media adapter defines and verifies the payload digest separately."
+    },
+    "rules": "Apply RFC 8785 in full, including its primitive serialization, string escaping, property sorting, whitespace, and UTF-8 rules. This summary is not a replacement for the RFC. Every property in the accepted JSON artifact is included in the canonical form.",
+    "rationale": "RFC 8785 provides an interoperable canonical form for JSON data. Combined with I-JSON constraints, it ensures digest stability across implementations. Schema validation accepts or rejects an artifact whole; no properties are filtered. An accepted artifact is canonicalized in full by RFC 8785, producing a single canonical byte representation."
+  },
+  "validator_contract": {
+    "schema_version": "https://json-schema.org/draft/2020-12/schema",
+    "validator": {
+      "library": "ajv",
+      "minimum_version": "8.0.0",
+      "options": {
+        "strict": true,
+        "strictRequired": true,
+        "strictNumbers": true,
+        "strictTypes": true,
+        "strictTuples": true,
+        "allErrors": true,
+        "addUsedSchema": false,
+        "validateSchema": true
+      }
+    },
+    "formats": {
+      "plugin": "ajv-formats",
+      "mode": "full",
+      "description": "Full format validation (not \u0027fast\u0027) must be enabled. Required for date-time, uri, and similar format checks that protocol integrity depends on."
+    },
+    "schema_fixtures": {
+      "description": "Fixtures validated by Ajv against the shared JSON Schema. These test schema-level structural constraints only: field types, patterns, required, enum, const, and conditionals. Cross-field invariants and digest verification are tested separately in runtime_fixtures.",
+      "positive": [
+        {
+          "fixture_id": "pos-digest-valid",
+          "description": "A valid sha256 digest with correct-length hex value",
+          "target": "#/$defs/digest",
+          "value": {
+            "algorithm": "sha256",
+            "value": "a3c8e7f09b12d45e6f78a901b2c34d56e78f90a1b23c45d67e890f1234a5b6c7"
+          }
+        },
+        {
+          "fixture_id": "pos-artifact-ref-sourcing-assessment",
+          "description": "A valid artifact-ref with digest",
+          "target": "#/$defs/artifact-ref",
+          "value": {
+            "artifact_kind": "sourcing-assessment",
+            "artifact_id": "initial-sourcing-v1",
+            "version_digest": {
+              "algorithm": "sha256",
+              "value": "a3c8e7f09b12d45e6f78a901b2c34d56e78f90a1b23c45d67e890f1234a5b6c7"
+            }
+          }
+        },
+        {
+          "fixture_id": "pos-req-ref-valid",
+          "description": "A valid requirement-ref with all required fields",
+          "target": "#/$defs/requirement-ref",
+          "value": {
+            "contract_id": "contract-1",
+            "requirement_id": "func-auth",
+            "contract_version": "1.0.0"
+          }
+        },
+        {
+          "fixture_id": "pos-subject-artifact-valid",
+          "description": "A valid subject with artifact kind",
+          "target": "#/$defs/subject",
+          "value": {
+            "subject_kind": "artifact",
+            "subject_ref": {
+              "artifact_kind": "sourcing-assessment",
+              "artifact_id": "sa-1",
+              "version_digest": {
+                "algorithm": "sha256",
+                "value": "a3c8e7f09b12d45e6f78a901b2c34d56e78f90a1b23c45d67e890f1234a5b6c7"
+              }
+            }
+          }
+        },
+        {
+          "fixture_id": "pos-evidence-locator-file-range-valid",
+          "description": "A valid evidence-locator of kind file-range",
+          "target": "#/$defs/evidence-locator",
+          "value": {
+            "locator_kind": "file-range",
+            "path": "src/main.ts",
+            "start_line": 10,
+            "end_line": 20
+          }
+        },
+        {
+          "fixture_id": "pos-evidence-ref-file-range",
+          "description": "Evidence ref with file-range locator",
+          "target": "#/$defs/evidence-ref",
+          "value": {
+            "evidence_type": "file-content",
+            "artifact_ref": {
+              "artifact_kind": "code-snapshot",
+              "artifact_id": "snap-1",
+              "version_digest": {
+                "algorithm": "sha256",
+                "value": "b4d9f80a12c34e56f7890a12b3c45d67e89f01a23c4d567e890f1b2c34d5e6f7"
+              }
+            },
+            "locator": {
+              "locator_kind": "file-range",
+              "path": "src/main.ts",
+              "start_line": 10,
+              "end_line": 42
+            }
+          }
+        },
+        {
+          "fixture_id": "pos-mechanical-fact-ref-valid",
+          "description": "A valid mechanical-fact-ref with all required fields",
+          "target": "#/$defs/mechanical-fact-ref",
+          "value": {
+            "fact_id": "fact-001",
+            "fact_domain": "store",
+            "locator": "/store/key1",
+            "observed_at": "2026-07-12T00:00:00Z",
+            "source_digest": {
+              "algorithm": "sha256",
+              "value": "c4d9f80a12c34e56f7890a12b3c45d67e89f01a23c4d567e890f1b2c34d5e6f7"
+            }
+          }
+        },
+        {
+          "fixture_id": "pos-provenance-agent-judgment",
+          "description": "Agent-judgment provenance with required agent_role_id and session_id",
+          "target": "#/$defs/provenance",
+          "value": {
+            "provenance_kind": "agent-judgment",
+            "agent_role_id": "advisor",
+            "session_id": "sess-abc123",
+            "timestamp": "2026-07-12T00:00:00Z",
+            "confirmed_by": null
+          }
+        },
+        {
+          "fixture_id": "pos-provenance-runtime-mechanical",
+          "description": "Runtime-mechanical provenance with null agent/session",
+          "target": "#/$defs/provenance",
+          "value": {
+            "provenance_kind": "runtime-mechanical",
+            "agent_role_id": null,
+            "session_id": null,
+            "timestamp": "2026-07-12T00:00:00Z",
+            "confirmed_by": null
+          }
+        },
+        {
+          "fixture_id": "pos-risk-low-valid",
+          "description": "Valid low-severity risk with null mitigation (allowed for low)",
+          "target": "#/$defs/risk",
+          "value": {
+            "risk_id": "risk-001",
+            "severity": "low",
+            "likelihood": "unlikely",
+            "description": "Low risk description",
+            "mitigation": null
+          }
+        },
+        {
+          "fixture_id": "pos-deviation-valid",
+          "description": "A valid deviation with all required fields",
+          "target": "#/$defs/deviation",
+          "value": {
+            "deviation_id": "dev-001",
+            "subject": {
+              "subject_kind": "artifact",
+              "subject_ref": {
+                "artifact_kind": "code-snapshot",
+                "artifact_id": "snap-1",
+                "version_digest": {
+                  "algorithm": "sha256",
+                  "value": "b4d9f80a12c34e56f7890a12b3c45d67e89f01a23c4d567e890f1b2c34d5e6f7"
+                }
+              }
+            },
+            "description": "An approved contract behavior is temporarily not met.",
+            "reason": "Deviation reason",
+            "risk_assessment": {
+              "risk_id": "risk-001",
+              "severity": "low",
+              "likelihood": "possible",
+              "description": "Limited temporary impact",
+              "mitigation": null
+            },
+            "affected_requirements": [
+              {
+                "contract_id": "contract-1",
+                "requirement_id": "func-auth",
+                "contract_version": "1.0.0"
+              }
+            ]
+          }
+        },
+        {
+          "fixture_id": "pos-escalation-valid",
+          "description": "A valid escalation with all required fields",
+          "target": "#/$defs/escalation",
+          "value": {
+            "escalation_id": "esc-001",
+            "escalation_class": "capability-gap",
+            "cause": "Missing dependency",
+            "context": "The artifact store is unavailable",
+            "what_is_needed": "Access to store or alternative source",
+            "related_artifacts": [],
+            "attempt_history": null
+          }
+        },
+        {
+          "fixture_id": "pos-correction-record-valid",
+          "description": "A valid correction-record with all required fields",
+          "target": "#/$defs/correction-record",
+          "value": {
+            "attempt_id": "corr-001",
+            "subject": {
+              "subject_kind": "artifact",
+              "subject_ref": {
+                "artifact_kind": "code-snapshot",
+                "artifact_id": "snap-1",
+                "version_digest": {
+                  "algorithm": "sha256",
+                  "value": "b4d9f80a12c34e56f7890a12b3c45d67e89f01a23c4d567e890f1b2c34d5e6f7"
+                }
+              }
+            },
+            "cause_summary": "The prior output violated its contract.",
+            "cause_refs": [
+              {
+                "fact_id": "fact-001",
+                "fact_domain": "checks",
+                "locator": "check-001",
+                "observed_at": "2026-07-12T00:00:00Z",
+                "source_digest": {
+                  "algorithm": "sha256",
+                  "value": "b4d9f80a12c34e56f7890a12b3c45d67e89f01a23c4d567e890f1b2c34d5e6f7"
+                }
+              }
+            ],
+            "revision_reason": "Correct the contract violation.",
+            "semantic_diff": "The revised output now satisfies the requirement.",
+            "result": "success",
+            "evidence": []
+          }
+        },
+        {
+          "fixture_id": "pos-question-valid",
+          "description": "A valid question with all required fields",
+          "target": "#/$defs/question",
+          "value": {
+            "question_id": "q-001",
+            "question_type": "clarification",
+            "context": "Design review",
+            "what_is_needed": "Clarify the authentication flow."
+          }
+        }
+      ],
+      "negative": [
+        {
+          "fixture_id": "neg-digest-too-short",
+          "description": "Digest value shorter than 64 hex chars",
+          "target": "#/$defs/digest",
+          "value": {
+            "algorithm": "sha256",
+            "value": "abc123"
+          }
+        },
+        {
+          "fixture_id": "neg-artifact-ref-invalid-kind",
+          "description": "artifact-ref with artifact_kind not in enum",
+          "target": "#/$defs/artifact-ref",
+          "value": {
+            "artifact_kind": "invalid-kind",
+            "artifact_id": "bad-artifact",
+            "version_digest": {
+              "algorithm": "sha256",
+              "value": "a3c8e7f09b12d45e6f78a901b2c34d56e78f90a1b23c45d67e890f1234a5b6c7"
+            }
+          }
+        },
+        {
+          "fixture_id": "neg-req-ref-missing-contract-id",
+          "description": "Missing required contract_id",
+          "target": "#/$defs/requirement-ref",
+          "value": {
+            "requirement_id": "func-auth",
+            "contract_version": "1.0.0"
+          }
+        },
+        {
+          "fixture_id": "neg-subject-conditional-mismatch",
+          "description": "Subject kind \u0027requirement\u0027 with artifact-ref (must be requirement-ref)",
+          "target": "#/$defs/subject",
+          "value": {
+            "subject_kind": "requirement",
+            "subject_ref": {
+              "artifact_kind": "sourcing-assessment",
+              "artifact_id": "sa-1",
+              "version_digest": {
+                "algorithm": "sha256",
+                "value": "a3c8e7f09b12d45e6f78a901b2c34d56e78f90a1b23c45d67e890f1234a5b6c7"
+              }
+            }
+          }
+        },
+        {
+          "fixture_id": "neg-evidence-locator-file-range-missing-path",
+          "description": "File-range locator missing required path",
+          "target": "#/$defs/evidence-locator",
+          "value": {
+            "locator_kind": "file-range",
+            "start_line": 10,
+            "end_line": 20
+          }
+        },
+        {
+          "fixture_id": "neg-evidence-ref-missing-locator",
+          "description": "Evidence-ref missing required locator",
+          "target": "#/$defs/evidence-ref",
+          "value": {
+            "evidence_type": "file-content",
+            "artifact_ref": {
+              "artifact_kind": "code-snapshot",
+              "artifact_id": "snap-1",
+              "version_digest": {
+                "algorithm": "sha256",
+                "value": "b4d9f80a12c34e56f7890a12b3c45d67e89f01a23c4d567e890f1b2c34d5e6f7"
+              }
+            }
+          }
+        },
+        {
+          "fixture_id": "neg-mechanical-fact-ref-missing-observed-at",
+          "description": "Missing required observed_at field",
+          "target": "#/$defs/mechanical-fact-ref",
+          "value": {
+            "fact_id": "fact-001",
+            "fact_domain": "store",
+            "locator": "/store/key1",
+            "source_digest": {
+              "algorithm": "sha256",
+              "value": "c4d9f80a12c34e56f7890a12b3c45d67e89f01a23c4d567e890f1b2c34d5e6f7"
+            }
+          }
+        },
+        {
+          "fixture_id": "neg-provenance-agent-judgment-null-agent",
+          "description": "Agent-judgment provenance with null agent_role_id (must be non-null)",
+          "target": "#/$defs/provenance",
+          "value": {
+            "provenance_kind": "agent-judgment",
+            "agent_role_id": null,
+            "session_id": "sess-abc123",
+            "timestamp": "2026-07-12T00:00:00Z",
+            "confirmed_by": null
+          }
+        },
+        {
+          "fixture_id": "neg-risk-high-null-mitigation",
+          "description": "High severity risk with null mitigation (mitigation required for high/critical)",
+          "target": "#/$defs/risk",
+          "value": {
+            "risk_id": "risk-002",
+            "severity": "high",
+            "likelihood": "possible",
+            "description": "High risk description",
+            "mitigation": null
+          }
+        },
+        {
+          "fixture_id": "neg-deviation-missing-subject",
+          "description": "Deviation missing required subject",
+          "target": "#/$defs/deviation",
+          "value": {
+            "deviation_id": "dev-002",
+            "reason": "Deviation reason",
+            "affected_requirements": [
+              {
+                "contract_id": "contract-1",
+                "requirement_id": "func-auth",
+                "contract_version": "1.0.0"
+              }
+            ]
+          }
+        },
+        {
+          "fixture_id": "neg-escalation-missing-class",
+          "description": "Escalation missing required escalation_class",
+          "target": "#/$defs/escalation",
+          "value": {
+            "cause": "Missing dependency",
+            "context": "The artifact store is unavailable",
+            "what_is_needed": "Access to store or alternative source"
+          }
+        },
+        {
+          "fixture_id": "neg-correction-record-missing-result",
+          "description": "Correction-record missing required result",
+          "target": "#/$defs/correction-record",
+          "value": {
+            "correction_id": "corr-002",
+            "subject": {
+              "subject_kind": "artifact",
+              "subject_ref": {
+                "artifact_kind": "code-snapshot",
+                "artifact_id": "snap-1",
+                "version_digest": {
+                  "algorithm": "sha256",
+                  "value": "b4d9f80a12c34e56f7890a12b3c45d67e89f01a23c4d567e890f1b2c34d5e6f7"
+                }
+              }
+            },
+            "evidence": []
+          }
+        },
+        {
+          "fixture_id": "neg-question-missing-text",
+          "description": "Question missing required text",
+          "target": "#/$defs/question",
+          "value": {
+            "question_id": "q-002",
+            "context": "Design review",
+            "target_roles": ["advisor"]
+          }
+        }
+      ]
+    },
+    "runtime_fixtures": {
+      "description": "Fixtures that test cross-field ordering invariants, digest verification, and semantic constraints not expressible in JSON Schema. Validated by runtime invariant checks, not Ajv.",
+      "positive": [
+        {
+          "fixture_id": "pos-file-range-ordered",
+          "invariant_id": "file-byte-range-ordering",
+          "target": "#/$defs/evidence-locator",
+          "value": {
+            "locator_kind": "file-range",
+            "path": "src/main.ts",
+            "start_line": 10,
+            "end_line": 20
+          }
+        },
+        {
+          "fixture_id": "pos-byte-range-ordered",
+          "invariant_id": "file-byte-range-ordering",
+          "target": "#/$defs/evidence-locator",
+          "value": {
+            "locator_kind": "byte-range",
+            "start": 100,
+            "end": 500
+          }
+        },
+        {
+          "fixture_id": "pos-digest-match",
+          "invariant_id": "digest-verification-canonical-bytes",
+          "target": "#/$defs/artifact-ref",
+          "context": {
+            "resolved_artifact_json": {
+              "a": 1
+            }
+          },
+          "value": {
+            "artifact_kind": "code-snapshot",
+            "artifact_id": "snap-match",
+            "version_digest": {
+              "algorithm": "sha256",
+              "value": "015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862"
+            }
+          }
+        },
+        {
+          "fixture_id": "pos-evidence-locator-compatible",
+          "invariant_id": "evidence-locator-compatibility",
+          "target": "#/$defs/evidence-ref",
+          "context": {
+            "allowed_locator_kinds": ["artifact-root", "file-range"]
+          },
+          "value": {
+            "evidence_type": "file-content",
+            "artifact_ref": {
+              "artifact_kind": "code-snapshot",
+              "artifact_id": "snap-lines",
+              "version_digest": {
+                "algorithm": "sha256",
+                "value": "b4d9f80a12c34e56f7890a12b3c45d67e89f01a23c4d567e890f1b2c34d5e6f7"
+              }
+            },
+            "locator": {
+              "locator_kind": "file-range",
+              "path": "src/main.ts",
+              "start_line": 1,
+              "end_line": 10
+            }
+          }
+        }
+      ],
+      "negative": [
+        {
+          "fixture_id": "neg-file-range-reversed",
+          "description": "File-range locator where start_line exceeds end_line; violates invariant \u0027file-byte-range-ordering\u0027",
+          "invariant_id": "file-byte-range-ordering",
+          "target": "#/$defs/evidence-locator",
+          "value": {
+            "locator_kind": "file-range",
+            "path": "src/main.ts",
+            "start_line": 42,
+            "end_line": 10
+          }
+        },
+        {
+          "fixture_id": "neg-byte-range-reversed",
+          "description": "Byte-range locator where start exceeds end; violates invariant \u0027file-byte-range-ordering\u0027",
+          "invariant_id": "file-byte-range-ordering",
+          "target": "#/$defs/evidence-locator",
+          "value": {
+            "locator_kind": "byte-range",
+            "start": 500,
+            "end": 100
+          }
+        },
+        {
+          "fixture_id": "neg-digest-mismatch",
+          "description": "artifact-ref with a well-formed digest that does not match the referenced artifact\u0027s canonical bytes; violates invariant \u0027digest-verification-canonical-bytes\u0027",
+          "invariant_id": "digest-verification-canonical-bytes",
+          "target": "#/$defs/artifact-ref",
+          "context": {
+            "resolved_artifact_json": {
+              "a": 1
+            }
+          },
+          "value": {
+            "artifact_kind": "code-snapshot",
+            "artifact_id": "snap-mismatch",
+            "version_digest": {
+              "algorithm": "sha256",
+              "value": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        },
+        {
+          "fixture_id": "neg-evidence-locator-incompatible",
+          "description": "evidence-ref with file-range locator referencing an artifact kind that does not support line numbers; violates invariant \u0027evidence-locator-compatibility\u0027",
+          "invariant_id": "evidence-locator-compatibility",
+          "target": "#/$defs/evidence-ref",
+          "context": {
+            "allowed_locator_kinds": ["artifact-root", "json-pointer"]
+          },
+          "value": {
+            "evidence_type": "file-content",
+            "artifact_ref": {
+              "artifact_kind": "sourcing-assessment",
+              "artifact_id": "sa-1",
+              "version_digest": {
+                "algorithm": "sha256",
+                "value": "b4d9f80a12c34e56f7890a12b3c45d67e89f01a23c4d567e890f1b2c34d5e6f7"
+              }
+            },
+            "locator": {
+              "locator_kind": "file-range",
+              "path": "invalid.txt",
+              "start_line": 1,
+              "end_line": 10
+            }
+          }
+        }
+      ]
+    }
+  },
+  "invariants": [
+    {
+      "invariant_id": "file-byte-range-ordering",
+      "applies_to": "#/$defs/evidence-locator",
+      "statement": "For evidence-locator variants: byte-range is half-open [start, end) measured as byte offsets into the complete canonical byte representation of the referenced immutable artifact, with start \u003c= end; file-range uses inclusive line numbering with start_line \u003c= end_line, and path is resolved inside the referenced artifact. JSON Schema\u0027s \u0027minimum\u0027 keyword cannot express relative ordering between two sibling properties.",
+      "enforcement": "runtime-check",
+      "evidence_requirement": "Runtime tests MUST prove both ordering and resolution basis: reject start_line \u003e end_line and start \u003e end, and verify that byte-range resolution reads the referenced artifact\u0027s RFC 8785 canonical bytes rather than its original serialized input.",
+      "decision_source": {
+        "artifact_kind": "decision-record",
+        "artifact_id": "dec-024",
+        "version_digest": {
+          "algorithm": "sha256",
+          "value": "b04bad55af8bec26a1247692013b12d7a2e97afee184fa6b4d8421045e3dc5a2"
+        }
+      }
+    },
+    {
+      "invariant_id": "evidence-locator-compatibility",
+      "applies_to": "#/$defs/evidence-ref",
+      "statement": "The evidence locator kind must be semantically compatible with the evidence_type and the artifact_kind of the referenced artifact. For example: a \u0027file-range\u0027 locator is only meaningful for artifact kinds that represent structured documents with line numbers (code-snapshot, task-spec, etc.), not for binary or opaque artifacts. A \u0027check-id\u0027 locator requires the artifact to be a review-verdict or investigation-report that contains named checks. This cross-field constraint is not expressible in JSON Schema because it depends on an externally maintained compatibility matrix between artifact_kind, evidence_type, and locator_kind.",
+      "enforcement": "workflow-check",
+      "evidence_requirement": "Workflow MUST maintain and consult a compatibility matrix mapping (artifact_kind x evidence_type) -> allowed locator_kind values. Any evidence-ref that violates the matrix MUST be rejected before protocol processing.",
+      "decision_source": {
+        "artifact_kind": "decision-record",
+        "artifact_id": "dec-024",
+        "version_digest": {
+          "algorithm": "sha256",
+          "value": "b04bad55af8bec26a1247692013b12d7a2e97afee184fa6b4d8421045e3dc5a2"
+        }
+      }
+    },
+    {
+      "invariant_id": "artifact-ref-immutable-resolution",
+      "applies_to": "#/$defs/artifact-ref",
+      "statement": "An artifact ref with a given version_digest MUST always resolve to the same artifact content. The version_digest acts as a content-address; any mutation of the artifact MUST produce a new version_digest, and the old version_digest MUST continue to resolve to the prior content. JSON Schema validates the digest\u0027s shape but cannot enforce that storage preserves immutability over time.",
+      "enforcement": "workflow-check",
+      "evidence_requirement": "The artifact store MUST be content-addressed or append-only. Workflow MUST verify on every resolution that the recomputed canonical digest of the resolved content matches version_digest. Mismatch MUST halt processing and raise a contract-violation escalation.",
+      "decision_source": {
+        "artifact_kind": "decision-record",
+        "artifact_id": "dec-024",
+        "version_digest": {
+          "algorithm": "sha256",
+          "value": "b04bad55af8bec26a1247692013b12d7a2e97afee184fa6b4d8421045e3dc5a2"
+        }
+      }
+    },
+    {
+      "invariant_id": "provenance-cross-artifact-consistency",
+      "applies_to": "#/$defs/provenance",
+      "statement": "When provenance_kind is \u0027agent-judgment\u0027 or \u0027agent-proposed\u0027, the claimed agent_role_id and session_id MUST correspond to actual agent role registrations and session records in the system. JSON Schema validates shape (non-null, minLength \u003e= 1) but cannot verify that the claimed identifiers exist or that the agent role has the authority implied by the provenance context. Additionally, provenance attached to different artifacts that reference the same session MUST have consistent timestamps within system clock tolerance.",
+      "enforcement": "workflow-check",
+      "evidence_requirement": "Workflow MUST cross-reference agent_role_id against the registered agent catalog and session_id against the session store. Stale or fabricated identifiers MUST cause rejection. Timestamp consistency across artifacts from the same session MUST be verified.",
+      "decision_source": {
+        "artifact_kind": "decision-record",
+        "artifact_id": "dec-024",
+        "version_digest": {
+          "algorithm": "sha256",
+          "value": "b04bad55af8bec26a1247692013b12d7a2e97afee184fa6b4d8421045e3dc5a2"
+        }
+      }
+    },
+    {
+      "invariant_id": "deviation-affected-requirements-materiality",
+      "applies_to": "#/$defs/deviation",
+      "statement": "Every requirement listed in affected_requirements MUST be materially impacted by the deviation\u0027s subject. Including a requirement that is structurally unrelated to the subject (e.g., a security requirement for a deviation about UI layout) constitutes a false claim of impact. JSON Schema validates shape and uniqueItems but cannot verify semantic materiality. Additionally, when the deviation subject is itself a requirement (subject_kind: \u0027requirement\u0027), that subject MUST NOT appear in affected_requirements unless the deviation represents a self-referential override with explicit justification in the reason field.",
+      "enforcement": "semantic-review",
+      "evidence_requirement": "An independently dispatched reviewer agent MUST confirm that each affected_requirements entry maps to a real impact path from the deviation subject. Automated checks MAY flag requirement-subject pairs with no known dependency path for review, but final materiality judgment requires semantic assessment. The runtime escalates to the human only when the judgment changes intent, values, accepted risk, or an irreversible choice.",
+      "decision_source": {
+        "artifact_kind": "decision-record",
+        "artifact_id": "dec-024",
+        "version_digest": {
+          "algorithm": "sha256",
+          "value": "b04bad55af8bec26a1247692013b12d7a2e97afee184fa6b4d8421045e3dc5a2"
+        }
+      }
+    },
+    {
+      "invariant_id": "correction-evidence-truthfulness",
+      "applies_to": "#/$defs/correction-record",
+      "statement": "The correction record\u0027s \u0027result\u0027 claim (success/failure/partial) MUST be verifiable from the evidence array. A result of \u0027success\u0027 with no evidence or with evidence that only shows the original defect is invalid. Evidence entries MUST point to independently verifiable observations (test results, check outputs, diffs showing the fix) rather than self-referential claims. JSON Schema validates structure but cannot evaluate whether evidence actually supports the claimed result.",
+      "enforcement": "semantic-review",
+      "evidence_requirement": "Automated reviewer MUST assess that each evidence entry is independently verifiable (resolving its artifact_ref yields content whose locator points to concrete observations), and that the collective evidence logically supports the claimed result. Automated checks MUST verify evidence-ref resolvability; truthfulness assessment may require semantic analysis. Escalation to a human occurs only when the judgment changes intent, values, accepted risk, or entails an irreversible decision.",
+      "decision_source": {
+        "artifact_kind": "decision-record",
+        "artifact_id": "dec-024",
+        "version_digest": {
+          "algorithm": "sha256",
+          "value": "b04bad55af8bec26a1247692013b12d7a2e97afee184fa6b4d8421045e3dc5a2"
+        }
+      }
+    },
+    {
+      "invariant_id": "escalation-routing-catalog-owned",
+      "applies_to": "#/$defs/escalation",
+      "statement": "The escalation payload describes what happened (escalation_class, cause, context, what_is_needed) but does NOT determine routing. Routing targets (which role receives the escalation, priority, SLA) are owned by the Workflow Catalog, which maps escalation_class to pre-configured routing rules. This prevents payload manipulation from redirecting escalations to inappropriate recipients. JSON Schema validates the escalation_class enum but cannot enforce that routing is determined externally.",
+      "enforcement": "workflow-check",
+      "evidence_requirement": "Workflow MUST resolve escalation_class against the Workflow Catalog before dispatching. If no catalog entry exists for the escalation_class, the workflow MUST reject the escalation as unroutable. The payload MUST NOT contain routing override fields.",
+      "decision_source": {
+        "artifact_kind": "decision-record",
+        "artifact_id": "dec-024",
+        "version_digest": {
+          "algorithm": "sha256",
+          "value": "b04bad55af8bec26a1247692013b12d7a2e97afee184fa6b4d8421045e3dc5a2"
+        }
+      }
+    },
+    {
+      "invariant_id": "resolved-requirement-uniqueness",
+      "applies_to": "#/$defs/deviation/properties/affected_requirements",
+      "statement": "Each affected_requirements entry MUST resolve to a distinct immutable requirement version. JSON Schema uniqueItems checks only the reference objects and cannot detect aliases that resolve to the same canonical requirement content.",
+      "enforcement": "workflow-check",
+      "evidence_requirement": "The runtime workflow engine MUST resolve every requirement-ref, verify its version, compare canonical content digests, and reject duplicate resolved requirements before semantic review.",
+      "decision_source": {
+        "artifact_kind": "decision-record",
+        "artifact_id": "dec-024",
+        "version_digest": {
+          "algorithm": "sha256",
+          "value": "b04bad55af8bec26a1247692013b12d7a2e97afee184fa6b4d8421045e3dc5a2"
+        }
+      }
+    },
+    {
+      "invariant_id": "digest-verification-canonical-bytes",
+      "applies_to": "#/$defs/digest",
+      "statement": "Runtime MUST recompute SHA-256 over the artifact\u0027s complete canonical byte representation (RFC 8785, as defined in this document\u0027s canonicalization section) and compare against every claimed digest value on ingestion and resolution. Mismatch causes rejection. Ajv validates digest format only; workflow orchestration does not perform digest recomputation. A validly-shaped digest that does not match the artifact\u0027s canonical bytes is a protocol violation.",
+      "enforcement": "runtime-check",
+      "evidence_requirement": "The runtime (not Ajv nor workflow orchestration) MUST recompute SHA-256 over the artifact\u0027s canonical byte representation and compare against the claimed digest value on every artifact ingestion and resolution. Mismatch MUST cause rejection. This check MUST be performed even when the digest is embedded in a different artifact (e.g., artifact-ref version_digest values).",
+      "decision_source": {
+        "artifact_kind": "decision-record",
+        "artifact_id": "dec-024",
+        "version_digest": {
+          "algorithm": "sha256",
+          "value": "b04bad55af8bec26a1247692013b12d7a2e97afee184fa6b4d8421045e3dc5a2"
+        }
+      }
+    }
+  ]
+}

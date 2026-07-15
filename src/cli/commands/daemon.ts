@@ -41,8 +41,10 @@ export const command: Command = {
         // Clean shutdown on Ctrl+C / kill: release the store and remove the
         // lock and token files instead of leaving them behind.
         const shutdown = (): void => {
-          instance.stop();
-          resolve(EXIT.OK);
+          void instance.stop().then(
+            () => { resolve(EXIT.OK); },
+            () => { resolve(EXIT.SYSTEM); },
+          );
         };
         process.once('SIGINT', shutdown);
         process.once('SIGTERM', shutdown);
