@@ -4,7 +4,7 @@ import type { Command, Io } from '../command.types.js';
 import { commonRoot } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
 import { createOperationalServer } from '../../serve/server.js';
-import { NODE_ERROR_CODE } from '../../platform.constants.js';
+import { NODE_ERROR_CODE, PROCESS_EVENT } from '../../platform.constants.js';
 import { DAEMON_DEFAULT_PORT } from '../../daemon/daemon.constants.js';
 import { startDaemon } from '../../daemon/daemon.js';
 import { SERVE_DEFAULT } from './serve.constants.js';
@@ -77,7 +77,7 @@ async function runServer(args: string[], io: Io): Promise<number> {
       const onSignal = (): void => { void stop(EXIT.OK); };
       process.on('SIGINT', onSignal);
       process.on('SIGTERM', onSignal);
-      server.on('error', (error: NodeJS.ErrnoException) => {
+      server.on(PROCESS_EVENT.ERROR, (error: NodeJS.ErrnoException) => {
         io.err(error.code === NODE_ERROR_CODE.ADDRESS_IN_USE
           ? `Port ${options.port} is already in use`
           : `Server error: ${error.message}`);

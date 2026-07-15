@@ -38,7 +38,7 @@ test('review preflight aggregates the mechanical checks and a write_set violatio
   const session = ensureSession(store, root);
   startPacket(store, session, root, 'GATE-004-TEST');
 
-  const report = runPreflight(store, 'GATE-004-TEST', root);
+  const report = await runPreflight(store, 'GATE-004-TEST', root);
 
   assert.ok(report.writeSetViolations.length > 0, 'should have write_set violations');
   assert.ok(report.writeSetViolations.some((f) => f.includes('outside/evil.ts')), 'should name the violating file');
@@ -53,7 +53,7 @@ test('review preflight aggregates the mechanical checks and a write_set violatio
   execFileSync('git', ['rm', 'outside/evil.ts'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'remove violation'], { cwd: root });
 
-  const report2 = runPreflight(store, 'GATE-004-TEST', root);
+  const report2 = await runPreflight(store, 'GATE-004-TEST', root);
 
   assert.equal(report2.writeSetViolations.length, 0, 'no violations after fix');
   assert.equal(report2.overall, 'pass', 'overall should be PASS after fix');
@@ -77,7 +77,7 @@ test('F1: checkRedTest returns FAIL when RED test name not in any changed file d
   const session = ensureSession(store, root);
   startPacket(store, session, root, 'GATE-004-TEST');
 
-  const report = runPreflight(store, 'GATE-004-TEST', root);
+  const report = await runPreflight(store, 'GATE-004-TEST', root);
 
   assert.equal(report.redTestFound, false, 'should report RED test not found');
 
@@ -88,7 +88,7 @@ test('F1: checkRedTest returns FAIL when RED test name not in any changed file d
   store.close();
 });
 
-test('F4: verify step runs in a disposable worktree that is cleaned up', async () => {
+test('F4: verify step leaves no temporary worktree behind', async () => {
   const root = await setupPreflightRepo();
   const store = openStore(root);
 
@@ -111,7 +111,7 @@ test('F4: verify step runs in a disposable worktree that is cleaned up', async (
   const reviewDir = join(root, '.worktrees', 'review');
   const beforeEntries = existsSync(reviewDir) ? readdirSync(reviewDir) : [];
 
-  const report = runPreflight(store, 'GATE-004-TEST', root);
+  const report = await runPreflight(store, 'GATE-004-TEST', root);
 
   const v = report.checks.find((c) => c.name === PREFLIGHT_CHECK_NAME.VERIFY);
   assert.ok(v !== undefined, 'verify check should exist');

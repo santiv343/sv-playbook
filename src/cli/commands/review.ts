@@ -51,7 +51,7 @@ function renderPreflightTable(report: PreflightReport, io: Io): void {
   renderViolations(report, io);
 }
 
-function handlePreflight(args: string[], io: Io): number {
+async function handlePreflight(args: string[], io: Io): Promise<number> {
   const parsed = parseArgs({ args, allowPositionals: true, options: {
     json: { type: 'boolean' },
     pr: { type: 'string' },
@@ -64,7 +64,7 @@ function handlePreflight(args: string[], io: Io): number {
   const repoRoot = commonRoot(getCwd());
   const store = openStore(repoRoot);
   try {
-    const report = runPreflight(store, packetId, getCwd(), { pr: parsed.values.pr });
+    const report = await runPreflight(store, packetId, getCwd(), { pr: parsed.values.pr });
     if (parsed.values.json === true) io.out(JSON.stringify(report));
     else renderPreflightTable(report, io);
     return report.overall === PREFLIGHT_STATUS.PASS ? EXIT.OK : EXIT.GATE_FAIL;
@@ -76,15 +76,15 @@ function handlePreflight(args: string[], io: Io): number {
 export const command: Command = {
   name: REVIEW_CMD_NAME,
   summary: 'Review preflight: mechanical checks for packets before reviewer dispatch',
-  run(args, io): Promise<number> {
+  async run(args, io): Promise<number> {
     try {
       const [sub, ...rest] = args;
-      if (sub === PREFLIGHT_CMD) return Promise.resolve(handlePreflight(rest, io));
+      if (sub === PREFLIGHT_CMD) return await handlePreflight(rest, io);
       throw new UsageError(sub === undefined ? 'missing review subcommand' : `unknown review subcommand: ${sub}`);
     } catch (error) {
       if (error instanceof UsageError) {
         io.err(error.message);
-        return Promise.resolve(EXIT.USAGE);
+        return EXIT.USAGE;
       }
       throw error;
     }

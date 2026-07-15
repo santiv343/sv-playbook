@@ -15,4 +15,4 @@ export const GIT_ARGUMENT = {
 
 export const GIT_BASE_REFERENCE = ['origin/main', 'origin/master', 'main', 'master'] as const;
 
-export const PROCESS_STDIO = { PIPE: 'pipe' } as const;
+export const PROCESS_STDIO = { IGNORE: 'ignore', PIPE: 'pipe' } as const;

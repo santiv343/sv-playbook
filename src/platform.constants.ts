@@ -11,6 +11,13 @@ export const NODE_ERROR_PROPERTY = {
   CODE: 'code',
 } as const;
 
+export const PROCESS_EVENT = {
+  CLOSE: 'close',
+  DATA: 'data',
+  ERROR: 'error',
+  EXIT: 'exit',
+} as const;
+
 export const HTTP_METHOD = {
   GET: 'GET',
   POST: 'POST',

@@ -16,6 +16,7 @@ import { requireActiveRoleCatalog } from '../roles/catalog-activation.js';
 import { bootstrapBundledRoleCatalog } from '../roles/bundled-profile-bootstrap.js';
 import { BUNDLED_ROLE_ID } from '../roles/bundled-profile.constants.js';
 import { createPacket, ensureSession, movePacket, startPacket } from '../tasks/service.js';
+import { movePacketToReview } from '../tasks/review-transition.js';
 import { loadWorkDefinition } from '../tasks/work-definitions.js';
 import { reviewCandidates } from './schema.constants.js';
 import { REVIEW_CANDIDATE_ERROR } from './review-candidate.constants.js';
@@ -95,7 +96,7 @@ test('review dispatch is blocked until runtime creates an immutable SHA-bound ca
   await writeFile(join(root, 'src', 'large-candidate.txt'), 'x'.repeat(LARGE_CANDIDATE_BYTES), 'utf8');
   git(root, ['add', 'src/candidate.ts', 'src/large-candidate.txt']);
   git(root, ['commit', '-m', 'candidate']);
-  movePacket(store, sessionId, definition.packetId, 'review');
+  await movePacketToReview(store, sessionId, definition.packetId);
   assert.equal(await readFile(join(root, '.verify-count'), 'utf8'), '1');
 
   const candidate = store.orm.select().from(reviewCandidates).get();

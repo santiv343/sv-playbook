@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { CLI_FORCE_FLAG, EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
-import { commonRoot, openStore, worktreeRoot } from '../../db/store.js';
+import { commonRoot, worktreeRoot } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
 import { GITHUB_FIELD, PR_STATE } from '../../reconcile/reconcile.constants.js';
 import { createStateBackup, latestStateBackupAgeHours } from '../../db/backup.js';
@@ -31,14 +31,16 @@ import {
   takeoverPacket,
   amendPacket,
 } from '../../tasks/service.js';
+import { movePacketToReview } from '../../tasks/review-transition.js';
 import { DEFAULT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, PACKET_STATUSES, STATUS } from '../../tasks/service.constants.js';
 import { LifecycleError } from '../../tasks/service.errors.js';
 import type { PacketStatus, RecoveryReport } from '../../tasks/service.types.js';
 import { checkDestructiveGate, queryDestructiveCounts } from '../destructive-gate.js';
+import { withStore, withStoreAsync } from '../store.js';
 
 interface Subcommand {
   usage: string;
-  run(rest: string[], io: Io): number;
+  run(rest: string[], io: Io): number | Promise<number>;
 }
 
 class UsageError extends Error {}
@@ -57,16 +59,6 @@ function stringValues(value: string | boolean | string[] | undefined): string[] 
 
 function isPacketStatus(value: string): value is PacketStatus {
   return PACKET_STATUSES.some((status) => status === value);
-}
-
-function withStore<T>(fn: (store: Store, repoRoot: string) => T): T {
-  const repoRoot = commonRoot(getCwd());
-  const store = openStore(repoRoot);
-  try {
-    return fn(store, repoRoot);
-  } finally {
-    store.close();
-  }
 }
 
 function backupForEvent(repoRoot: string, event: BackupEvent, reason: BackupReason, allowFreshLeases?: boolean): void {
@@ -197,12 +189,15 @@ function handleStart(args: string[], io: Io): number {
   });
 }
 
-function handleMove(args: string[], io: Io): number {
+async function handleMove(args: string[], io: Io): Promise<number> {
   const [packetId, status] = args;
   if (packetId === undefined || status === undefined || args.length !== 2) throw new UsageError('move requires <ID> <status>');
   if (!isPacketStatus(status)) throw new UsageError(`unknown status: ${status}`);
-  return withStore((store, repoRoot) => {
-    const from = movePacket(store, ensureSession(store, getCwd()), packetId, status);
+  return withStoreAsync(async (store, repoRoot) => {
+    const sessionId = ensureSession(store, getCwd());
+    const from = status === STATUS.REVIEW
+      ? await movePacketToReview(store, sessionId, packetId)
+      : movePacket(store, sessionId, packetId, status);
     if (status === STATUS.DONE) backupForEvent(repoRoot, BACKUP_EVENT.DONE, BACKUP_REASON.AUTO_DONE);
     io.out(`moved ${packetId}: ${from} -> ${status}`);
     return EXIT.OK;
@@ -364,14 +359,14 @@ export const command: Command = {
   name: 'task',
   summary: 'Create, list, start, move, inspect, and recover execution packets',
   destructiveSubcommands: [EVENT_TAKEOVER],
-  run(args, io) {
+  async run(args, io) {
     try {
       const [sub, ...rest] = args;
       const c = sub === undefined ? undefined : SUBCOMMANDS.get(sub);
-      if (c !== undefined) return Promise.resolve(c.run(rest, io));
+      if (c !== undefined) return await c.run(rest, io);
       throw new UsageError(sub === undefined ? 'missing task subcommand' : `unknown task subcommand: ${sub}`);
     } catch (error) {
-      return Promise.resolve(handleTaskError(error, io));
+      return handleTaskError(error, io);
     }
   },
 };

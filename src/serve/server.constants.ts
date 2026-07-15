@@ -9,7 +9,7 @@ export const CONTENT_TYPE = {
 
 export const SSE_EVENT = {
   DASHBOARD: 'dashboard',
-  ERROR: 'error',
+  ERROR: PROCESS_EVENT.ERROR,
 } as const;
 
 export const SERVER_RESPONSE = {
@@ -18,3 +18,4 @@ export const SERVER_RESPONSE = {
 } as const;
 
 export const RESOLUTION_SUFFIX = '/resolve';
+import { PROCESS_EVENT } from '../platform.constants.js';

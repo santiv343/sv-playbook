@@ -19,7 +19,7 @@ import { taskEvents } from '../tasks/schema.constants.js';
 import { EVENT_EVIDENCE } from '../tasks/service.constants.js';
 import type { LeaseInfo } from '../tasks/service.types.js';
 import { runPreflight } from './preflight.js';
-import { PREFLIGHT_EVENT_PREFIX, PREFLIGHT_STATUS } from './preflight.types.js';
+import { PREFLIGHT_EVENT_PREFIX, PREFLIGHT_STATUS, type PreflightReport } from './preflight.types.js';
 import {
   REVIEW_CANDIDATE_ARTIFACT_ID_PREFIX,
   REVIEW_CANDIDATE_CONTRACT_REF,
@@ -72,7 +72,7 @@ function activeProjections(
   return projections.map(({ adapterId, receiptId, artifactDigest }) => ({ adapterId, receiptId, artifactDigest }));
 }
 
-function assertPreflight(report: ReturnType<typeof runPreflight>): void {
+function assertPreflight(report: PreflightReport): void {
   const unacceptable = report.checks.filter((check) =>
     check.status === PREFLIGHT_STATUS.FAIL || check.status === PREFLIGHT_STATUS.UNKNOWN);
   if (report.headSha === '' || unacceptable.length > EMPTY_SIZE) {
@@ -133,14 +133,14 @@ export function reviewCandidateRequired(store: Store, status: string): boolean {
     )).get() !== undefined;
 }
 
-export function assembleReviewCandidate(
+export async function assembleReviewCandidate(
   store: Store,
   definition: StoredWorkDefinition,
   lease: LeaseInfo,
-): PendingReviewCandidate {
+): Promise<PendingReviewCandidate> {
   const maxBuffer = loadConfig(lease.worktree).reviewCandidateMaxBytes;
   const content = candidateContent(lease.worktree, maxBuffer);
-  const report = runPreflight(store, definition.packetId, lease.worktree, {
+  const report = await runPreflight(store, definition.packetId, lease.worktree, {
     pr: undefined,
     persistEvent: false,
   });

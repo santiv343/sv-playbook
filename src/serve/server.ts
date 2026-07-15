@@ -11,7 +11,7 @@ import { readWorkflowDashboard } from '../orchestration/observability.js';
 import { readWorkflowLaunchCatalog } from '../orchestration/launch-catalog.js';
 import { startHumanIntake } from '../orchestration/human-intake.js';
 import { HUMAN_INTAKE_VALUE } from '../orchestration/human-intake.constants.js';
-import { EMPTY_SIZE, HTTP_METHOD, HTTP_STATUS, PATH_TOKEN, REFERENCE_KIND, REFERENCE_MIN_VERSION } from '../platform.constants.js';
+import { EMPTY_SIZE, HTTP_METHOD, HTTP_STATUS, PATH_TOKEN, PROCESS_EVENT, REFERENCE_KIND, REFERENCE_MIN_VERSION } from '../platform.constants.js';
 import { readBoardStatus } from '../status/status.js';
 import { SERVE_DEFAULT, SERVE_ROUTE } from '../cli/commands/serve.constants.js';
 import { CONTENT_TYPE, RESOLUTION_SUFFIX, SERVER_RESPONSE, SSE_EVENT } from './server.constants.js';
@@ -73,7 +73,7 @@ function readBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let body = '';
     req.setEncoding('utf8');
-    req.on('data', (chunk: string) => {
+    req.on(PROCESS_EVENT.DATA, (chunk: string) => {
       body += chunk;
       if (Buffer.byteLength(body) > SERVE_DEFAULT.MAX_BODY_BYTES) reject(new RangeError('request body is too large'));
     });
@@ -82,7 +82,7 @@ function readBody(req: IncomingMessage): Promise<unknown> {
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
-    req.on('error', reject);
+    req.on(PROCESS_EVENT.ERROR, reject);
   });
 }
 
@@ -234,7 +234,7 @@ function attachEventStream(
   });
   clients.add(res);
   writeDashboard(store, repoRoot, res);
-  req.on('close', () => { clients.delete(res); });
+  req.on(PROCESS_EVENT.CLOSE, () => { clients.delete(res); });
 }
 
 export function createOperationalServer(
@@ -262,6 +262,6 @@ export function createOperationalServer(
     if (clients.size === EMPTY_SIZE) return;
     for (const client of clients) writeDashboard(store, repoRoot, client);
   }, options.refreshMs);
-  server.on('close', () => { clearInterval(timer); });
+  server.on(PROCESS_EVENT.CLOSE, () => { clearInterval(timer); });
   return server;
 }

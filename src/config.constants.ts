@@ -1,6 +1,8 @@
 import type { PlaybookConfig } from './config.types.js';
 import { BACKUP_EVENT, BACKUP_MAX_AGE_HOURS_DEFAULT, BACKUP_RETENTION_DEFAULT } from './db/backup.constants.js';
 
+export const PLAYBOOK_CONFIG_FILE_NAME = 'playbook.config.json';
+
 export const MODEL_EVALUATION_DEFAULTS = {
   evidenceValidityDays: 30,
 } as const;

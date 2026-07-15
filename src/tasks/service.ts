@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from '../db/store.types.js';
@@ -8,7 +8,6 @@ import { generatePacketDocument, parsePacketDocument } from '../packets/document
 import type { PacketDefinition } from '../packets/document.types.js';
 import { LifecycleError } from './service.errors.js';
 import { contentDir } from '../content.js';
-import { loadConfig } from '../config.js';
 import { FILE_EXTENSION, PATH_TOKEN } from '../platform.constants.js';
 import { getActiveCount, sprintWipLimit, taskSprintId } from '../sprints/service.js';
 import {
@@ -31,7 +30,7 @@ import {
   STATUS,
   TASK_TYPE_PREFIX,
 } from './service.constants.js';
-import type { LeaseInfo, PacketStatus, RecoveryReport, ImportResult } from './service.types.js';
+import type { LeaseInfo, PacketStatus, PreparedReviewCandidate, RecoveryReport, ImportResult } from './service.types.js';
 import { transact } from './transaction.js';
 import { assertDependenciesTerminal, currentPacketStatus } from './dependencies.js';
 import { loadWorkDefinition, recordWorkDefinition, workDefinitionValue } from './work-definitions.js';
@@ -40,12 +39,10 @@ import { packets } from './schema.constants.js';
 import { overlaps } from './write-set.js';
 import { captureLegacyReviewEvidence } from './legacy-review-evidence.js';
 import {
-  assembleReviewCandidate,
   persistReviewCandidate,
   reviewCandidateRequired,
 } from '../review/review-candidate.js';
-import { PROCESS_STDIO } from '../git.constants.js';
-import { PREFLIGHT_VERIFY_TIMEOUT_MS } from '../review/preflight.constants.js';
+import { verifyLegacyReviewSync } from './legacy-review-verification.js';
 export { amendPacket } from './amend.js';
 export { overlaps } from './write-set.js';
 const now = (): string => new Date().toISOString();
@@ -184,7 +181,7 @@ export function startPacket(store: Store, sessionId: string, worktree: string, p
     recordTransition(store, packetId, STATUS.READY, STATUS.ACTIVE, sessionId);
   });
 }
-function assertLeaseForActive(store: Store, sessionId: string | undefined, packetId: string): void {
+export function assertLeaseForActive(store: Store, sessionId: string | undefined, packetId: string): void {
   const lease = leaseOf(store, packetId);
   if (lease === undefined || sessionId === undefined) throw new LifecycleError('lease required to leave active');
   if (lease.sessionId !== sessionId) throw new LifecycleError(`lease held by another session ${lease.sessionId}`);
@@ -242,27 +239,14 @@ function gateVerify(store: Store, packetId: string, from: string, to: string): v
   if (reviewCandidateRequired(store, to)) return;
   const lease = leaseOf(store, packetId);
   if (lease === undefined) return;
-  const cfgPath = join(lease.worktree, 'playbook.config.json');
-  if (!existsSync(cfgPath) || /enforceVerifyOnReview\s*:\s*false/.test(readFileSync(cfgPath, 'utf8'))) return;
-  const config = loadConfig(lease.worktree);
-  if (config.verifyCommand.trim() === '') return;
-  try {
-    execSync(config.verifyCommand, {
-      cwd: lease.worktree,
-      timeout: PREFLIGHT_VERIFY_TIMEOUT_MS,
-      stdio: PROCESS_STDIO.PIPE,
-    });
-  } catch {
-    throw new LifecycleError(`verify command failed: ${config.verifyCommand}`);
-  }
+  verifyLegacyReviewSync(lease.worktree);
 }
-function prepareReviewCandidate(store: Store, packetId: string, from: string, to: string) {
-  if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW || !reviewCandidateRequired(store, to)) return undefined;
-  const definition = loadWorkDefinition(store, packetId);
-  const lease = leaseOf(store, packetId);
-  return lease === undefined ? undefined : { definition, candidate: assembleReviewCandidate(store, definition, lease) };
-}
-export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): string {
+export function validateMove(
+  store: Store,
+  sessionId: string | undefined,
+  packetId: string,
+  to: PacketStatus,
+): string {
   if (sessionId !== undefined) refreshHeartbeat(store, sessionId);
   const from = currentPacketStatus(store, packetId);
   if (to === STATUS.ACTIVE) throw new LifecycleError('use task start to activate a packet');
@@ -271,18 +255,37 @@ export function movePacket(store: Store, sessionId: string | undefined, packetId
   if (to === STATUS.READY) checkWriteSetConflict(store, packetId);
   if (from === STATUS.ACTIVE) assertLeaseForActive(store, sessionId, packetId);
   gateReview(store, packetId, from, to);
-  gateVerify(store, packetId, from, to);
   gateEvidence(store, packetId, to);
-  const prepared = prepareReviewCandidate(store, packetId, from, to);
-  if (prepared === undefined) captureLegacyReviewEvidence(store, packetId, from, to, leaseOf(store, packetId));
+  return from;
+}
+
+export function persistMove(
+  store: Store,
+  sessionId: string | undefined,
+  packetId: string,
+  from: string,
+  to: PacketStatus,
+  prepared?: PreparedReviewCandidate,
+): void {
   transact(store, () => {
     if (to === STATUS.READY) assertDependenciesTerminal(store, packetId);
     if (prepared !== undefined) persistReviewCandidate(store, prepared.definition, prepared.candidate);
     if (from !== STATUS.ACTIVE || to !== STATUS.BLOCKED) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
     recordTransition(store, packetId, from, to, sessionId);
   });
+}
+
+export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): string {
+  const from = validateMove(store, sessionId, packetId, to);
+  if (reviewCandidateRequired(store, to)) {
+    throw new LifecycleError('review candidate transitions require the asynchronous runtime operation');
+  }
+  gateVerify(store, packetId, from, to);
+  captureLegacyReviewEvidence(store, packetId, from, to, leaseOf(store, packetId));
+  persistMove(store, sessionId, packetId, from, to);
   return from;
 }
+
 export function recoverPacket(store: Store, packetId: string): RecoveryReport {
   const status = currentPacketStatus(store, packetId);
   const transitionRows = store.db.prepare("SELECT at, from_status, to_status, COALESCE(session_id, '-') AS session_id FROM transitions WHERE packet_id = ? ORDER BY seq DESC LIMIT 5").all(packetId);

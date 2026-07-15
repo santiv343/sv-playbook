@@ -9,6 +9,13 @@ export interface PreflightCheck {
   detail: string;
 }
 
+export interface VerifyProcessResult {
+  readonly exitCode: number | null;
+  readonly outputTail: string;
+  readonly spawnFailed: boolean;
+  readonly timedOut: boolean;
+}
+
 export interface PreflightReport {
   packetId: string;
   pr: string | undefined;

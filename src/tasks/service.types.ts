@@ -22,3 +22,10 @@ export interface ImportResult {
   updated: number;
 }
 
+export interface PreparedReviewCandidate {
+  readonly candidate: PendingReviewCandidate;
+  readonly definition: StoredWorkDefinition;
+}
+
+import type { PendingReviewCandidate } from '../review/review-candidate.types.js';
+import type { StoredWorkDefinition } from './work-definition.types.js';

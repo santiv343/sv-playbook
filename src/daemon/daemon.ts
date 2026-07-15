@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting } from '../db/store.js';
 import { assertExclusiveStoreLock } from '../db/inspection.js';
 import { DAEMON_LOCK_FILE, DAEMON_ROUTE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
-import { HTTP_METHOD, NODE_ERROR_CODE } from '../platform.constants.js';
+import { HTTP_METHOD, NODE_ERROR_CODE, PROCESS_EVENT } from '../platform.constants.js';
 import { nodeErrorCode } from '../platform.js';
 import { SVP_DIR } from '../db/store.constants.js';
 import { runWithContext, createContext } from '../runtime/context.js';
@@ -54,9 +54,9 @@ function writeLockFileAtomically(lockPath: string, pid: number, port: number): v
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => { chunks.push(chunk); });
+    req.on(PROCESS_EVENT.DATA, (chunk: Buffer) => { chunks.push(chunk); });
     req.on('end', () => { resolve(Buffer.concat(chunks).toString('utf8')); });
-    req.on('error', reject);
+    req.on(PROCESS_EVENT.ERROR, reject);
   });
 }
 
@@ -347,7 +347,7 @@ function listenForRequests(
   });
   state.server = server;
   subscribeToSignals(state, deps.signalPort, () => { shutdown.initiate(); });
-  server.on('error', (error: NodeJS.ErrnoException) => {
+  server.on(PROCESS_EVENT.ERROR, (error: NodeJS.ErrnoException) => {
     if (state.causalError === null) state.causalError = error;
     if (!state.stopping) shutdown.initiate();
   });
