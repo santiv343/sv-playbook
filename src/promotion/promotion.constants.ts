@@ -4,10 +4,17 @@ import { PREFLIGHT_STATUS } from '../review/preflight.types.js';
 import { SPRINT_STATE } from '../sprints/service.constants.js';
 import { STATUS } from '../tasks/service.constants.js';
 
+// Single source: src/contracts/review-verdict.constants.ts (the wire contract).
+// Re-exported here so existing promotion imports keep working.
+export { REVIEW_VERDICT_KIND } from '../contracts/review-verdict.constants.js';
+export {
+  REVIEW_VERDICT as PROMOTION_VERDICT,
+  REVIEW_VERDICT_VALUES as PROMOTION_VERDICT_VALUES,
+} from '../contracts/review-verdict.constants.js';
+
 export const PROMOTION_CONTROLLER_VERSION = 1;
 export const PROMOTION_OPERATION_ID = 'promotion.execute';
 export const PROMOTION_RECEIPT_KIND = 'promotion-receipt';
-export const REVIEW_VERDICT_KIND = 'review-verdict';
 export const PROMOTION_ID_PREFIX = {
   CANDIDATE: 'PROM-CAND-',
   EVENT: 'PROM-EVT-',
@@ -30,13 +37,6 @@ export const PROMOTION_STATUS = {
 } as const;
 
 export const PROMOTION_STATUS_VALUES = Object.values(PROMOTION_STATUS);
-
-export const PROMOTION_VERDICT = {
-  APPROVED: 'APPROVED',
-  REQUEST_CHANGES: 'REQUEST_CHANGES',
-} as const;
-
-export const PROMOTION_VERDICT_VALUES = Object.values(PROMOTION_VERDICT);
 
 export const PROMOTION_CHECK = {
   CLEAN_VERIFICATION: 'clean-verification',

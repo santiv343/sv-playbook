@@ -3,6 +3,7 @@ import { digest } from '../context/digest.js';
 import { ContextError } from '../context/context.errors.js';
 import { parseAgentJsonOutput } from '../contracts/structured-output.js';
 import { validateArtifact } from '../contracts/artifacts.js';
+import { hasReviewVerdictKind, parseReviewVerdict } from '../contracts/review-verdict.js';
 import type {
   AdapterCancellationReceipt,
   AdapterObservationRequest,
@@ -213,6 +214,9 @@ function validateCompletion(
   }
   try {
     const parsed = parseAgentJsonOutput(observation.output);
+    // Fail fast on the strict envelope kinds before the generic contract check:
+    // a malformed review verdict must fail the run here, not at promotion time.
+    if (hasReviewVerdictKind(parsed.value)) parseReviewVerdict(parsed.value);
     validateArtifact(context.store, context.runSpec.outputContractRef, parsed.value);
     finishRun(context.store, context.runSpec, GATEWAY_RUN_STATUS.COMPLETED,
       observation, nowMs, undefined, undefined, parsed.value);

@@ -1,10 +1,7 @@
 import { s } from '../schema/index.js';
 import { SchemaError } from '../schema/core.errors.js';
-import {
-  PROMOTION_ERROR,
-  PROMOTION_VERDICT_VALUES,
-  REVIEW_VERDICT_KIND,
-} from './promotion.constants.js';
+import { ReviewVerdictEnvelopeSchema } from '../contracts/review-verdict.constants.js';
+import { PROMOTION_ERROR } from './promotion.constants.js';
 import { PromotionError } from './promotion.errors.js';
 import type { ParsedReviewCandidateArtifact, ParsedReviewOutput } from './promotion.types.js';
 
@@ -33,18 +30,7 @@ const ReviewCandidateArtifactSchema = s.json(s.object({
   }),
 }));
 
-const ReviewOutputSchema = s.json(s.object({
-  kind: s.literal(REVIEW_VERDICT_KIND),
-  payload: s.object({
-    candidateSha: s.nonEmptyString(),
-    verdict: s.enu(PROMOTION_VERDICT_VALUES),
-    workDefinitionRef: s.object({
-      id: s.nonEmptyString(),
-      version: s.integer(),
-      digest: s.nonEmptyString(),
-    }),
-  }),
-}));
+const ReviewOutputSchema = s.json(ReviewVerdictEnvelopeSchema);
 
 type PromotionErrorCode = ConstructorParameters<typeof PromotionError>[0];
 
