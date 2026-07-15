@@ -8,6 +8,10 @@ export const MODEL_EVALUATION_DEFAULTS = {
 } as const;
 
 export const REVIEW_CANDIDATE_MAX_BYTES_DEFAULT = 16 * 1024 * 1024;
+export const REVIEW_PREFLIGHT_DEFAULTS = {
+  preparationCommand: '',
+  noOutputTimeoutMs: 10 * 60 * 1_000,
+} as const;
 
 export const DEFAULTS: PlaybookConfig = {
   productName: 'unnamed',
@@ -17,6 +21,7 @@ export const DEFAULTS: PlaybookConfig = {
   autonomy: 'strict',
   maxConcurrentWorkers: 3,
   reviewCandidateMaxBytes: REVIEW_CANDIDATE_MAX_BYTES_DEFAULT,
+  reviewPreflight: { ...REVIEW_PREFLIGHT_DEFAULTS },
   backup: {
     enabled: true,
     retention: BACKUP_RETENTION_DEFAULT,

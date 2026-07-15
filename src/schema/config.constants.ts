@@ -51,6 +51,11 @@ export const ModelEvaluationConfigSchema = s.object({
   evidenceValidityDays: s.positiveInteger(),
 });
 
+export const ReviewPreflightConfigSchema = s.object({
+  preparationCommand: s.string(),
+  noOutputTimeoutMs: s.positiveInteger(),
+});
+
 export const PlaybookConfigSchema = s.object({
   productName: s.string(),
   chatLanguage: s.string(),
@@ -59,6 +64,7 @@ export const PlaybookConfigSchema = s.object({
   autonomy: AutonomySchema,
   maxConcurrentWorkers: s.positiveInteger(),
   reviewCandidateMaxBytes: s.positiveInteger(),
+  reviewPreflight: ReviewPreflightConfigSchema,
   backup: BackupConfigSchema,
   modelEvaluation: ModelEvaluationConfigSchema,
   baseline: s.optional(BaselineConfigSchema),
@@ -85,6 +91,7 @@ function mergeDefaults(raw: Record<string, unknown>): Record<string, unknown> {
     autonomy: raw.autonomy ?? DEFAULTS.autonomy,
     maxConcurrentWorkers: raw.maxConcurrentWorkers ?? DEFAULTS.maxConcurrentWorkers,
     reviewCandidateMaxBytes: raw.reviewCandidateMaxBytes ?? DEFAULTS.reviewCandidateMaxBytes,
+    reviewPreflight: mergeNested(raw.reviewPreflight, DEFAULTS.reviewPreflight),
     backup: mergeNested(raw.backup, DEFAULTS.backup),
     modelEvaluation: mergeNested(raw.modelEvaluation, DEFAULTS.modelEvaluation),
     gates: mergeNested(raw.gates, DEFAULTS.gates),

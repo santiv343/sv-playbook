@@ -1,5 +1,14 @@
 export const OS_PLATFORM = { WINDOWS: 'win32' } as const;
 
+export const PROCESS_SIGNAL = { FORCE: 'SIGKILL' } as const;
+
+export const WINDOWS_PROCESS_TREE_COMMAND = 'taskkill';
+export const WINDOWS_PROCESS_TREE_ARGUMENT = {
+  PID: '/PID',
+  TREE: '/T',
+  FORCE: '/F',
+} as const;
+
 export const NODE_ERROR_CODE = {
   ADDRESS_IN_USE: 'EADDRINUSE',
   ALREADY_EXISTS: 'EEXIST',
@@ -17,6 +26,8 @@ export const PROCESS_EVENT = {
   ERROR: 'error',
   EXIT: 'exit',
 } as const;
+
+export const PROCESS_STDIO = { IGNORE: 'ignore', PIPE: 'pipe' } as const;
 
 export const HTTP_METHOD = {
   GET: 'GET',

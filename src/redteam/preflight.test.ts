@@ -67,12 +67,8 @@ test('F1: checkRedTest returns FAIL when RED test name not in any changed file d
   const root = await setupPreflightRepo();
   const store = openStore(root);
 
-  createPacket(store, root, def('GATE-004-TEST'), 'body');
-  await writeFile(
-    join(root, 'docs', 'packets', 'GATE-004-TEST.md'),
-    '## RED test\ndescribe(\'missing test\', () => {\n  // should be in diff but is not\n});\n\n## Other section\n',
-    'utf8',
-  );
+  createPacket(store, root, def('GATE-004-TEST'),
+    '## RED test\ndescribe(\'missing test\', () => {\n  // should be in diff but is not\n});\n\n## Other section\n');
   movePacket(store, undefined, 'GATE-004-TEST', 'ready');
   const session = ensureSession(store, root);
   startPacket(store, session, root, 'GATE-004-TEST');

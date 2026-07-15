@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -33,10 +33,13 @@ test('review dispatch is blocked until runtime creates an immutable SHA-bound ca
   git(root, ['config', 'user.name', 'Test']);
   await writeFile(join(root, 'README.md'), 'base\n', 'utf8');
   await writeFile(join(root, '.gitignore'), '.svp/\n.svp-session\n.worktrees/\n.verify-*\n', 'utf8');
-  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node .verify-runner.cjs' }), 'utf8');
-  git(root, ['add', 'README.md', '.gitignore', 'playbook.config.json']);
-  git(root, ['commit', '-m', 'base']);
-  await writeFile(join(root, '.verify-dependency'), 'available', 'utf8');
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({
+    verifyCommand: 'node .verify-runner.cjs',
+    reviewPreflight: {
+      preparationCommand: "node -e \"require('node:fs').writeFileSync('.verify-dependency','available')\"",
+      noOutputTimeoutMs: 5_000,
+    },
+  }), 'utf8');
   await writeFile(join(root, '.verify-runner.cjs'), [
     "const fs = require('node:fs');",
     "if (!fs.existsSync('.verify-dependency')) process.exit(2);",
@@ -44,6 +47,9 @@ test('review dispatch is blocked until runtime creates an immutable SHA-bound ca
     "const count = fs.existsSync(path) ? Number(fs.readFileSync(path, 'utf8')) : 0;",
     "fs.writeFileSync(path, String(count + 1));",
   ].join('\n'), 'utf8');
+  git(root, ['add', 'README.md', '.gitignore', 'playbook.config.json']);
+  git(root, ['add', '-f', '.verify-runner.cjs']);
+  git(root, ['commit', '-m', 'base']);
 
   const store = openStore(root);
   bootstrapBundledRoleCatalog(store);
@@ -97,8 +103,6 @@ test('review dispatch is blocked until runtime creates an immutable SHA-bound ca
   git(root, ['add', 'src/candidate.ts', 'src/large-candidate.txt']);
   git(root, ['commit', '-m', 'candidate']);
   await movePacketToReview(store, sessionId, definition.packetId);
-  assert.equal(await readFile(join(root, '.verify-count'), 'utf8'), '1');
-
   const candidate = store.orm.select().from(reviewCandidates).get();
   assert.ok(candidate);
   assert.equal(candidate.candidateSha, git(root, ['rev-parse', 'HEAD']));
@@ -111,6 +115,7 @@ test('review dispatch is blocked until runtime creates an immutable SHA-bound ca
     .where(eq(workflowArtifacts.id, candidate.artifactId)).get();
   assert.ok(artifactRow);
   assert.match(artifactRow.valueJson, /candidate = true/);
+  assert.match(artifactRow.valueJson, /cleanVerification/);
 
   addExecutionProfile(store, {
     id: 'fake-reviewer',

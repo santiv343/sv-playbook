@@ -6,5 +6,6 @@ export type {
   ModelEvaluationConfig,
   OrmApplicationSqlBaseline,
   PlaybookConfig,
+  ReviewPreflightConfig,
   Tier,
 } from './schema/config.types.js';

@@ -4,6 +4,10 @@
   "tier": "TIER-2",
   "verifyCommand": "npm run verify",
   "reviewCandidateMaxBytes": 16777216,
+  "reviewPreflight": {
+    "preparationCommand": "npm ci",
+    "noOutputTimeoutMs": 600000
+  },
   "autonomy": "strict",
   "backup": {
     "enabled": true,
@@ -23,16 +27,16 @@
   },
   "baseline": {
     "ormApplicationSql": {
-      "count": 282,
-      "digest": "084bbb77e401bbd5a1dd669e4515c1e8e2fb1285cc3fc25c97692eb9539340dd"
+      "count": 280,
+      "digest": "4f96a49e5505f3d23386fd62d5c64538d040a6119b7dde64d027ec13ac8bb826"
     },
     "literalComparisons": {
       "count": 277,
       "digest": "befd4f30593c6b36cb3f5ab841d315d531e7eb57c78d29a312d9f956cd99c794"
     },
     "duplicateStrings": {
-      "count": 1401,
-      "digest": "e1ecb44bd4d04ed3190ca7a3a901bd5274d895d1d306318e264d0c0b2876ab4f"
+      "count": 1399,
+      "digest": "85e7fc1ae7fcfbc2ab9b3b5acf3d7cead1f4a160109147a92e1699a7665e93b5"
     },
     "fingerprints": [
       "docs/packets/ADOPT-AURORA-001.md",

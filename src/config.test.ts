@@ -16,6 +16,10 @@ test('loadConfig returns defaults when the file is absent', () => {
     autonomy: 'strict',
     maxConcurrentWorkers: 3,
     reviewCandidateMaxBytes: 16 * 1024 * 1024,
+    reviewPreflight: {
+      preparationCommand: '',
+      noOutputTimeoutMs: 600_000,
+    },
     backup: {
       enabled: true,
       retention: 20,
@@ -44,6 +48,10 @@ test('loadConfig reads a valid config file', () => {
     verifyCommand: 'npm run check',
     autonomy: 'high',
     reviewCandidateMaxBytes: 8 * 1024 * 1024,
+    reviewPreflight: {
+      preparationCommand: 'npm ci',
+      noOutputTimeoutMs: 1_234,
+    },
     backup: {
       enabled: false,
       retention: 3,
@@ -63,6 +71,10 @@ test('loadConfig reads a valid config file', () => {
     autonomy: 'high',
     maxConcurrentWorkers: 3,
     reviewCandidateMaxBytes: 8 * 1024 * 1024,
+    reviewPreflight: {
+      preparationCommand: 'npm ci',
+      noOutputTimeoutMs: 1_234,
+    },
     backup: {
       enabled: false,
       retention: 3,

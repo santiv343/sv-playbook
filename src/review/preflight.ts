@@ -1,28 +1,31 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from '../config.js';
 import { PLAYBOOK_CONFIG_FILE_NAME } from '../config.constants.js';
-import { stringColumn } from '../db/rows.js';
 import type { Store } from '../db/store.types.js';
+import { GIT_ARGUMENT, GIT_BASE_REFERENCE, GIT_EXECUTABLE, PROCESS_STDIO } from '../git.constants.js';
+import { EMPTY_SIZE, TEXT_ENCODING } from '../platform.constants.js';
+import { taskEvents } from '../tasks/schema.constants.js';
+import { EVENT_EVIDENCE } from '../tasks/service.constants.js';
+import { loadWorkDefinition } from '../tasks/work-definitions.js';
 import { overlaps } from '../tasks/write-set.js';
-import { EVENT_EVIDENCE, INSERT_EVENT_SQL } from '../tasks/service.constants.js';
 import {
+  HEAD_SHA_STATUS,
   PREFLIGHT_CHECK_NAME,
   PREFLIGHT_EVENT_PREFIX,
   PREFLIGHT_STATUS,
+  type CleanVerificationReceipt,
   type PreflightCheck,
   type PreflightReport,
   type VerifyProcessResult,
 } from './preflight.types.js';
-import { GIT_ARGUMENT, GIT_BASE_REFERENCE, GIT_EXECUTABLE, PROCESS_STDIO } from '../git.constants.js';
-import { EMPTY_SIZE, PROCESS_EVENT, TEXT_ENCODING } from '../platform.constants.js';
 import {
   PREFLIGHT_VERIFY_DETAIL,
   PREFLIGHT_VERIFY_EXIT_CODE,
-  PREFLIGHT_VERIFY_OUTPUT_TAIL_CHARACTERS,
-  PREFLIGHT_VERIFY_TIMEOUT_MS,
 } from './preflight.constants.js';
+import { runCleanVerification } from './preflight-clean-verification.js';
+import { executePreflightCommand } from './preflight-process.js';
 
 const CHK_PASS = PREFLIGHT_STATUS.PASS;
 const CHK_FAIL = PREFLIGHT_STATUS.FAIL;
@@ -51,7 +54,7 @@ function getChangedFiles(worktree: string, mergeBase: string): string[] {
   }
 }
 
-function checkWriteSet(writeSet: string[], changedFiles: string[]): { check: PreflightCheck; violations: string[] } {
+function checkWriteSet(writeSet: readonly string[], changedFiles: string[]): { check: PreflightCheck; violations: string[] } {
   if (writeSet.length === 0) {
     return { check: { name: 'write-set', status: CHK_SKIP, detail: 'no write_set defined' }, violations: [] };
   }
@@ -148,46 +151,8 @@ function verifyWorktreeClean(worktree: string): PreflightCheck | undefined {
   }
 }
 
-function outputTail(current: string, chunk: string): string {
-  return `${current}${chunk}`.slice(-PREFLIGHT_VERIFY_OUTPUT_TAIL_CHARACTERS);
-}
-
-function executeVerifyCommand(command: string, worktree: string): Promise<VerifyProcessResult> {
-  return new Promise((resolve) => {
-    let tail = '';
-    let timedOut = false;
-    let settled = false;
-    const child = spawn(command, {
-      cwd: worktree,
-      shell: true,
-      stdio: [PROCESS_STDIO.IGNORE, PROCESS_STDIO.PIPE, PROCESS_STDIO.PIPE],
-      windowsHide: true,
-    });
-    child.stdout.setEncoding(TEXT_ENCODING.UTF8);
-    child.stderr.setEncoding(TEXT_ENCODING.UTF8);
-    child.stdout.on(PROCESS_EVENT.DATA, (chunk: string) => { tail = outputTail(tail, chunk); });
-    child.stderr.on(PROCESS_EVENT.DATA, (chunk: string) => { tail = outputTail(tail, chunk); });
-    const finish = (result: VerifyProcessResult): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(result);
-    };
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-    }, PREFLIGHT_VERIFY_TIMEOUT_MS);
-    child.once(PROCESS_EVENT.ERROR, () => {
-      finish({ exitCode: null, outputTail: tail, spawnFailed: true, timedOut: false });
-    });
-    child.once(PROCESS_EVENT.CLOSE, (exitCode) => {
-      finish({ exitCode, outputTail: tail.trim(), spawnFailed: false, timedOut });
-    });
-  });
-}
-
-function verifyFailureDetail(command: string, result: VerifyProcessResult): string {
-  if (result.timedOut) return `${command} timed out after ${PREFLIGHT_VERIFY_TIMEOUT_MS} ms`;
+function verifyFailureDetail(command: string, result: VerifyProcessResult, noOutputTimeoutMs: number): string {
+  if (result.timedOut) return `${command} produced no output for ${noOutputTimeoutMs} ms`;
   const summary = `${command} failed with exit code ${String(result.exitCode)}`;
   return result.outputTail.length > EMPTY_SIZE ? `${summary}\n${result.outputTail}` : summary;
 }
@@ -208,36 +173,35 @@ export async function runVerifyCheck(worktree: string): Promise<PreflightCheck> 
   const dirtyBeforeVerify = verifyWorktreeClean(worktree);
   if (dirtyBeforeVerify !== undefined) return dirtyBeforeVerify;
 
-  const result = await executeVerifyCommand(config.verifyCommand, worktree);
+  const timeoutMs = config.reviewPreflight.noOutputTimeoutMs;
+  const result = await executePreflightCommand(config.verifyCommand, worktree, timeoutMs);
   if (result.spawnFailed) {
     return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_UNKNOWN, detail: PREFLIGHT_VERIFY_DETAIL.SPAWN_FAILED };
   }
   if (result.timedOut || result.exitCode !== PREFLIGHT_VERIFY_EXIT_CODE.SUCCESS) {
-    return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_FAIL, detail: verifyFailureDetail(config.verifyCommand, result) };
+    return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_FAIL, detail: verifyFailureDetail(config.verifyCommand, result, timeoutMs) };
   }
   return verifyWorktreeClean(worktree)
     ?? { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_PASS, detail: `${config.verifyCommand} succeeded` };
 }
 
-function readRedTestName(docRoot: string, packetId: string): string {
-  const p = join(docRoot, 'docs', 'packets', `${packetId}.md`);
-  if (!existsSync(p)) return '';
-  try {
-    const text = readFileSync(p, 'utf8');
-    const m = RED_TEST_SECTION_RE.exec(text);
-    if (m === null || m[1] === undefined) return '';
-    const firstLine = m[1].trim().split('\n')[0];
-    return firstLine ?? '';
-  } catch {
-    return '';
-  }
+function readRedTestName(body: string): string {
+  const match = RED_TEST_SECTION_RE.exec(body);
+  if (match === null || match[1] === undefined) return '';
+  return match[1].trim().split('\n')[0] ?? '';
 }
 
-function checkRedTest(worktree: string, mergeBase: string | undefined, writeSet: string[], docRoot: string, packetId: string, changedFiles: string[]): PreflightCheck {
+function checkRedTest(
+  worktree: string,
+  mergeBase: string | undefined,
+  writeSet: readonly string[],
+  body: string,
+  changedFiles: readonly string[],
+): PreflightCheck {
   if (mergeBase === undefined) {
     return { name: PREFLIGHT_CHECK_NAME.RED_TEST, status: CHK_UNKNOWN, detail: 'could not determine merge base' };
   }
-  const redTestName = readRedTestName(docRoot, packetId);
+  const redTestName = readRedTestName(body);
   if (redTestName === '') {
     return { name: PREFLIGHT_CHECK_NAME.RED_TEST, status: CHK_SKIP, detail: 'no RED test section in packet document' };
   }
@@ -259,22 +223,35 @@ function checkDeviationBullets(): PreflightCheck {
   return _db(CHK_SKIP, 'no deviation check is configured');
 }
 
-function getDocRoot(worktree: string): string {
-  try {
-    return execFileSync(GIT_EXECUTABLE, [GIT_ARGUMENT.REV_PARSE, '--show-toplevel'], { cwd: worktree, encoding: 'utf8' }).trim();
-  } catch {
-    return worktree;
+function verificationCheck(receipt: CleanVerificationReceipt): PreflightCheck {
+  const failure = receipt.phases.find((phase) => phase.status === PREFLIGHT_STATUS.FAIL
+    || phase.status === PREFLIGHT_STATUS.UNKNOWN);
+  if (failure === undefined) {
+    return { name: PREFLIGHT_CHECK_NAME.VERIFY, status: CHK_PASS, detail: 'clean verification passed' };
   }
+  const output = failure.outputTail === '' ? '' : `: ${failure.outputTail}`;
+  return {
+    name: PREFLIGHT_CHECK_NAME.VERIFY,
+    status: failure.status === PREFLIGHT_STATUS.UNKNOWN ? CHK_UNKNOWN : CHK_FAIL,
+    detail: `${failure.phase}:${failure.failureCode ?? PREFLIGHT_STATUS.UNKNOWN}${output}`,
+  };
 }
 
-function getPacketWriteSet(store: Store, packetId: string): string[] {
-  const row = store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get(packetId);
-  if (row === undefined) return [];
-  const parsed: unknown = JSON.parse(stringColumn(row, 'write_set'));
-  return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === 'string') : [];
+function preflightHeadStatus(sha: string, prSha: string | undefined): PreflightReport['headShaMatch'] {
+  if (prSha === undefined) return HEAD_SHA_STATUS.UNKNOWN;
+  return sha === prSha ? HEAD_SHA_STATUS.MATCH : HEAD_SHA_STATUS.MISMATCH;
 }
 
-const HEAD_SHA_MATCH_UNKNOWN = CHK_UNKNOWN;
+function persistPreflightEvent(store: Store, packetId: string, overall: PreflightReport['overall'], persist: boolean): void {
+  if (!persist) return;
+  store.orm.insert(taskEvents).values({
+    sessionId: null,
+    packetId,
+    command: EVENT_EVIDENCE,
+    detail: `${PREFLIGHT_EVENT_PREFIX}${overall}`,
+    at: new Date().toISOString(),
+  }).run();
+}
 
 export async function runPreflight(
   store: Store,
@@ -284,7 +261,8 @@ export async function runPreflight(
 ): Promise<PreflightReport> {
   const checks: PreflightCheck[] = [];
 
-  const writeSet = getPacketWriteSet(store, packetId);
+  const definition = loadWorkDefinition(store, packetId);
+  const writeSet = definition.value.writeSet;
   const mergeBase = findMergeBase(worktree);
   const changedFiles = mergeBase !== undefined ? getChangedFiles(worktree, mergeBase) : [];
 
@@ -298,11 +276,11 @@ export async function runPreflight(
   const ciChecks = checkCiStatus(worktree, options?.pr);
   checks.push(...ciChecks);
 
-  const verifyResult = await runVerifyCheck(worktree);
+  const cleanVerification = await runCleanVerification(worktree);
+  const verifyResult = verificationCheck(cleanVerification);
   checks.push(verifyResult);
 
-  const docRoot = getDocRoot(worktree);
-  const redTestResult = checkRedTest(worktree, mergeBase, writeSet, docRoot, packetId, changedFiles);
+  const redTestResult = checkRedTest(worktree, mergeBase, writeSet, definition.value.body, changedFiles);
   checks.push(redTestResult);
 
   const stopChecks: PreflightCheck[] = [];
@@ -313,19 +291,16 @@ export async function runPreflight(
   const failed = checks.some((c) => c.status === CHK_FAIL);
   const overall = failed ? CHK_FAIL : CHK_PASS;
 
-  if (options?.persistEvent !== false) {
-    store.db.prepare(INSERT_EVENT_SQL).run(
-      null, packetId, EVENT_EVIDENCE, `${PREFLIGHT_EVENT_PREFIX}${overall}`, new Date().toISOString(),
-    );
-  }
+  persistPreflightEvent(store, packetId, overall, options?.persistEvent !== false);
 
   return {
     packetId,
     pr: options?.pr,
     headSha: sha,
-    headShaMatch: HEAD_SHA_MATCH_UNKNOWN,
+    headShaMatch: preflightHeadStatus(sha, prSha),
     ciChecks,
     verifyResult,
+    cleanVerification,
     writeSetViolations: ws.violations,
     redTestFound: redTestResult.status === CHK_PASS,
     stopConditions: stopChecks,
