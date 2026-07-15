@@ -37,7 +37,7 @@ export interface PreflightPhaseReceipt {
 
 export interface CleanVerificationReceipt {
   readonly boundaryKind: typeof PREFLIGHT_CLEAN_WORKTREE_KIND;
-  readonly candidateSha: string;
+  readonly candidateSha: string | null;
   readonly status: typeof PREFLIGHT_STATUS.PASS | typeof PREFLIGHT_STATUS.FAIL;
   readonly phases: readonly PreflightPhaseReceipt[];
 }

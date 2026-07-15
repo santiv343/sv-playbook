@@ -10,11 +10,45 @@ import { createPacket } from '../tasks/service.js';
 import { PREFLIGHT_FAILURE_CODE, PREFLIGHT_PHASE } from './preflight.constants.js';
 import { runCleanVerification } from './preflight-clean-verification.js';
 import { runPreflight } from './preflight.js';
-import { PREFLIGHT_CHECK_NAME, PREFLIGHT_STATUS } from './preflight.types.js';
+import {
+  PREFLIGHT_CHECK_NAME,
+  PREFLIGHT_STATUS,
+  type VerifyProcessResult,
+} from './preflight.types.js';
 
 const git = (root: string, args: readonly string[]): void => {
   execFileSync('git', args, { cwd: root, stdio: 'pipe' });
 };
+
+const gitText = (root: string, args: readonly string[]): string => execFileSync('git', args, {
+  cwd: root,
+  encoding: 'utf8',
+  stdio: 'pipe',
+}).trim();
+
+const processResult = (overrides: Partial<VerifyProcessResult>): VerifyProcessResult => ({
+  exitCode: 0,
+  signal: null,
+  outputTail: '',
+  spawnFailed: false,
+  timedOut: false,
+  durationMs: 1,
+  ...overrides,
+});
+
+async function createCleanVerificationFixture(prefix: string): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), prefix));
+  git(root, ['init', '-b', 'main']);
+  git(root, ['config', 'user.email', 'test@example.com']);
+  git(root, ['config', 'user.name', 'Test']);
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({
+    verifyCommand: 'verify-fixture',
+    reviewPreflight: { preparationCommand: '', noOutputTimeoutMs: 1_000 },
+  }), 'utf8');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'base']);
+  return root;
+}
 
 test('preflight rejects a verify command that dirties tracked candidate files', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-preflight-'));
@@ -237,4 +271,66 @@ test('clean-worktree cleanup failure is typed and forces the receipt to fail', a
 
   assert.equal(receipt.status, PREFLIGHT_STATUS.FAIL);
   assert.equal(cleanup?.failureCode, PREFLIGHT_FAILURE_CODE.CLEANUP_FAILED);
+});
+
+test('clean receipt binds a non-zero verification exit to verification failure', async () => {
+  const root = await createCleanVerificationFixture('svp-preflight-verification-failure-');
+
+  const receipt = await runCleanVerification(root, {
+    executeCommand: () => Promise.resolve(processResult({ exitCode: 9, outputTail: 'verification failed' })),
+  });
+  const verification = receipt.phases.find((phase) => phase.phase === PREFLIGHT_PHASE.VERIFICATION);
+
+  assert.equal(receipt.status, PREFLIGHT_STATUS.FAIL);
+  assert.ok(verification);
+  assert.equal(verification.failureCode, PREFLIGHT_FAILURE_CODE.VERIFICATION_FAILED);
+  assert.equal(verification.exitCode, 9);
+});
+
+test('clean receipt maps command inactivity onto its typed failure code', async () => {
+  const root = await createCleanVerificationFixture('svp-preflight-inactivity-');
+
+  const receipt = await runCleanVerification(root, {
+    executeCommand: () => Promise.resolve(processResult({ timedOut: true, signal: 'SIGKILL' })),
+  });
+  const verification = receipt.phases.find((phase) => phase.phase === PREFLIGHT_PHASE.VERIFICATION);
+
+  assert.equal(receipt.status, PREFLIGHT_STATUS.FAIL);
+  assert.equal(verification?.failureCode, PREFLIGHT_FAILURE_CODE.INACTIVITY_TIMEOUT);
+});
+
+test('clean receipt maps process spawn failure onto its typed failure code', async () => {
+  const root = await createCleanVerificationFixture('svp-preflight-spawn-failure-');
+
+  const receipt = await runCleanVerification(root, {
+    executeCommand: () => Promise.resolve(processResult({ exitCode: null, spawnFailed: true })),
+  });
+  const verification = receipt.phases.find((phase) => phase.phase === PREFLIGHT_PHASE.VERIFICATION);
+
+  assert.equal(receipt.status, PREFLIGHT_STATUS.FAIL);
+  assert.equal(verification?.failureCode, PREFLIGHT_FAILURE_CODE.SPAWN_FAILED);
+});
+
+test('clean receipt types worktree creation failure and preserves the resolved SHA', async () => {
+  const root = await createCleanVerificationFixture('svp-preflight-worktree-failure-');
+  const candidateSha = gitText(root, ['rev-parse', 'HEAD']);
+
+  const receipt = await runCleanVerification(root, {
+    createWorktree: () => Promise.reject(new Error('worktree creation fixture')),
+  });
+  const worktree = receipt.phases.find((phase) => phase.phase === PREFLIGHT_PHASE.WORKTREE);
+
+  assert.equal(receipt.status, PREFLIGHT_STATUS.FAIL);
+  assert.equal(receipt.candidateSha, candidateSha);
+  assert.equal(worktree?.failureCode, PREFLIGHT_FAILURE_CODE.WORKTREE_CREATE_FAILED);
+});
+
+test('clean receipt uses null when the candidate SHA cannot be resolved', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-preflight-unresolved-sha-'));
+
+  const receipt = await runCleanVerification(root);
+
+  assert.equal(receipt.status, PREFLIGHT_STATUS.FAIL);
+  assert.equal(receipt.candidateSha, null);
+  assert.equal(receipt.phases[0]?.failureCode, PREFLIGHT_FAILURE_CODE.WORKTREE_CREATE_FAILED);
 });

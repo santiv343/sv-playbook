@@ -26,10 +26,14 @@ interface CleanWorktree {
 type PreflightPhase = PreflightPhaseReceipt['phase'];
 
 interface CleanVerificationDependencies {
+  readonly createWorktree: (sourceWorktree: string, candidateSha: string) => Promise<CleanWorktree>;
+  readonly executeCommand: typeof executePreflightCommand;
   readonly removeWorktree: (sourceWorktree: string, cleanWorktree: string) => void;
 }
 
 const DEFAULT_DEPENDENCIES: CleanVerificationDependencies = {
+  createWorktree: createCleanWorktree,
+  executeCommand: executePreflightCommand,
   removeWorktree(sourceWorktree, cleanWorktree): void {
     execFileSync(GIT_EXECUTABLE, ['worktree', 'remove', '--force', cleanWorktree], {
       cwd: sourceWorktree,
@@ -124,10 +128,11 @@ async function commandPhase(
   command: string,
   worktree: string,
   noOutputTimeoutMs: number,
+  executeCommand: typeof executePreflightCommand,
 ): Promise<PreflightPhaseReceipt> {
   if (command.trim() === '') return skipPhase(phase);
   try {
-    const result = await executePreflightCommand(command, worktree, noOutputTimeoutMs);
+    const result = await executeCommand(command, worktree, noOutputTimeoutMs);
     const commandPassed = !result.spawnFailed && !result.timedOut
       && result.exitCode === PREFLIGHT_VERIFY_EXIT_CODE.SUCCESS;
     const clean = commandPassed && isWorktreeClean(worktree);
@@ -191,7 +196,7 @@ function cleanupPhase(
   }
 }
 
-function receipt(candidateSha: string, phases: readonly PreflightPhaseReceipt[]): CleanVerificationReceipt {
+function receipt(candidateSha: string | null, phases: readonly PreflightPhaseReceipt[]): CleanVerificationReceipt {
   const failed = phases.some((phase) => phase.status === PREFLIGHT_STATUS.FAIL
     || phase.status === PREFLIGHT_STATUS.UNKNOWN);
   return {
@@ -202,7 +207,10 @@ function receipt(candidateSha: string, phases: readonly PreflightPhaseReceipt[])
   };
 }
 
-async function configuredPhases(worktree: string): Promise<readonly PreflightPhaseReceipt[]> {
+async function configuredPhases(
+  worktree: string,
+  dependencies: CleanVerificationDependencies,
+): Promise<readonly PreflightPhaseReceipt[]> {
   if (!existsSync(join(worktree, PLAYBOOK_CONFIG_FILE_NAME))) {
     return [skipPhase(PREFLIGHT_PHASE.PREPARATION), skipPhase(PREFLIGHT_PHASE.VERIFICATION)];
   }
@@ -228,6 +236,7 @@ async function configuredPhases(worktree: string): Promise<readonly PreflightPha
     config.reviewPreflight.preparationCommand,
     worktree,
     config.reviewPreflight.noOutputTimeoutMs,
+    dependencies.executeCommand,
   );
   if (preparation.status === PREFLIGHT_STATUS.FAIL) {
     return [configuration, preparation, skipPhase(
@@ -240,19 +249,21 @@ async function configuredPhases(worktree: string): Promise<readonly PreflightPha
     config.verifyCommand,
     worktree,
     config.reviewPreflight.noOutputTimeoutMs,
+    dependencies.executeCommand,
   );
   return [configuration, preparation, verification];
 }
 
 export async function runCleanVerification(
   sourceWorktree: string,
-  dependencies: CleanVerificationDependencies = DEFAULT_DEPENDENCIES,
+  dependencyOverrides: Partial<CleanVerificationDependencies> = {},
 ): Promise<CleanVerificationReceipt> {
+  const dependencies: CleanVerificationDependencies = { ...DEFAULT_DEPENDENCIES, ...dependencyOverrides };
   let candidateSha: string;
   try {
     candidateSha = gitOutput(sourceWorktree, [GIT_ARGUMENT.REV_PARSE, GIT_ARGUMENT.HEAD]);
   } catch (error: unknown) {
-    return receipt('', [worktreePhase(
+    return receipt(null, [worktreePhase(
       PREFLIGHT_STATUS.FAIL,
       PREFLIGHT_FAILURE_CODE.WORKTREE_CREATE_FAILED,
       error instanceof Error ? error.message : String(error),
@@ -260,7 +271,7 @@ export async function runCleanVerification(
   }
   let clean: CleanWorktree;
   try {
-    clean = await createCleanWorktree(sourceWorktree, candidateSha);
+    clean = await dependencies.createWorktree(sourceWorktree, candidateSha);
   } catch (error: unknown) {
     return receipt(candidateSha, [worktreePhase(
       PREFLIGHT_STATUS.FAIL,
@@ -274,7 +285,7 @@ export async function runCleanVerification(
     PREFLIGHT_PHASE_DETAIL.WORKTREE_CREATED,
   )];
   try {
-    phases.push(...await configuredPhases(clean.path));
+    phases.push(...await configuredPhases(clean.path, dependencies));
   } finally {
     phases.push(cleanupPhase(sourceWorktree, clean.path, dependencies));
   }
