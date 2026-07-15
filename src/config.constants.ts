@@ -5,6 +5,8 @@ export const MODEL_EVALUATION_DEFAULTS = {
   evidenceValidityDays: 30,
 } as const;
 
+export const REVIEW_CANDIDATE_MAX_BYTES_DEFAULT = 16 * 1024 * 1024;
+
 export const DEFAULTS: PlaybookConfig = {
   productName: 'unnamed',
   chatLanguage: 'en',
@@ -12,6 +14,7 @@ export const DEFAULTS: PlaybookConfig = {
   verifyCommand: 'npm run verify',
   autonomy: 'strict',
   maxConcurrentWorkers: 3,
+  reviewCandidateMaxBytes: REVIEW_CANDIDATE_MAX_BYTES_DEFAULT,
   backup: {
     enabled: true,
     retention: BACKUP_RETENTION_DEFAULT,

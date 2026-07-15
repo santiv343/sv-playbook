@@ -15,6 +15,7 @@ test('loadConfig returns defaults when the file is absent', () => {
     verifyCommand: 'npm run verify',
     autonomy: 'strict',
     maxConcurrentWorkers: 3,
+    reviewCandidateMaxBytes: 16 * 1024 * 1024,
     backup: {
       enabled: true,
       retention: 20,
@@ -42,6 +43,7 @@ test('loadConfig reads a valid config file', () => {
     tier: 'TIER-1',
     verifyCommand: 'npm run check',
     autonomy: 'high',
+    reviewCandidateMaxBytes: 8 * 1024 * 1024,
     backup: {
       enabled: false,
       retention: 3,
@@ -60,6 +62,7 @@ test('loadConfig reads a valid config file', () => {
     verifyCommand: 'npm run check',
     autonomy: 'high',
     maxConcurrentWorkers: 3,
+    reviewCandidateMaxBytes: 8 * 1024 * 1024,
     backup: {
       enabled: false,
       retention: 3,
@@ -152,6 +155,14 @@ test('config rejects non-numeric maxConcurrentWorkers', () => {
     maxConcurrentWorkers: 'three',
   }));
   assert.throws(() => loadConfig(dir), { name: 'ConfigError' });
+});
+
+test('config rejects a non-positive reviewCandidateMaxBytes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(dir, 'playbook.config.json'), JSON.stringify({
+    reviewCandidateMaxBytes: 0,
+  }));
+  assert.throws(() => loadConfig(dir), { name: 'ConfigError', message: /reviewCandidateMaxBytes/ });
 });
 
 test('gate thresholds and the layout rule come from config, not hardcoded', () => {

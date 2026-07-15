@@ -3,7 +3,12 @@ export const OS_PLATFORM = { WINDOWS: 'win32' } as const;
 export const NODE_ERROR_CODE = {
   ADDRESS_IN_USE: 'EADDRINUSE',
   ALREADY_EXISTS: 'EEXIST',
+  BUFFER_EXCEEDED: 'ENOBUFS',
   FILE_NOT_FOUND: 'ENOENT',
+} as const;
+
+export const NODE_ERROR_PROPERTY = {
+  CODE: 'code',
 } as const;
 
 export const HTTP_METHOD = {

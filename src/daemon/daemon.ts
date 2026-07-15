@@ -6,6 +6,7 @@ import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting } from '.
 import { assertExclusiveStoreLock } from '../db/inspection.js';
 import { DAEMON_LOCK_FILE, DAEMON_ROUTE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
 import { HTTP_METHOD, NODE_ERROR_CODE } from '../platform.constants.js';
+import { nodeErrorCode } from '../platform.js';
 import { SVP_DIR } from '../db/store.constants.js';
 import { runWithContext, createContext } from '../runtime/context.js';
 import type { Store } from '../db/store.types.js';
@@ -115,7 +116,7 @@ function acquireLock(lockPath: string, pid: number, port: number): void {
   try {
     writeLockFileAtomically(lockPath, pid, port);
   } catch (err: unknown) {
-    const isExisting = err instanceof Error && 'code' in err && Reflect.get(err, 'code') === NODE_ERROR_CODE.ALREADY_EXISTS;
+    const isExisting = nodeErrorCode(err) === NODE_ERROR_CODE.ALREADY_EXISTS;
     const message = isExisting
       ? 'daemon is already running for this repo (lock file race)'
       : `failed to create lock file: ${String(err)}`;

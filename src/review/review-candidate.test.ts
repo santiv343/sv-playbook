@@ -23,6 +23,7 @@ import { REVIEW_CANDIDATE_ERROR } from './review-candidate.constants.js';
 const git = (root: string, args: readonly string[]): string => execFileSync('git', args, {
   cwd: root, encoding: 'utf8', stdio: 'pipe',
 }).trim();
+const LARGE_CANDIDATE_BYTES = 1_100_000;
 
 test('review dispatch is blocked until runtime creates an immutable SHA-bound candidate', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-review-candidate-'));
@@ -91,7 +92,8 @@ test('review dispatch is blocked until runtime creates an immutable SHA-bound ca
   git(root, ['checkout', '-b', 'feature/review-candidate']);
   await mkdir(join(root, 'src'), { recursive: true });
   await writeFile(join(root, 'src', 'candidate.ts'), 'export const candidate = true;\n', 'utf8');
-  git(root, ['add', 'src/candidate.ts']);
+  await writeFile(join(root, 'src', 'large-candidate.txt'), 'x'.repeat(LARGE_CANDIDATE_BYTES), 'utf8');
+  git(root, ['add', 'src/candidate.ts', 'src/large-candidate.txt']);
   git(root, ['commit', '-m', 'candidate']);
   movePacket(store, sessionId, definition.packetId, 'review');
   assert.equal(await readFile(join(root, '.verify-count'), 'utf8'), '1');
