@@ -1,7 +1,6 @@
-import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { dirname, join, normalize, relative } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ContextError } from '../context/context.errors.js';
 import type { Store } from '../db/store.types.js';
@@ -21,13 +20,12 @@ import type { WorkRunSpecRequest } from '../gateway/gateway.types.js';
 import { WorkDefinitionError } from '../tasks/work-definition.errors.js';
 import { readPromotionDashboard } from '../promotion/promotion.receipts.js';
 
-const UI_ROOT = fileURLToPath(new URL('../../content/ui', import.meta.url));
-const require = createRequire(import.meta.url);
-const LUCIDE_ROOT = normalize(join(dirname(require.resolve('lucide')), '..', 'esm'));
+const UI_ROOT = fileURLToPath(new URL('./assets', import.meta.url));
 const STATIC_ASSETS = new Map<string, { path: string; type: string }>([
   [SERVE_ROUTE.ROOT, { path: join(UI_ROOT, 'index.html'), type: CONTENT_TYPE.HTML }],
   [SERVE_ROUTE.APP, { path: join(UI_ROOT, 'app.js'), type: CONTENT_TYPE.JAVASCRIPT }],
   [SERVE_ROUTE.STYLES, { path: join(UI_ROOT, 'styles.css'), type: CONTENT_TYPE.CSS }],
+  [SERVE_ROUTE.ICONS, { path: join(UI_ROOT, 'icons.mjs'), type: CONTENT_TYPE.JAVASCRIPT }],
 ]);
 
 function dashboard(store: Store, repoRoot: string): OperationalDashboard {
@@ -52,22 +50,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function safeAssetPath(root: string, requested: string): string | undefined {
-  const path = normalize(join(root, requested));
-  const rel = relative(root, path);
-  return rel.startsWith(PATH_TOKEN.PARENT) || rel.includes(PATH_TOKEN.DRIVE_SEPARATOR) ? undefined : path;
-}
-
 function staticResponse(url: URL, res: ServerResponse): boolean {
   const known = STATIC_ASSETS.get(url.pathname);
-  if (known !== undefined) {
-    send(res, HTTP_STATUS.OK, known.type, readFileSync(known.path, 'utf8'));
-    return true;
-  }
-  if (!url.pathname.startsWith(SERVE_ROUTE.LUCIDE)) return false;
-  const path = safeAssetPath(LUCIDE_ROOT, url.pathname.slice(SERVE_ROUTE.LUCIDE.length));
-  if (path === undefined) send(res, HTTP_STATUS.BAD_REQUEST, CONTENT_TYPE.TEXT, SERVER_RESPONSE.INVALID_ASSET_PATH);
-  else send(res, HTTP_STATUS.OK, CONTENT_TYPE.JAVASCRIPT, readFileSync(path, 'utf8'));
+  if (known === undefined) return false;
+  send(res, HTTP_STATUS.OK, known.type, readFileSync(known.path, 'utf8'));
   return true;
 }
 

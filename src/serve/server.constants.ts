@@ -13,7 +13,6 @@ export const SSE_EVENT = {
 } as const;
 
 export const SERVER_RESPONSE = {
-  INVALID_ASSET_PATH: 'Invalid asset path',
   NOT_FOUND: 'Not Found',
 } as const;
 
