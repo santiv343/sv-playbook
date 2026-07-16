@@ -3,7 +3,7 @@
 id: GATE-006
 title: machine-authoritative contract conformance receipt
 depends_on: ["FLOW-017"]
-write_set: ["src/enforcement/**","src/cli/commands/enforce*","src/cli/registry.ts","src/cli/main.ts","src/cli/command.constants.ts","src/cli/commands/index.gen.ts","package.json","package-lock.json"]
+write_set: ["src/enforcement/**","src/cli/commands/enforce*","src/cli/registry.ts","src/cli/main.ts","src/cli/command.constants.ts","src/cli/commands/index.gen.ts","package.json","package-lock.json","docs/how-it-works.md","src/db/schema-vocabulary.constants.ts","src/roles/schema.constants.ts","src/orchestration/schema.constants.ts"]
 requirements: ["machine-first","semantic-kernel"]
 evidence_required: ["conformance-receipts","final-sha","independent-review","verify-receipt"]
 tags: []
