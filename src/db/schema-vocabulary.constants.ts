@@ -27,3 +27,7 @@ export const DATABASE_COLUMN = {
 export const SQLITE_INTEGER_MODE = {
   BOOLEAN: 'boolean',
 } as const;
+
+export const SQLITE_COLUMN_TYPE = {
+  TEXT: 'TEXT',
+} as const;

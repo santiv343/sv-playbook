@@ -118,6 +118,7 @@ interface FixtureOptions {
   readonly verdict?: PromotionVerdict;
   readonly outputCandidateSha?: string;
   readonly reviewerSessionId?: string;
+  readonly integrated?: boolean;
 }
 
 interface CandidateWork {
@@ -128,7 +129,7 @@ interface CandidateWork {
   readonly reviewCandidateId: string;
 }
 
-async function createReviewedCandidate(store: Store, root: string): Promise<CandidateWork> {
+async function createReviewedCandidate(store: Store, root: string, options: FixtureOptions): Promise<CandidateWork> {
   createPacket(store, root, {
     id: FIXTURE.PACKET_ID,
     title: 'Promotion controller fixture',
@@ -145,12 +146,17 @@ async function createReviewedCandidate(store: Store, root: string): Promise<Cand
   movePacket(store, undefined, definition.packetId, STATUS.READY);
   const producerSessionId = ensureSession(store, root);
   startPacket(store, producerSessionId, root, definition.packetId);
-  git(root, ['checkout', '-b', 'candidate/promotion-test']);
-  await mkdir(`${root}/src`, { recursive: true });
-  await writeFile(`${root}/src/${FIXTURE.CANDIDATE_FILE}`, 'export const candidate = true;\n', 'utf8');
-  git(root, ['add', `src/${FIXTURE.CANDIDATE_FILE}`]);
-  git(root, ['commit', '-m', 'candidate']);
-  const candidateSha = git(root, ['rev-parse', 'HEAD']);
+  let candidateSha = baseSha;
+  if (options.integrated !== true) {
+    git(root, ['checkout', '-b', 'candidate/promotion-test']);
+    await mkdir(`${root}/src`, { recursive: true });
+    await writeFile(`${root}/src/${FIXTURE.CANDIDATE_FILE}`, 'export const candidate = true;\n', 'utf8');
+    git(root, ['add', `src/${FIXTURE.CANDIDATE_FILE}`]);
+    git(root, ['commit', '-m', 'candidate']);
+    candidateSha = git(root, ['rev-parse', 'HEAD']);
+  }
+  // Integrated fixture: the work is already merged, so HEAD sits on the merge base
+  // (candidateSha === baseSha) and the candidate certifies the SHA itself.
   await movePacketToReview(store, producerSessionId, definition.packetId);
   const reviewCandidate = store.orm.select().from(reviewCandidates).get();
   if (reviewCandidate === undefined) throw new Error('review candidate was not created');
@@ -162,7 +168,7 @@ export async function promotionFixture(options: FixtureOptions = {}): Promise<Pr
   await initializeRepository(root);
   const store = openStore(root);
   seedRuntime(store);
-  const work = await createReviewedCandidate(store, root);
+  const work = await createReviewedCandidate(store, root, options);
   const runSpec = prepareRunSpec(store, {
     roleId: BUNDLED_ROLE_ID.REVIEWER,
     phase: PROMOTION_REVIEW_PHASE,

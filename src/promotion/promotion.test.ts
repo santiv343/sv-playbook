@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { eq } from 'drizzle-orm';
+import { REVIEW_CANDIDATE_INTEGRATION } from '../review/review-candidate.constants.js';
 import { packets } from '../tasks/schema.constants.js';
 import { STATUS } from '../tasks/service.constants.js';
 import { movePacket } from '../tasks/service.js';
@@ -71,5 +72,33 @@ test('direct task transition to done is mechanically unavailable', async () => {
   assert.throws(() => { movePacket(fixture.store, undefined, 'GATE-PROMOTION-TEST', STATUS.DONE); });
   assert.equal(fixture.store.orm.select({ status: packets.status }).from(packets)
     .where(eq(packets.id, 'GATE-PROMOTION-TEST')).get()?.status, STATUS.REVIEW);
+  fixture.store.close();
+});
+
+test('already-integrated candidate closes the task without moving main', async () => {
+  const fixture = await promotionFixture({ integrated: true });
+  assert.equal(fixture.candidateSha, fixture.baseSha);
+  const controller = new PromotionController(fixture.store, fixture.root);
+  const receipt = await controller.promote(request(fixture));
+
+  assert.equal(receipt.integration, REVIEW_CANDIDATE_INTEGRATION.INTEGRATED);
+  assert.equal(receipt.candidateSha, fixture.baseSha);
+  assert.equal(receipt.resultSha, fixture.baseSha);
+  assert.equal(gitSha(fixture.root, 'main'), fixture.baseSha);
+  const task = fixture.store.orm.select({ status: packets.status }).from(packets).get();
+  assert.equal(task?.status, STATUS.DONE);
+  assert.equal(candidateStatus(fixture.store, receipt.candidateId), PROMOTION_STATUS.CLOSED);
+  assert.deepEqual(await controller.promote(request(fixture)), receipt);
+  assert.deepEqual(readPromotionDashboard(fixture.store), [{
+    candidateId: receipt.candidateId,
+    reviewCandidateId: fixture.reviewCandidateId,
+    taskId: receipt.taskId,
+    candidateSha: fixture.baseSha,
+    status: PROMOTION_STATUS.CLOSED,
+    targetRef: 'main',
+    integrationOutcome: 'succeeded',
+    receiptId: receipt.id,
+    updatedAt: receipt.createdAt,
+  }]);
   fixture.store.close();
 });

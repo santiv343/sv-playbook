@@ -13,7 +13,7 @@ import {
 } from './service.js';
 import { currentPacketStatus } from './dependencies.js';
 import { loadWorkDefinition } from './work-definitions.js';
-import type { PreparedReviewCandidate } from './service.types.js';
+import type { PreparedReviewCandidate, ReviewMoveResult } from './service.types.js';
 
 async function prepareReviewCandidate(
   store: Store,
@@ -43,7 +43,7 @@ export async function movePacketToReview(
   store: Store,
   sessionId: string | undefined,
   packetId: string,
-): Promise<string> {
+): Promise<ReviewMoveResult> {
   const from = validateMove(store, sessionId, packetId, STATUS.REVIEW);
   const prepared = await prepareReviewCandidate(store, packetId, from);
   if (prepared === undefined) await verifyLegacyReview(store, packetId, from);
@@ -52,5 +52,5 @@ export async function movePacketToReview(
   }
   assertLeaseForActive(store, sessionId, packetId);
   persistMove(store, sessionId, packetId, from, STATUS.REVIEW, prepared);
-  return from;
+  return { from, integration: prepared?.candidate.value.candidate.integration };
 }

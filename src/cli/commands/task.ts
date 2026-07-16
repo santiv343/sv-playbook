@@ -200,10 +200,14 @@ async function handleMove(args: string[], io: Io): Promise<number> {
   if (status === STATUS.DONE) throw new UsageError('use `sv-playbook promotion run --candidate <ID> --review-run <RUN-ID>` to set a task as done');
   return withStoreAsync(async (store) => {
     const sessionId = ensureSession(store, getCwd());
-    const from = status === STATUS.REVIEW
-      ? await movePacketToReview(store, sessionId, packetId)
-      : movePacket(store, sessionId, packetId, status);
-    io.out(`moved ${packetId}: ${from} -> ${status}`);
+    if (status !== STATUS.REVIEW) {
+      const from = movePacket(store, sessionId, packetId, status);
+      io.out(`moved ${packetId}: ${from} -> ${status}`);
+      return EXIT.OK;
+    }
+    const review = await movePacketToReview(store, sessionId, packetId);
+    const integration = review.integration === undefined ? '' : ` (${review.integration})`;
+    io.out(`moved ${packetId}: ${review.from} -> ${status}${integration}`);
     return EXIT.OK;
   });
 }

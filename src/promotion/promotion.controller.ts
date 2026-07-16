@@ -147,6 +147,7 @@ export class PromotionController {
       candidate,
       targetRef,
       resultSha,
+      evidence.integration,
       verdict.runSpecId,
       verificationDigest,
       runtimeDigest,

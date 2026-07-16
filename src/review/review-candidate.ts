@@ -23,9 +23,10 @@ import { runPreflight } from './preflight.js';
 import { PREFLIGHT_EVENT_PREFIX, PREFLIGHT_STATUS, type PreflightReport } from './preflight.types.js';
 import {
   REVIEW_CANDIDATE_ARTIFACT_ID_PREFIX,
-  REVIEW_CANDIDATE_CONTRACT_REF,
+  REVIEW_CANDIDATE_CONTRACT_REF_V2,
   REVIEW_CANDIDATE_ERROR,
   REVIEW_CANDIDATE_ID_PREFIX,
+  REVIEW_CANDIDATE_INTEGRATION,
   REVIEW_CANDIDATE_KIND,
   REVIEW_CANDIDATE_SOURCE_KIND,
   REQUIRED_INPUT_POLICY_COUNT,
@@ -112,9 +113,21 @@ function candidateContent(worktree: string, baseReference: string, maxBuffer: nu
   const diff = candidateGitOutput(worktree, [GIT_ARGUMENT.DIFF, comparison], maxBuffer);
   const changedFiles = changedFilesText.split('\n').filter(Boolean);
   if (changedFiles.length === EMPTY_SIZE || diff === '') {
-    throw new ContextError(REVIEW_CANDIDATE_ERROR.EVIDENCE_FAILED, 'candidate diff is empty');
+    const headSha = candidateGitOutput(worktree, [GIT_ARGUMENT.REV_PARSE, GIT_ARGUMENT.HEAD], maxBuffer);
+    if (baseSha !== headSha) {
+      throw new ContextError(REVIEW_CANDIDATE_ERROR.EVIDENCE_FAILED, 'candidate diff is empty');
+    }
+    // Already-integrated work: HEAD sits exactly on the merge base, so there is no
+    // pending diff to review or integrate. The candidate certifies the SHA itself.
+    return {
+      baseSha,
+      changedFiles: [],
+      diff: '',
+      diffDigest: digest(''),
+      integration: REVIEW_CANDIDATE_INTEGRATION.INTEGRATED,
+    };
   }
-  return { baseSha, changedFiles, diff, diffDigest: digest(diff) };
+  return { baseSha, changedFiles, diff, diffDigest: digest(diff), integration: REVIEW_CANDIDATE_INTEGRATION.PENDING };
 }
 
 export function reviewCandidateRequired(store: Store, status: string): boolean {
@@ -161,7 +174,7 @@ export async function assembleReviewCandidate(
     evidence: { preflight: report, catalog, projections: activeProjections(store, catalog) },
     createdAt,
   };
-  validateArtifact(store, REVIEW_CANDIDATE_CONTRACT_REF, value);
+  validateArtifact(store, REVIEW_CANDIDATE_CONTRACT_REF_V2, value);
   const valueJson = canonicalJson(value);
   return {
     id: `${REVIEW_CANDIDATE_ID_PREFIX}${uuidv7()}`,
@@ -195,7 +208,7 @@ export function persistReviewCandidate(
   }
   store.orm.insert(workflowArtifacts).values({
     id: pending.artifactId,
-    contractRef: REVIEW_CANDIDATE_CONTRACT_REF,
+    contractRef: REVIEW_CANDIDATE_CONTRACT_REF_V2,
     valueJson: pending.valueJson,
     valueDigest: pending.valueDigest,
     producerKind: WORKFLOW_EXECUTOR.RUNTIME,

@@ -1,4 +1,5 @@
 import type { Store } from '../db/store.types.js';
+import type { ReviewCandidateIntegration } from '../review/review-candidate.types.js';
 import type { INTEGRATION_OUTCOME, PROMOTION_STATUS, PROMOTION_VERDICT } from './promotion.constants.js';
 
 export type PromotionStatus = typeof PROMOTION_STATUS[keyof typeof PROMOTION_STATUS];
@@ -19,6 +20,7 @@ export interface PromotionReceipt {
   readonly candidateSha: string;
   readonly targetRef: string;
   readonly resultSha: string;
+  readonly integration: ReviewCandidateIntegration;
   readonly reviewerRunSpecId: string;
   readonly verificationDigest: string;
   readonly createdAt: string;
@@ -43,6 +45,7 @@ export interface CandidateEvidence {
   readonly artifactDigest: string;
   readonly producerSessionId: string;
   readonly changedFiles: readonly string[];
+  readonly integration: ReviewCandidateIntegration;
   readonly preflightOverall: string;
   readonly cleanVerificationCandidateSha: string | null;
   readonly cleanVerificationStatus: string;
@@ -97,6 +100,7 @@ export interface ParsedReviewCandidateArtifact {
   readonly candidateSha: string;
   readonly producerSessionId: string;
   readonly changedFiles: readonly string[];
+  readonly integration: ReviewCandidateIntegration;
   readonly preflightOverall: string;
   readonly cleanVerificationCandidateSha: string | null;
   readonly cleanVerificationStatus: string;
