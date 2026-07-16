@@ -18,6 +18,7 @@ import { ARTIFACT_CONTRACT_STATUS } from '../../contracts/artifact.constants.js'
 import { registerWorkflowDefinition } from '../../orchestration/service.js';
 import { WORKFLOW_EXECUTOR, WORKFLOW_STATUS } from '../../orchestration/orchestration.constants.js';
 import { command as serveCommand } from './serve.js';
+import { initTestRepo } from '../../testkit.js';
 
 const BIN_PATH = resolve('bin/sv-playbook.js');
 const SERVER_START_TIMEOUT_MS = 15_000;
@@ -33,7 +34,7 @@ function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
 
 async function inTempRepo<T>(fn: () => Promise<T>): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), 'svp-serve-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   const previous = process.cwd();
   process.chdir(root);
   try {

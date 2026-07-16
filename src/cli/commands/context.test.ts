@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { command } from './context.js';
 import type { Io } from '../command.types.js';
+import { initTestRepo } from '../../testkit.js';
 
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = [];
@@ -15,7 +15,7 @@ function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
 
 test('context CLI persists canonical content and compiles a role-scoped pack', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-context-cli-'));
-  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  initTestRepo(root);
   const bodyPath = join(root, 'body.txt');
   await writeFile(bodyPath, 'Runtime owns deterministic work.');
   const previous = process.cwd();

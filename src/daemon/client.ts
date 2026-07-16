@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { NODE_EVAL_FLAG } from '../platform.constants.js';
 import { DAEMON_CONNECT_TIMEOUT_MS_DEFAULT } from './daemon.constants.js';
 import type { ExecutionContext } from '../runtime/context.types.js';
 import { getContext } from '../runtime/context.js';
@@ -17,7 +18,7 @@ function buildForwardScript(body: string, port: number): string {
 export function forwardToDaemonSync(argv: string[], token: string, port: number, ctx?: ExecutionContext): number {
   const context = ctx ?? getContext() ?? { cwd: process.cwd(), sessionId: null };
   const body = JSON.stringify({ token, argv, context });
-  const result = spawnSync(process.execPath, ['-e', buildForwardScript(body, port)], {
+  const result = spawnSync(process.execPath, [NODE_EVAL_FLAG, buildForwardScript(body, port)], {
     stdio: ['ignore', 'inherit', 'inherit'],
   });
   return typeof result.status === 'number' ? result.status : 1;

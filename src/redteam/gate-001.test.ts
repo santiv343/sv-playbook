@@ -12,6 +12,7 @@ import { STATUS } from '../tasks/service.constants.js';
 import { DESTRUCTIVE_LOG_FILE, EXIT, SESSION_ROLE_FILE } from '../cli/command.constants.js';
 import type { Command } from '../cli/command.types.js';
 import { checkDestructiveGate, queryDestructiveCounts } from '../cli/destructive-gate.js';
+import { initTestRepo } from '../testkit.js';
 
 function fakeIo(): { outLines: string[]; errLines: string[]; out: (l: string) => void; err: (l: string) => void } {
   const outLines: string[] = [];
@@ -21,7 +22,7 @@ function fakeIo(): { outLines: string[]; errLines: string[]; out: (l: string) =>
 
 async function inTempRepo<T>(fn: (root: string) => Promise<T>): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), 'svp-gate-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
   const previous = process.cwd();
   process.chdir(root);
@@ -151,7 +152,7 @@ test('task takeover --force without --confirm-destructive is refused for no-role
 test('dispatcher path: destructive=true on a command descriptor triggers the gate for an agent session', () => {
   const root = join(tmpdir(), 'svp-gate-dispatch-blocked');
   mkdirSync(root, { recursive: true });
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   setRole(root, 'delivery-orchestrator');
 
   const cmd: Command = {
@@ -172,7 +173,7 @@ test('dispatcher path: destructive=true on a command descriptor triggers the gat
 
 test('dispatcher path: destructive=true on a command descriptor allows an unbound human session with confirm', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-gate-dispatch-allowed-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
 
   const cmd: Command = {
     name: '__test__',

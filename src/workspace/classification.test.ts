@@ -8,6 +8,7 @@ import { openStore } from '../db/store.js';
 import { createPacket, movePacket } from '../tasks/service.js';
 import { classifyWorkspace } from './classification.js';
 import { WORKSPACE_OWNERSHIP } from './classification.constants.js';
+import { initTestRepo } from '../testkit.js';
 
 const definition = (id: string, writeSet: string[]) => ({
   id,
@@ -20,7 +21,7 @@ const definition = (id: string, writeSet: string[]) => ({
 
 test('workspace classification assigns every dirty path without LLM judgment', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-workspace-classification-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   await writeFile(join(root, '.gitignore'), '.svp/\n.svp-session\ndocs/packets/\n');
   execFileSync('git', ['add', '.gitignore'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=test@example.com', '-c', 'user.name=Test', 'commit', '-m', 'initial'], { cwd: root });

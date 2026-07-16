@@ -12,6 +12,7 @@ import { DAEMON_TOKEN_FILE } from './daemon.constants.js';
 import { EXIT } from '../cli/command.constants.js';
 import { SVP_DIR } from '../db/store.constants.js';
 import { OS_PLATFORM } from '../platform.constants.js';
+import { initTestRepo } from '../testkit.js';
 
 // Run the shipped sync transport (client.js forwardToDaemonSync) from a child
 // process — exactly how production auto-forwarding uses it (worktree CLI
@@ -42,7 +43,7 @@ function freePort(): Promise<number> {
 
 async function inTempRepo<T>(fn: (root: string) => Promise<T>): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), 'svp-daemon-'));
-  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
   const previous = process.cwd();
   process.chdir(root);

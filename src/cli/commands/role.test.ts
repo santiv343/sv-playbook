@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +11,7 @@ import { ROLE_CHARTER_PROJECTION_ADAPTER_ID } from '../../roles/charter-projecti
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import { command } from './role.js';
+import { initTestRepo } from '../../testkit.js';
 
 const TEST_PROVIDER_ID = 'provider';
 const TEST_MODEL_ID = 'model';
@@ -40,7 +40,7 @@ function record(value: unknown): Record<string, unknown> {
 test('role CLI activates the current valid catalog and returns its durable receipt', async () => {
   const { root, store } = await gatewayFixture({ activateCatalog: false });
   store.close();
-  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  initTestRepo(root);
   const previous = process.cwd();
   process.chdir(root);
   try {
@@ -57,7 +57,7 @@ test('role CLI activates the current valid catalog and returns its durable recei
 test('role CLI records model capability evidence through the public interface', async () => {
   const { root, store } = await gatewayFixture({ activateCatalog: false, seedModelEvidence: false });
   store.close();
-  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  initTestRepo(root);
   const previous = process.cwd();
   process.chdir(root);
   try {
@@ -80,7 +80,7 @@ test('role CLI records model capability evidence through the public interface', 
 
 test('role CLI bootstraps the bundled semantic profile without provider configuration', async () => {
   const emptyRoot = await mkdtemp(join(tmpdir(), 'svp-role-cli-bootstrap-'));
-  execFileSync('git', ['init', '-b', 'main'], { cwd: emptyRoot });
+  initTestRepo(emptyRoot);
   const previous = process.cwd();
   process.chdir(emptyRoot);
   try {
@@ -117,7 +117,7 @@ test('role CLI projects an adapter config and returns durable projection receipt
     expiresAt: TEST_EXPIRES_AT,
   });
   store.close();
-  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  initTestRepo(root);
   const previous = process.cwd();
   process.chdir(root);
   try {

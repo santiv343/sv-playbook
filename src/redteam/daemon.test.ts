@@ -12,6 +12,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { openStore, isDaemonRunning } from '../db/store.js';
 import { startDaemon } from '../daemon/daemon.js';
 import { OS_PLATFORM } from '../platform.constants.js';
+import { initTestRepo } from '../testkit.js';
 
 // Env for child processes that must behave like a real (non-test) CLI invocation.
 function realCliEnv(): NodeJS.ProcessEnv {
@@ -52,7 +53,7 @@ function postJson(port: number, path: string, body: unknown): Promise<{ statusCo
 }
 
 function initFixtureRepo(root: string): void {
-  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
 }
 
@@ -110,7 +111,7 @@ function spawnCollect(execPath: string, binPath: string, cwd: string, env: NodeJ
 // ---- CHEAT 14: Worktree direct store access while daemon holds exclusive lock ----
 test('red team: a worktree process cannot open the store directly while the daemon holds the exclusive lock (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rt-daemon-'));
-  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
 
   const wtDir = join(root, 'wt');
@@ -162,7 +163,7 @@ test('red team: a worktree process cannot open the store directly while the daem
 // ---- STORE-003: Worktree CLI without daemon ----
 test('red team: worktree CLI without daemon refuses with daemon guidance and does not materialize .svp (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rt-wt-003-'));
-  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
 
   const wtDir = join(root, 'wt');
@@ -286,8 +287,7 @@ test('activation probe: spawn daemon detached, health, reject second writer, roo
       const db = new DatabaseSync(${JSON.stringify(dbPath)});
       db.exec('BEGIN IMMEDIATE');
     `], { encoding: 'utf8', timeout: 5000 });
-    assert.notEqual(secondWriterResult.status, 0,
-      `second writer must fail with SQLITE_BUSY, got exit ${secondWriterResult.status}: ${secondWriterResult.stderr}`);
+    assert.notEqual(secondWriterResult.status, 0, `second writer must fail with SQLITE_BUSY, got exit ${secondWriterResult.status}: ${secondWriterResult.stderr}`);
     assert.ok(
       /locked/i.test(secondWriterResult.stderr) || /busy/i.test(secondWriterResult.stderr),
       `second writer stderr must mention locked/busy: ${secondWriterResult.stderr}`,

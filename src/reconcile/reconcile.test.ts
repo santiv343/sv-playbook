@@ -15,12 +15,13 @@ import {
   RECONCILE_SAFETY,
   RECONCILER_ACTOR,
 } from './reconcile.constants.js';
+import { initTestRepo } from '../testkit.js';
 
 interface CallCapture { method: string; args: readonly unknown[] }
 
 function inTempRepo<T>(fn: () => Promise<T>): Promise<T> {
   return mkdtemp(join(tmpdir(), 'svp-reconcile-')).then(async (root) => {
-    execFileSync('git', ['init'], { cwd: root });
+    initTestRepo(root);
     execFileSync('git', [
       '-c', 'user.email=test@sv-playbook.local',
       '-c', 'user.name=sv-playbook test',

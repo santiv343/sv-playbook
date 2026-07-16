@@ -29,6 +29,8 @@ export const PROCESS_EVENT = {
 
 export const PROCESS_STDIO = { IGNORE: 'ignore', PIPE: 'pipe' } as const;
 
+export const NODE_EVAL_FLAG = '-e';
+
 export const HTTP_METHOD = {
   GET: 'GET',
   POST: 'POST',

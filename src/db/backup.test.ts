@@ -11,10 +11,11 @@ import { openStore } from './store.js';
 import { SVP_DIR, DB_FILE, SCHEMA_VERSION } from './store.constants.js';
 import { BACKUP_REASON } from './backup.constants.js';
 import { stringColumn, numberColumn } from './rows.js';
+import { initTestRepo } from '../testkit.js';
 
 async function createTestRepo(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'svp-backup-test-'));
-  execFileSync('git', ['init'], { cwd: root, encoding: 'utf8' });
+  initTestRepo(root);
   execFileSync('git', ['config', 'user.email', 'test@test.com'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: root });
   writeFileSync(join(root, 'README.md'), '# Test\n');

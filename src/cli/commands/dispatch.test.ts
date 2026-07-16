@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import type { Io } from '../command.types.js';
 import { gatewayFixture } from '../../gateway/gateway.test-support.js';
@@ -8,6 +7,7 @@ import { command } from './dispatch.js';
 import { EXIT } from '../command.constants.js';
 import { REFERENCE_KIND } from '../../platform.constants.js';
 import { WORK_DEFINITION_INITIAL_VERSION } from '../../tasks/work-definition.constants.js';
+import { initTestRepo } from '../../testkit.js';
 
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = [];
@@ -17,7 +17,7 @@ function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
 
 test('CLI preparation resolves the typed work definition through the shared runtime capability', async () => {
   const { root, store } = await gatewayFixture();
-  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  initTestRepo(root);
   const expected = prepareRunSpec(store, {
     roleId: 'implementer', phase: 'delivery',
     workDefinitionRef: {

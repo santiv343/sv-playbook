@@ -300,6 +300,11 @@ function seedBundledRoleCatalog(
   });
 }
 
+export function roleCatalogStoreIsVirgin(store: Store): boolean {
+  return existingReceipt(store) === undefined
+    && store.orm.select({ roleId: roleContracts.roleId }).from(roleContracts).all().length === EMPTY_SIZE;
+}
+
 export function bootstrapBundledRoleCatalog(store: Store): BundledRoleBootstrapReceipt {
   validateBundledProfile();
   const profileDigest = digest(BUNDLED_ROLE_PROFILE);

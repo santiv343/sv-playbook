@@ -10,10 +10,11 @@ import { stringColumn } from '../db/rows.js';
 import { createPacket, movePacket, ensureSession, startPacket } from '../tasks/service.js';
 import { runPreflight } from '../review/preflight.js';
 import { PREFLIGHT_CHECK_NAME, PREFLIGHT_STATUS } from '../review/preflight.types.js';
+import { initTestRepo } from '../testkit.js';
 
 async function setupPreflightRepo() {
   const root = await mkdtemp(join(tmpdir(), 'svp-preflight-'));
-  execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/preflight-test'], { cwd: root });
   await mkdir(join(root, 'src', 'redteam'), { recursive: true });

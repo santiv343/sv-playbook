@@ -25,6 +25,7 @@ import {
 } from './service.js';
 import { LifecycleError } from './service.errors.js';
 import { setupServiceTest as setup } from './service.test.support.js';
+import { initTestRepo } from '../testkit.js';
 const def = (id: string) => ({ id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'], requirements: [], evidenceRequired: ['final-sha'] });
 
 test('createPacket writes markdown projection and DB row in draft', async () => {
@@ -198,7 +199,7 @@ test('moving to ready is refused when the write_set conflicts with an in-flight 
 test('moving to review captures head evidence as events', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-ev-'));
   const { execFileSync } = await import('node:child_process');
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   const store = openStore(root);
   createPacket(store, root, def('E-001'), 'a');
@@ -293,7 +294,7 @@ test("task brief prepends the universal acceptance rubric to every worker prompt
 test('move to review is refused when the branch changed a file outside the write_set', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-ws-'));
   const { execFileSync } = await import('node:child_process');
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/test'], { cwd: root });
   await mkdir(join(root, 'src', 'b'), { recursive: true });
@@ -346,7 +347,7 @@ test('move to done is blocked; use promotion run instead', async () => {
 test('move to review is refused when the project verify command fails', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-verify-'));
   const { execFileSync } = await import('node:child_process');
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/verify-test'], { cwd: root });
   await mkdir(join(root, 'src', 'a'), { recursive: true });

@@ -1,9 +1,21 @@
 import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { numberColumn, stringColumn } from './rows.js';
+import { NODE_EVAL_FLAG, PROCESS_STDIO, TEXT_ENCODING } from '../platform.constants.js';
 import { SQLITE_INTEGRITY_OK } from './store.constants.js';
 
 const BUSY_TIMEOUT_SQL = 'PRAGMA busy_timeout = 5000';
+const BEGIN_IMMEDIATE_SQL = 'BEGIN IMMEDIATE';
+const ROLLBACK_SQL = 'ROLLBACK';
+const LOCK_PROBE_TIMEOUT_MS = 10_000;
+
+// Exit protocol of the lock-probe child process.
+const LOCK_PROBE_EXIT = {
+  HELD: 0,
+  ERROR: 1,
+  ACQUIRED: 2,
+} as const;
 
 export function terminalPacketCountAt(dbPath: string): number | undefined {
   if (!existsSync(dbPath)) return undefined;
@@ -31,22 +43,24 @@ export function assertSqliteIntegrity(dbPath: string): void {
   }
 }
 
-function isLockContention(error: unknown): boolean {
-  return error instanceof Error && /locked|busy/i.test(error.message);
+// POSIX fcntl locks are per-process, so a probe connection opened in-process
+// always "acquires" the lock the holder already has and the check fails on
+// Linux/macOS. The probe runs in a child process, where the exclusive hold
+// genuinely conflicts on every platform.
+function buildLockProbeScript(dbPath: string): string {
+  return `const{DatabaseSync}=require('node:sqlite');const busy=/locked|busy/i;const db=new DatabaseSync(${JSON.stringify(dbPath)});let code=${LOCK_PROBE_EXIT.ERROR};try{db.exec(${JSON.stringify(BEGIN_IMMEDIATE_SQL)});db.exec(${JSON.stringify(ROLLBACK_SQL)});code=${LOCK_PROBE_EXIT.ACQUIRED};}catch(error){if(busy.test(String(error&&error.message)))code=${LOCK_PROBE_EXIT.HELD};}finally{db.close();}process.exit(code);`;
 }
 
 export function assertExclusiveStoreLock(dbPath: string): void {
-  const probe = new DatabaseSync(dbPath);
-  try {
-    try {
-      probe.exec('BEGIN IMMEDIATE');
-    } catch (error: unknown) {
-      if (isLockContention(error)) return;
-      throw error;
-    }
-    probe.exec('ROLLBACK');
+  const result = spawnSync(process.execPath, [NODE_EVAL_FLAG, buildLockProbeScript(dbPath)], {
+    encoding: TEXT_ENCODING.UTF8,
+    stdio: [PROCESS_STDIO.IGNORE, PROCESS_STDIO.IGNORE, PROCESS_STDIO.PIPE],
+    timeout: LOCK_PROBE_TIMEOUT_MS,
+  });
+  if (result.status === LOCK_PROBE_EXIT.HELD) return;
+  if (result.status === LOCK_PROBE_EXIT.ACQUIRED) {
     throw new Error('exclusive lock not held: second connection acquired a write lock');
-  } finally {
-    probe.close();
   }
+  const detail = result.stderr.trim();
+  throw new Error(detail ? `lock probe failed: ${detail}` : 'lock probe failed');
 }

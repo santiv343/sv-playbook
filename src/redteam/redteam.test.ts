@@ -19,6 +19,7 @@ import {
 } from '../tasks/service.js';
 import { STATUS } from '../tasks/service.constants.js';
 import { setupServiceTest } from '../tasks/service.test.support.js';
+import { initTestRepo } from '../testkit.js';
 
 const def = (id: string, deps: string[] = [], ws: string[] = ['src/redteam/**']) => ({
   id,
@@ -210,7 +211,7 @@ test('red team: moving active to ready (releasing without review) is refused by 
 // ---- CHEAT 8: Stale SHA / report integrity ----
 test('red team: fabricated SHA in evidence events does not match git HEAD', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rt-sha-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/rt-sha'], { cwd: root });
   await mkdir(join(root, 'src', 'redteam'), { recursive: true });
@@ -291,7 +292,7 @@ test('red team: stale-lease takeover succeeds when lease is expired', async () =
 // ---- CHEAT 12: Verify command bypass ----
 test('red team: moving to review when verify command fails is refused by the verify gate', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rt-verify-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/rt-verify'], { cwd: root });
   await mkdir(join(root, 'src', 'redteam'), { recursive: true });
@@ -326,7 +327,7 @@ test('red team: starting a draft packet is refused with the current status name'
 // ---- SAFETY: Store migration always uses fixture DBs, never the shared .svp ----
 test('red team: store fixture DB is used during migration, never the shared .svp', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rt-mig-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
 
   const store = openStore(root);
