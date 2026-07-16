@@ -2,7 +2,9 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import type { Store } from '../db/store.types.js';
+import type { SecondCandidate } from './promotion.test.support.types.js';
 import { addExecutionProfile } from '../gateway/profiles.js';
 import { createObservingGatewayRun, finishGatewayRun } from '../gateway/gateway-run-repository.js';
 import { GATEWAY_RUN_STATUS } from '../gateway/gateway.constants.js';
@@ -31,6 +33,8 @@ const FIXTURE = {
   PROGRESS: 'sha256:review-complete',
   PROJECTION: 'promotion-test-projection',
   PROJECTION_RECEIPT: 'RPR-PROMOTION-TEST',
+  REQUIREMENT: 'Promote the exact candidate.',
+  EVIDENCE: 'candidate-sha',
 } as const;
 
 function git(root: string, args: readonly string[]): string {
@@ -93,11 +97,12 @@ function completeReviewRun(
   runSpec: RunSpec,
   output: unknown,
   reviewerSessionId: string,
+  messageId: string = FIXTURE.MESSAGE,
 ): void {
   const identity = {
     runSpecId: runSpec.id,
     sessionId: reviewerSessionId,
-    messageId: FIXTURE.MESSAGE,
+    messageId,
   };
   const now = new Date().toISOString();
   createObservingGatewayRun(store, identity, FIXTURE.PROGRESS, now);
@@ -136,8 +141,8 @@ async function createReviewedCandidate(store: Store, root: string, options: Fixt
     title: 'Promotion controller fixture',
     dependsOn: [],
     writeSet: ['src/**'],
-    requirements: ['Promote the exact candidate.'],
-    evidenceRequired: ['candidate-sha'],
+    requirements: [FIXTURE.REQUIREMENT],
+    evidenceRequired: [FIXTURE.EVIDENCE],
     tags: ['backend'],
   }, 'Promotion fixture.');
   git(root, ['add', `docs/packets/${FIXTURE.PACKET_ID}.md`]);
@@ -208,4 +213,54 @@ export async function promotionFixture(options: FixtureOptions = {}): Promise<Pr
 
 export function gitSha(root: string, ref: string): string {
   return git(root, ['rev-parse', ref]);
+}
+
+export async function createSecondIntegratedCandidate(
+  store: Store,
+  root: string,
+  packetId: string,
+): Promise<SecondCandidate> {
+  const candidateSha = git(root, ['rev-parse', 'HEAD']);
+  git(root, ['checkout', '-b', `docs/${packetId.toLowerCase()}`]);
+  createPacket(store, root, {
+    id: packetId,
+    title: 'Second already-integrated fixture',
+    dependsOn: [],
+    writeSet: ['src/**'],
+    requirements: [FIXTURE.REQUIREMENT],
+    evidenceRequired: [FIXTURE.EVIDENCE],
+    tags: [],
+  }, 'Second promotion fixture.');
+  git(root, ['add', `docs/packets/${packetId}.md`]);
+  git(root, ['commit', '-m', 'second task definition']);
+  const definition = loadWorkDefinition(store, packetId);
+  git(root, ['checkout', candidateSha]);
+  movePacket(store, undefined, packetId, STATUS.READY);
+  const producerSessionId = ensureSession(store, root);
+  startPacket(store, producerSessionId, root, packetId);
+  await movePacketToReview(store, producerSessionId, packetId);
+  const reviewCandidate = store.orm.select().from(reviewCandidates)
+    .where(eq(reviewCandidates.packetId, packetId)).get();
+  if (reviewCandidate === undefined) throw new Error('second review candidate was not created');
+  const runSpec = prepareRunSpec(store, {
+    roleId: BUNDLED_ROLE_ID.REVIEWER,
+    phase: PROMOTION_REVIEW_PHASE,
+    workDefinitionRef: {
+      kind: REFERENCE_KIND.WORK_DEFINITION,
+      id: packetId,
+      version: definition.version,
+    },
+    executionProfileId: FIXTURE.CONTEXT_PROFILE,
+  });
+  const output = {
+    kind: REVIEW_VERDICT_KIND,
+    payload: {
+      candidateSha,
+      verdict: PROMOTION_VERDICT.APPROVED,
+      findings: [],
+      workDefinitionRef: { id: packetId, version: definition.version, digest: definition.digest },
+    },
+  };
+  completeReviewRun(store, runSpec, output, `${FIXTURE.ADAPTER_SESSION}-${packetId}`, `${FIXTURE.MESSAGE}-${packetId}`);
+  return { reviewCandidateId: reviewCandidate.id, reviewerRunSpecId: runSpec.id };
 }

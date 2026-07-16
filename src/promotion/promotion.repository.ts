@@ -254,7 +254,7 @@ export function recordIntegrationIntent(
   const created: StoredIntegrationAttempt = {
     id: promotionId(PROMOTION_ID_PREFIX.ATTEMPT),
     candidateId: candidate.id,
-    effectKey: digest({ targetRef, beforeSha, candidateSha: candidate.candidateSha }),
+    effectKey: digest({ taskId: candidate.taskId, targetRef, beforeSha, candidateSha: candidate.candidateSha }),
     targetRef,
     beforeSha,
     candidateSha: candidate.candidateSha,

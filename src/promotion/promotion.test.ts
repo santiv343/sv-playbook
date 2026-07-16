@@ -12,7 +12,7 @@ import { PromotionError } from './promotion.errors.js';
 import { candidateStatus } from './promotion.repository.js';
 import { readPromotionDashboard } from './promotion.receipts.js';
 import { promotionReviewVerdicts } from './promotion.schema.constants.js';
-import { gitSha, promotionFixture } from './promotion.test.support.js';
+import { gitSha, promotionFixture, createSecondIntegratedCandidate } from './promotion.test.support.js';
 
 function request(fixture: Awaited<ReturnType<typeof promotionFixture>>) {
   return {
@@ -118,5 +118,19 @@ test('already-integrated candidate closes the task without moving main', async (
     receiptId: receipt.id,
     updatedAt: receipt.createdAt,
   }]);
+  fixture.store.close();
+});
+
+test('two already-integrated packets promoted from the same SHA do not collide on effect_key', async () => {
+  const fixture = await promotionFixture({ integrated: true });
+  const controller = new PromotionController(fixture.store, fixture.root);
+  await controller.promote(request(fixture));
+  const second = await createSecondIntegratedCandidate(fixture.store, fixture.root, 'GATE-PROMOTION-SECOND');
+  const secondReceipt = await controller.promote({
+    reviewCandidateId: second.reviewCandidateId,
+    reviewerRunSpecId: second.reviewerRunSpecId,
+  });
+  assert.equal(secondReceipt.taskId, 'GATE-PROMOTION-SECOND');
+  assert.equal(secondReceipt.integration, REVIEW_CANDIDATE_INTEGRATION.INTEGRATED);
   fixture.store.close();
 });
