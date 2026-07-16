@@ -113,10 +113,24 @@ function bindingWorkspace(cwd: string): string {
 // A workspace belongs to the daemon's repository when it sits inside the
 // blessed root or when its git common dir resolves back to it (linked
 // worktrees may live anywhere on disk).
+function debugWorkspaceWithinRepo(repoRoot: string, cwd: string, workspaceRaw: string, workspace: string, root: string, common: unknown): void {
+  const payload = { repoRoot, cwd, workspaceRaw, workspace, root, common, sep, platform: process.platform };
+  process.stderr.write(`SVP_DEBUG_WORKSPACE ${JSON.stringify(payload)}\n`);
+}
+
 export function workspaceWithinRepo(repoRoot: string, cwd: string): boolean {
+  const workspaceRaw = (() => { try { return execGitTopLevel(cwd); } catch { return cwd; } })();
   const workspace = bindingWorkspace(cwd);
   const root = normalizePathForCompare(repoRoot);
-  if (workspace === root || workspace.startsWith(`${root}${sep}`)) return true;
+  const result = workspace === root || workspace.startsWith(`${root}${sep}`);
+  if (!result) {
+    try {
+      debugWorkspaceWithinRepo(repoRoot, cwd, workspaceRaw, workspace, root, normalizePathForCompare(commonRoot(workspace)));
+    } catch (e) {
+      debugWorkspaceWithinRepo(repoRoot, cwd, workspaceRaw, workspace, root, String(e));
+    }
+  }
+  if (result) return true;
   try {
     return normalizePathForCompare(commonRoot(workspace)) === root;
   } catch {
