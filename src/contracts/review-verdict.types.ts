@@ -12,4 +12,5 @@ export interface ParsedReviewVerdict {
   readonly candidateSha: string;
   readonly verdict: ReviewVerdict;
   readonly workDefinitionRef: ReviewVerdictWorkDefinitionRef;
+  readonly rationale?: string;
 }
