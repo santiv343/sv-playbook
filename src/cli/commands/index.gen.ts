@@ -13,6 +13,7 @@ import { command as describe } from './describe.js';
 import { command as dispatch } from './dispatch.js';
 import { command as docs } from './docs.js';
 import { command as doctor } from './doctor.js';
+import { command as enforce } from './enforce.js';
 import { command as execution_profile } from './execution-profile.js';
 import { command as handoff } from './handoff.js';
 import { command as import_ } from './import.js';
@@ -30,4 +31,5 @@ import { command as task } from './task.js';
 import { command as workflow_policy } from './workflow-policy.js';
 import { command as workspace } from './workspace.js';
 
-export const allCommands: readonly Command[] = [adopt, backup, check, constitution, context, contract, daemon, decision, describe, dispatch, docs, doctor, execution_profile, handoff, import_, instructions, promotion, rebuild, reconcile, restore, review, role, serve, sprint, status, task, workflow_policy, workspace];
+export const allCommands: readonly Command[] = [adopt, backup, check, constitution, context, contract, daemon, decision, describe, dispatch, docs, doctor, enforce, execution_profile, handoff, import_, instructions, promotion, rebuild, reconcile, restore, review, role, serve, sprint, status, task, workflow_policy, workspace];
+

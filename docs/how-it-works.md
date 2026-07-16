@@ -405,6 +405,7 @@ Full guide: `sv-playbook docs cli`. Implemented today:
 | `dispatch` | Prepare immutable RunSpecs and dispatch only through registered adapters |
 | `docs` | Print a playbook process document (list topics when no argument) |
 | `doctor` | Diagnose Node, git, store, packet, and lease health |
+| `enforce` | Machine-authoritative contract conformance check (read-only) |
 | `execution-profile` | Manage provider-neutral execution profiles and adapter-specific projections |
 | `handoff` | Generate a deterministic continuation prompt from live state |
 | `import` | Import packet definitions from docs/packets/*.md into the DB |
