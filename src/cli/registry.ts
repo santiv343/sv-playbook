@@ -11,6 +11,6 @@ function isFixtureName(name: string): boolean {
 
 export function commands(): readonly Command[] {
   const base: Command[] = [...allCommands.filter((c) => !isFixtureName(c.name))];
-  if (!base.some((c) => c.name === 'decision')) base.push(decision);
+  if (!base.some((c) => c.name === decision.name)) base.push(decision);
   return base;
 }

@@ -1,10 +1,13 @@
 import { readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { COMMAND_FILE_TOKEN } from './generate-index.constants.js';
 
 const TS_EXT = '.ts';
 
 function isFixtureFile(name: string): boolean {
-  return name.startsWith('__') && name.endsWith(`__${TS_EXT}`);
+  return name.startsWith(COMMAND_FILE_TOKEN.FIXTURE_BOUNDARY)
+    && name.endsWith(`${COMMAND_FILE_TOKEN.FIXTURE_BOUNDARY}${TS_EXT}`);
 }
 
 function isCommandFile(name: string): boolean {
@@ -13,8 +16,8 @@ function isCommandFile(name: string): boolean {
     && !name.endsWith(`.constants${TS_EXT}`)
     && !name.endsWith(`.types${TS_EXT}`)
     && !name.endsWith(`.errors${TS_EXT}`)
-    && !name.startsWith('index.gen')
-    && !name.startsWith('generate-index')
+    && !name.startsWith(COMMAND_FILE_TOKEN.GENERATED_INDEX)
+    && !name.startsWith(COMMAND_FILE_TOKEN.GENERATOR)
     && !isFixtureFile(name);
 }
 
@@ -37,7 +40,9 @@ const RESERVED = new Set([
 ]);
 
 function safeIdent(cmd: string): string {
-  return RESERVED.has(cmd) ? `${cmd}_` : cmd;
+  const identifier = cmd.replaceAll(/[^A-Za-z0-9_$]/g, '_');
+  const prefixed = /^[A-Za-z_$]/.test(identifier) ? identifier : `_${identifier}`;
+  return RESERVED.has(prefixed) ? `${prefixed}_` : prefixed;
 }
 
 export function generateIndex(srcDir: string, outPath: string): void {
@@ -55,6 +60,5 @@ export function generateIndex(srcDir: string, outPath: string): void {
   writeFileSync(outPath, lines.join('\n') + '\n', 'utf8');
 }
 
-const SRC_DIR = new URL('..', import.meta.url).pathname;
-const COMMANDS_DIR = join(SRC_DIR, 'commands');
+const COMMANDS_DIR = fileURLToPath(new URL('.', import.meta.url));
 generateIndex(COMMANDS_DIR, join(COMMANDS_DIR, 'index.gen.ts'));

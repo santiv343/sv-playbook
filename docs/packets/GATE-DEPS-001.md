@@ -3,7 +3,7 @@
 id: GATE-DEPS-001
 title: gate: rechazar task start si algun depends_on no esta done (orden de dispatch enforzado por el CLI)
 depends_on: ["GATE-EVIDENCE-001"]
-write_set: ["src/tasks/service.ts","src/tasks/service.test.ts"]
+write_set: ["src/tasks/service.ts","src/tasks/service.test.ts","src/tasks/dependencies.ts","src/tasks/dependencies.test.ts","src/tasks/schema.constants.ts","src/db/orm.constants.ts","src/redteam/redteam.test.ts"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]
 ---

@@ -1,9 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
-import { EXIT } from '../command.constants.js';
+import { TEXT_ENCODING } from '../../platform.constants.js';
+import { CLI_FORCE_FLAG, EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
-import { commonRoot, openStore, worktreeRoot } from '../../db/store.js';
+import { extractConfirmDestructive } from '../command.js';
+import { commonRoot, worktreeRoot } from '../../db/store.js';
+import { getCwd } from '../../runtime/context.js';
 import { createStateBackup, latestStateBackupAgeHours } from '../../db/backup.js';
 import { BACKUP_EVENT, BACKUP_REASON } from '../../db/backup.constants.js';
 import type { Store } from '../../db/store.types.js';
@@ -29,17 +31,23 @@ import {
   takeoverPacket,
   amendPacket,
 } from '../../tasks/service.js';
+import { movePacketToReview } from '../../tasks/review-transition.js';
 import { DEFAULT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, PACKET_STATUSES, STATUS } from '../../tasks/service.constants.js';
 import { LifecycleError } from '../../tasks/service.errors.js';
 import type { PacketStatus, RecoveryReport } from '../../tasks/service.types.js';
 import { checkDestructiveGate, queryDestructiveCounts } from '../destructive-gate.js';
+import { withStore, withStoreAsync } from '../store.js';
 
 interface Subcommand {
   usage: string;
-  run(rest: string[], io: Io): number;
+  run(rest: string[], io: Io): number | Promise<number>;
 }
 
 class UsageError extends Error {}
+
+const STRING_OPTION = { type: 'string' } as const;
+const STRING_LIST_OPTION = { type: STRING_OPTION.type, multiple: true } as const;
+const BODY_FILE_OPTION = 'body-file';
 
 function stringValue(value: string | boolean | string[] | undefined, name: string): string {
   if (typeof value !== 'string' || value === '') throw new UsageError(`missing --${name}`);
@@ -57,16 +65,6 @@ function isPacketStatus(value: string): value is PacketStatus {
   return PACKET_STATUSES.some((status) => status === value);
 }
 
-function withStore<T>(fn: (store: Store, repoRoot: string) => T): T {
-  const repoRoot = commonRoot(process.cwd());
-  const store = openStore(repoRoot);
-  try {
-    return fn(store, repoRoot);
-  } finally {
-    store.close();
-  }
-}
-
 function backupForEvent(repoRoot: string, event: BackupEvent, reason: BackupReason, allowFreshLeases?: boolean): void {
   const config = loadConfig(repoRoot);
   if (!config.backup.enabled) return;
@@ -80,21 +78,21 @@ function backupForEvent(repoRoot: string, event: BackupEvent, reason: BackupReas
 
 function handleCreate(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: true, options: {
-    type: { type: 'string' }, id: { type: 'string' }, title: { type: 'string' },
-    write: { type: 'string', multiple: true }, depends: { type: 'string', multiple: true },
-    req: { type: 'string', multiple: true }, evidence: { type: 'string', multiple: true },
-    'body-file': { type: 'string' },
+    type: STRING_OPTION, id: STRING_OPTION, title: STRING_OPTION,
+    write: STRING_LIST_OPTION, depends: STRING_LIST_OPTION,
+    req: STRING_LIST_OPTION, evidence: STRING_LIST_OPTION,
+    [BODY_FILE_OPTION]: STRING_OPTION,
   } });
   if (parsed.positionals.length !== 0) throw new UsageError('create takes no positional arguments');
   const writeSet = stringValues(parsed.values.write);
   if (writeSet.length === 0) throw new UsageError('missing --write');
   const title = stringValue(parsed.values.title, 'title');
-  const body = readFileSync(stringValue(parsed.values['body-file'], 'body-file'), 'utf8');
+  const body = readFileSync(stringValue(parsed.values[BODY_FILE_OPTION], BODY_FILE_OPTION), TEXT_ENCODING.UTF8);
   const dependsOn = stringValues(parsed.values.depends);
   const requirements = stringValues(parsed.values.req);
   const evidenceRequired = stringValues(parsed.values.evidence);
   if (evidenceRequired.length === 0) evidenceRequired.push(...DEFAULT_EVIDENCE);
-  const docRoot = worktreeRoot(process.cwd());
+  const docRoot = worktreeRoot(getCwd());
   const type = parsed.values.type; const explicitId = parsed.values.id;
   if (type !== undefined && explicitId !== undefined) throw new UsageError('--id is not allowed with --type; use --id only for import/rebuild paths');
   return withStore((store) => {
@@ -108,22 +106,22 @@ function handleCreate(args: string[], io: Io): number {
 
 function handleAmend(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: true, options: {
-    title: { type: 'string' }, write: { type: 'string', multiple: true },
-    depends: { type: 'string', multiple: true }, req: { type: 'string', multiple: true },
-    evidence: { type: 'string', multiple: true }, 'body-file': { type: 'string' },
+    title: STRING_OPTION, write: STRING_LIST_OPTION,
+    depends: STRING_LIST_OPTION, req: STRING_LIST_OPTION,
+    evidence: STRING_LIST_OPTION, [BODY_FILE_OPTION]: STRING_OPTION,
   } });
   const [packetId] = parsed.positionals;
   if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('amend requires <ID>');
   const updates: { title?: string; body?: string; writeSet?: string[]; dependsOn?: string[]; requirements?: string[]; evidenceRequired?: string[] } = {};
   if (parsed.values.write !== undefined) updates.writeSet = stringValues(parsed.values.write);
   if (parsed.values.title !== undefined) updates.title = parsed.values.title;
-  if (parsed.values['body-file'] !== undefined) updates.body = readFileSync(stringValue(parsed.values['body-file'], 'body-file'), 'utf8');
+  if (parsed.values[BODY_FILE_OPTION] !== undefined) updates.body = readFileSync(stringValue(parsed.values[BODY_FILE_OPTION], BODY_FILE_OPTION), TEXT_ENCODING.UTF8);
   if (parsed.values.depends !== undefined) updates.dependsOn = stringValues(parsed.values.depends);
   if (parsed.values.req !== undefined) updates.requirements = stringValues(parsed.values.req);
   if (parsed.values.evidence !== undefined) updates.evidenceRequired = stringValues(parsed.values.evidence);
   if (Object.keys(updates).length === 0) throw new UsageError('amend requires at least one flag');
   return withStore((store) => {
-    amendPacket(store, worktreeRoot(process.cwd()), packetId, updates);
+    amendPacket(store, worktreeRoot(getCwd()), packetId, updates);
     io.out(`amended ${packetId}`);
     return EXIT.OK;
   });
@@ -166,7 +164,7 @@ function jsonShowPayload(store: Store, packetId: string, report: RecoveryReport)
   let requirements: string[] = []; let evidenceRequired: string[] = [];
   try {
     if (existsSync(path)) {
-      const parsed = parsePacketDocument(readFileSync(path, 'utf8'));
+      const parsed = parsePacketDocument(readFileSync(path, TEXT_ENCODING.UTF8));
       requirements = parsed.definition.requirements;
       evidenceRequired = parsed.definition.evidenceRequired;
     }
@@ -185,9 +183,9 @@ function handleStart(args: string[], io: Io): number {
   const [packetId] = args;
   if (args.length !== 1 || packetId === undefined) throw new UsageError('start requires <ID>');
   return withStore((store) => {
-    const sessionId = ensureSession(store, process.cwd());
+    const sessionId = ensureSession(store, getCwd());
     const existing = leaseOf(store, packetId);
-    startPacket(store, sessionId, process.cwd(), packetId);
+    startPacket(store, sessionId, getCwd(), packetId);
     io.out(existing !== undefined && existing.sessionId === sessionId
       ? `started ${packetId}: already held by this session`
       : `started ${packetId}: ready -> active, lease acquired`);
@@ -195,13 +193,16 @@ function handleStart(args: string[], io: Io): number {
   });
 }
 
-function handleMove(args: string[], io: Io): number {
+async function handleMove(args: string[], io: Io): Promise<number> {
   const [packetId, status] = args;
   if (packetId === undefined || status === undefined || args.length !== 2) throw new UsageError('move requires <ID> <status>');
   if (!isPacketStatus(status)) throw new UsageError(`unknown status: ${status}`);
-  return withStore((store, repoRoot) => {
-    const from = movePacket(store, ensureSession(store, process.cwd()), packetId, status);
-    if (status === STATUS.DONE) backupForEvent(repoRoot, BACKUP_EVENT.DONE, BACKUP_REASON.AUTO_DONE);
+  if (status === STATUS.DONE) throw new UsageError('use `sv-playbook promotion run --candidate <ID> --review-run <RUN-ID>` to set a task as done');
+  return withStoreAsync(async (store) => {
+    const sessionId = ensureSession(store, getCwd());
+    const from = status === STATUS.REVIEW
+      ? await movePacketToReview(store, sessionId, packetId)
+      : movePacket(store, sessionId, packetId, status);
     io.out(`moved ${packetId}: ${from} -> ${status}`);
     return EXIT.OK;
   });
@@ -233,25 +234,23 @@ function handleShow(args: string[], io: Io): number {
 }
 
 function handleTakeover(args: string[], io: Io): number {
-  const CONFIRM_FLAG = '--confirm-destructive';
-  const hasConfirm = args.includes(CONFIRM_FLAG);
-  if (hasConfirm) args = args.filter((a) => a !== CONFIRM_FLAG);
+  const { args: runArgs, hasConfirm } = extractConfirmDestructive(args);
 
-  const hasForce = args.includes('--force');
+  const hasForce = runArgs.includes(CLI_FORCE_FLAG);
 
-  const parsed = parseArgs({ args, allowPositionals: true, options: { force: { type: 'boolean' } } });
+  const parsed = parseArgs({ args: runArgs, allowPositionals: true, options: { force: { type: 'boolean' } } });
   const [packetId] = parsed.positionals;
   if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('takeover requires <ID>');
 
   if (hasForce) {
-    const repoRoot = commonRoot(process.cwd());
+    const repoRoot = commonRoot(getCwd());
     const gateResult = checkDestructiveGate(io, 'task takeover --force', repoRoot, hasConfirm, queryDestructiveCounts(repoRoot));
     if (gateResult !== undefined) return gateResult;
   }
 
   return withStore((store, repoRoot) => {
-    const sessionId = ensureSession(store, process.cwd());
-    const report = takeoverPacket(store, sessionId, process.cwd(), packetId, parsed.values.force === true);
+    const sessionId = ensureSession(store, getCwd());
+    const report = takeoverPacket(store, sessionId, getCwd(), packetId, parsed.values.force === true);
     if (parsed.values.force === true) backupForEvent(repoRoot, BACKUP_EVENT.FORCE_TAKEOVER, BACKUP_REASON.FORCE_TAKEOVER, true);
     io.out(`takeover ${packetId}: lease transferred`);
     renderReport(report, io);
@@ -263,7 +262,7 @@ function handleRelease(args: string[], io: Io): number {
   const [packetId] = args;
   if (args.length !== 1 || packetId === undefined) throw new UsageError('release requires <ID>');
   return withStore((store) => {
-    releaseLease(store, ensureSession(store, process.cwd()), packetId);
+    releaseLease(store, ensureSession(store, getCwd()), packetId);
     io.out(`released ${packetId}`);
     io.out(`warning: ${packetId} stays active without a lease; the next owner must run task takeover ${packetId}`);
     return EXIT.OK;
@@ -274,38 +273,8 @@ function handleNote(args: string[], io: Io): number {
   const [packetId, ...parts] = args;
   if (packetId === undefined || parts.length === 0) throw new UsageError('note requires <ID> <text...>');
   return withStore((store) => {
-    notePacket(store, ensureSession(store, process.cwd()), packetId, parts.join(' '));
+    notePacket(store, ensureSession(store, getCwd()), packetId, parts.join(' '));
     io.out(`noted ${packetId}`);
-    return EXIT.OK;
-  });
-}
-
-function prStateOrThrow(pr: string): string {
-  try {
-    execFileSync('gh', ['--version'], { encoding: 'utf8' });
-    const raw: unknown = JSON.parse(execFileSync('gh', ['pr', 'view', pr, '--json', 'state'], { encoding: 'utf8' }).trim());
-    if (raw === null || typeof raw !== 'object') return '';
-    const found = Object.entries(raw).find(([k]) => k === 'state');
-    return found !== undefined && typeof found[1] === 'string' ? found[1] : '';
-  } catch (error) {
-    const msg = error instanceof Error ? error.message.split('\n')[0] ?? error.message : String(error);
-    throw new LifecycleError(`failed to query PR #${pr}: ${msg}`);
-  }
-}
-
-function handleClose(args: string[], io: Io): number {
-  const parsed = parseArgs({ args, allowPositionals: true, options: { pr: { type: 'string' } } });
-  const [packetId] = parsed.positionals;
-  if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('close requires <ID> --pr <n>');
-  const pr = stringValue(parsed.values.pr, 'pr');
-  const prState = prStateOrThrow(pr);
-  if (prState !== 'MERGED') throw new LifecycleError(`PR #${pr} is not merged (state: ${prState || 'unknown'}) — close requires a merged PR`);
-  return withStore((store, repoRoot) => {
-    const sessionId = ensureSession(store, process.cwd());
-    store.db.prepare('UPDATE packets SET pr = ? WHERE id = ?').run(pr, packetId);
-    const from = movePacket(store, sessionId, packetId, STATUS.DONE);
-    backupForEvent(repoRoot, BACKUP_EVENT.DONE, BACKUP_REASON.AUTO_DONE);
-    io.out(`closed ${packetId}: ${from} -> done (PR #${pr} verified merged)`);
     return EXIT.OK;
   });
 }
@@ -320,7 +289,7 @@ function handleImport(args: string[], io: Io): number {
   const [pathOrId] = args;
   if (args.length !== 1 || pathOrId === undefined) throw new UsageError('import requires <path|ID>');
   return withStore((store) => {
-    const docRoot = worktreeRoot(process.cwd());
+    const docRoot = worktreeRoot(getCwd());
     const packetId = importPacketFile(store, docRoot, pathOrId);
     io.out(`imported ${packetId}`);
     return EXIT.OK;
@@ -340,7 +309,6 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   [EVENT_NOTE, { usage: 'sv-playbook task note <ID> <text...>', run: (rest, io) => handleNote(rest, io) }],
   ['brief', { usage: 'sv-playbook task brief <ID>', run: handleBrief }],
   ['import', { usage: 'sv-playbook task import <path|ID>', run: (rest, io) => handleImport(rest, io) }],
-  ['close', { usage: 'sv-playbook task close <ID> --pr <n>', run: (rest, io) => handleClose(rest, io) }],
 ]);
 
 const USAGE = ['Usage:', ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');
@@ -362,14 +330,14 @@ export const command: Command = {
   name: 'task',
   summary: 'Create, list, start, move, inspect, and recover execution packets',
   destructiveSubcommands: [EVENT_TAKEOVER],
-  run(args, io) {
+  async run(args, io) {
     try {
       const [sub, ...rest] = args;
       const c = sub === undefined ? undefined : SUBCOMMANDS.get(sub);
-      if (c !== undefined) return Promise.resolve(c.run(rest, io));
+      if (c !== undefined) return await c.run(rest, io);
       throw new UsageError(sub === undefined ? 'missing task subcommand' : `unknown task subcommand: ${sub}`);
     } catch (error) {
-      return Promise.resolve(handleTaskError(error, io));
+      return handleTaskError(error, io);
     }
   },
 };

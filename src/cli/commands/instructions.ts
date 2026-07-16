@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
+import { getCwd } from '../../runtime/context.js';
 import { loadConfig } from '../../config.js';
 import { contentDir } from '../../content.js';
 
@@ -52,7 +53,7 @@ export const command: Command = {
           write: { type: 'boolean' },
         },
       });
-      const root = process.cwd();
+      const root = getCwd();
       await renderInstructions({ root, io, write: !!parsed.values.write });
       return EXIT.OK;
     },

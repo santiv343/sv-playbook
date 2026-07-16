@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { main } from '../main.js';
 import { EXIT } from '../command.constants.js';
@@ -11,6 +11,7 @@ import type { Io } from '../command.types.js';
 import { createStateBackup } from '../../db/backup.js';
 import { BACKUP_REASON } from '../../db/backup.constants.js';
 import { openStore } from '../../db/store.js';
+import { initTestRepo } from '../../testkit.js';
 
 const execFileAsync = promisify(execFile);
 const CLI_PATH = join(process.cwd(), 'bin', 'sv-playbook.js');
@@ -23,7 +24,7 @@ function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
 
 async function inTempRepo<T>(fn: () => Promise<T>): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), 'svp-doctor-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   const previous = process.cwd();
   process.chdir(root);
   try {

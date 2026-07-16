@@ -9,10 +9,12 @@ import { openStore } from '../db/store.js';
 import { stringColumn } from '../db/rows.js';
 import { createPacket, movePacket, ensureSession, startPacket } from '../tasks/service.js';
 import { runPreflight } from '../review/preflight.js';
+import { PREFLIGHT_CHECK_NAME, PREFLIGHT_STATUS } from '../review/preflight.types.js';
+import { initTestRepo } from '../testkit.js';
 
 async function setupPreflightRepo() {
   const root = await mkdtemp(join(tmpdir(), 'svp-preflight-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/preflight-test'], { cwd: root });
   await mkdir(join(root, 'src', 'redteam'), { recursive: true });
@@ -37,7 +39,7 @@ test('review preflight aggregates the mechanical checks and a write_set violatio
   const session = ensureSession(store, root);
   startPacket(store, session, root, 'GATE-004-TEST');
 
-  const report = runPreflight(store, 'GATE-004-TEST', root);
+  const report = await runPreflight(store, 'GATE-004-TEST', root);
 
   assert.ok(report.writeSetViolations.length > 0, 'should have write_set violations');
   assert.ok(report.writeSetViolations.some((f) => f.includes('outside/evil.ts')), 'should name the violating file');
@@ -52,42 +54,43 @@ test('review preflight aggregates the mechanical checks and a write_set violatio
   execFileSync('git', ['rm', 'outside/evil.ts'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'remove violation'], { cwd: root });
 
-  const report2 = runPreflight(store, 'GATE-004-TEST', root);
+  const report2 = await runPreflight(store, 'GATE-004-TEST', root);
 
   assert.equal(report2.writeSetViolations.length, 0, 'no violations after fix');
-  assert.equal(report2.overall, 'pass', 'overall should be PASS after fix');
+  assert.equal(
+    report2.overall,
+    PREFLIGHT_STATUS.PASS,
+    `overall should pass after fix: ${JSON.stringify(report2.checks)}`,
+  );
   assert.ok(report2.checks.length >= 1, 'checks should be populated');
-  assert.ok(report2.checks.every((c) => c.status !== 'unknown'), 'every check should be populated');
+  assert.ok(report2.checks.every((c) => c.status !== PREFLIGHT_STATUS.UNKNOWN), 'every check should be populated');
 
   store.close();
 });
 
-test('F1: checkRedTest returns FAIL when RED test name not in any changed file diff', async () => {
+test('F1: RED criteria provenance does not pretend literal diff matching proves semantic adequacy', async () => {
   const root = await setupPreflightRepo();
   const store = openStore(root);
 
-  createPacket(store, root, def('GATE-004-TEST'), 'body');
-  await writeFile(
-    join(root, 'docs', 'packets', 'GATE-004-TEST.md'),
-    '## RED test\ndescribe(\'missing test\', () => {\n  // should be in diff but is not\n});\n\n## Other section\n',
-    'utf8',
-  );
+  createPacket(store, root, def('GATE-004-TEST'),
+    '## RED test\ndescribe(\'missing test\', () => {\n  // should be in diff but is not\n});\n\n## Other section\n');
   movePacket(store, undefined, 'GATE-004-TEST', 'ready');
   const session = ensureSession(store, root);
   startPacket(store, session, root, 'GATE-004-TEST');
 
-  const report = runPreflight(store, 'GATE-004-TEST', root);
+  const report = await runPreflight(store, 'GATE-004-TEST', root);
 
-  assert.equal(report.redTestFound, false, 'should report RED test not found');
+  assert.equal(report.redTestFound, true, 'should load RED criteria from the durable work definition');
 
-  const redCheck = report.checks.find((c) => c.name === 'red-test');
+  const redCheck = report.checks.find((c) => c.name === PREFLIGHT_CHECK_NAME.RED_TEST);
   assert.ok(redCheck !== undefined, 'red-test check should exist');
-  assert.equal(redCheck.status, 'fail', 'red-test check should be FAIL when test not in diff');
+  assert.equal(redCheck.status, PREFLIGHT_STATUS.PASS, 'mechanical provenance should pass without a text heuristic');
+  assert.match(redCheck.detail, /semantic adequacy requires review/);
 
   store.close();
 });
 
-test('F4: verify step runs in a disposable worktree that is cleaned up', async () => {
+test('F4: verify step leaves no temporary worktree behind', async () => {
   const root = await setupPreflightRepo();
   const store = openStore(root);
 
@@ -110,9 +113,9 @@ test('F4: verify step runs in a disposable worktree that is cleaned up', async (
   const reviewDir = join(root, '.worktrees', 'review');
   const beforeEntries = existsSync(reviewDir) ? readdirSync(reviewDir) : [];
 
-  const report = runPreflight(store, 'GATE-004-TEST', root);
+  const report = await runPreflight(store, 'GATE-004-TEST', root);
 
-  const v = report.checks.find((c) => c.name === 'verify');
+  const v = report.checks.find((c) => c.name === PREFLIGHT_CHECK_NAME.VERIFY);
   assert.ok(v !== undefined, 'verify check should exist');
 
   const afterEntries = existsSync(reviewDir) ? readdirSync(reviewDir) : [];

@@ -1,30 +1,54 @@
 <!-- GENERATED FROM THE BOARD — do not edit; use `task amend` -->
 ---
 id: FLOW-009
-title: agent liveness in real time: dispatch status/watch + serve Agentes panel, stall detection from mechanical signals
-depends_on: ["FLOW-008"]
-write_set: ["src/dispatch/**","src/cli/commands/dispatch*","src/cli/commands/serve*","src/schema/**"]
-requirements: []
-evidence_required: ["red-test-output","verify-root","final-sha"]
+title: agent activity in CLI and serve from deterministic supervisor state
+depends_on: ["FLOW-008","BUG-014"]
+write_set: ["src/cli/commands/dispatch*","src/cli/commands/serve*","src/cli/commands/index.gen.ts","src/schema/**","src/config.ts","src/config.test.ts","src/config.types.ts","src/config.constants.ts","playbook.config.json","bin/sv-playbook.js"]
+requirements: ["machine-first","provider-agnostic","runtime-owned"]
+evidence_required: ["red-test-output","shared-builder-parity","content-exclusion","verify-root","final-sha","independent-review"]
 ---
 
 ## Task
-Founder ruling (2026-07-10, verbatim): "no se que estan haciendo los subagentes, no se si se colgaron, si el orchestrator se colgo, todo esta info necesito tenerla si o si" — real-time, in serve AND the CLI. Every signal must be MECHANICAL (derived from logs, processes, leases, events), never the agent's self-report. Composes with FLOW-008 (the executor port produces the raw material: one log file + pid/handle per launched agent).
-1. LIVENESS MODEL (engine, single source): for every dispatch handle — state (running|exited(code)|unreachable), last-output age (mtime/bytes delta of its .svp/dispatch/<id>.log), packet lease heartbeat age when the agent holds one, and a stall flag when last-output age exceeds a configured threshold (dispatch.stallAfterSeconds, validated schema). The orchestrator is a handle like any other — its silence is visible the same way.
-2. CLI: `dispatch status` shows the table (handle, role, packet, state, last-output age, stall flag); `dispatch watch` streams it (poll + redraw, node-only, no deps); both read the SAME builder as serve (one source, two renderers).
-3. SERVE: an "Agentes" panel fed by SSE — one card per live handle: role, packet id, state chip, last-output age ticking, tail of the last N log lines (raw, labeled as mechanical capture), and a LOUD stall/dead state (the founder must see a hung agent without asking). Uses the existing SSE channel and provenance badges (log tail = mechanical ✓).
-4. EVENTS: stall detected and recovered are evented (agent-stalled, agent-resumed) so digest/history keep them; an exited handle with a still-active packet lease is flagged (crashed mid-task) — that is the duty trigger for FLOW-002 (takeover/reassign path, do not duplicate it).
-5. Opinion-free: thresholds and panel behavior are config; the engine only guarantees the signals.
 
-## RED test (write first)
-In a liveness test add a test named exactly: "dispatch status reports last-output age and flags a stalled handle from mechanical signals only". With a fixture handle whose log file has an old mtime and a live one, build the status readout: assert ages are computed from the filesystem, the stale one carries the stall flag at the configured threshold, and an exited-with-active-lease handle is flagged as crashed. Today no liveness builder exists -> the FIRST failure is the missing module.
-Expected failure cause (literal string in the output): the compiler/module error for the missing liveness module, OR the test name "dispatch status reports last-output age and flags a stalled handle from mechanical signals only".
+Expose deterministic agent activity in the CLI and local serve UI. This packet is a consumer of the normalized supervisor from BUG-014 and the durable launch handles from FLOW-008; it does not infer activity independently.
 
-## Reuse
-FLOW-008's handles/logs (this packet READS what the port produces — hard dependency); the lease heartbeat machinery; the events table; serve's SSE channel and status builders (SERVE-001); FLOW-002 duties for the reaction to a crashed handle (trigger it, do not reimplement).
+1. Use one activity-status builder for every renderer. It joins launch identity with BUG-014's normalized snapshot and never parses agent prose.
+2. CLI:
+   - `dispatch status` prints handle, role, packet, adapter, control health, execution phase, progress age/evidence code, deadline remaining, cleanup state, and terminal result;
+   - `dispatch watch` updates only changed rows/events and does not stream transcripts.
+3. Local serve UI: add an Agents view driven by the same data. Show compact state first. Raw logs are an explicit diagnostic drill-down and are never included in upstream agent context or sprint reports by default.
+4. Make stalled, unreachable, errored, and orphaned states visually and machine-readably distinct. A server heartbeat, `busy`, PID existence, or CPU alone cannot display as healthy progress.
+5. Emit notification events for stalled, resumed, aborted, orphaned, recovered, and terminal transitions. FLOW-001 consumes those events for retry/escalation; this packet does not ask an agent to poll or decide cleanup.
+6. Preserve bounded history so the human can answer: what phase is running, what mechanical evidence last changed, how old it is, what deadline applies, and what recovery the runtime performed.
+7. All thresholds, refresh rates, notification routing, and optional log retention are validated configuration. Rendering never owns policy.
+
+## RED tests
+
+- CLI and serve serialize the same normalized fixture to equivalent status fields.
+- A server-alive/session-stale fixture is shown as stale, not healthy.
+- A running tool fixture shows tool phase, elapsed time, evidence age, and deadline without command/input/output content.
+- An OpenCode-aborted session with a surviving child is shown as orphaned until cleanup verification succeeds.
+- Watch emits only changed compact states, not repeated full snapshots or transcript parts.
+- Notification events fire once per transition and recovery clears the active alert without deleting history.
+
+## Acceptance
+
+- The founder can inspect all live handles from CLI and serve without reading agent transcripts.
+- The orchestrator receives only typed transition events and compact receipts.
+- CLI/UI state is reproducible from a frozen activity-event fixture.
+- Full verification passes and independent review confirms there is one status source and no semantic liveness inference.
 
 ## Stop conditions
-Any liveness signal sourced from agent self-report text; a second status builder for serve vs CLI (one builder, two renderers); polling so aggressive it competes with the store (read the filesystem, not the DB, for ages); reimplementing takeover/duties; touching files outside the write_set.
 
-## Evidence required at close
-red-test-output, verify-root, final-sha.
+- Do not implement another liveness state machine, timer, adapter, or process killer here.
+- Do not use agent self-report text, transcript tails, or LLM summaries as activity evidence.
+- Do not push continuous raw output into the orchestrator or human-interface context.
+- Do not silently map unknown activity to healthy.
+
+## Evidence
+
+- RED test output.
+- Shared-builder parity receipt for CLI and serve.
+- Content-exclusion receipt.
+- Full verify receipt.
+- Final SHA and independent review.

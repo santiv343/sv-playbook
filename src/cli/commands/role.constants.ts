@@ -1,0 +1,18 @@
+export const ROLE_SUBCOMMAND = {
+  ACTIVATE: 'activate',
+  BOOTSTRAP: 'bootstrap',
+  CHECK: 'check',
+  DEFINE: 'define',
+  EVALUATE_MODELS: 'evaluate-models',
+  ESCALATION: 'escalation',
+  HANDOFF: 'handoff',
+  LIST: 'list',
+  MODEL_CAPABILITY: 'model-capability',
+  MODEL_EVIDENCE: 'model-evidence',
+  POLICY: 'policy',
+  PROFILE: 'profile',
+  PROJECT: 'project',
+  RECEIPT: 'receipt',
+  REQUIRE: 'require',
+  RESPONSIBILITY: 'responsibility',
+} as const;

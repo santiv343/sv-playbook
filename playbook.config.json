@@ -3,12 +3,21 @@
   "chatLanguage": "en",
   "tier": "TIER-2",
   "verifyCommand": "npm run verify",
+  "reviewCandidateMaxBytes": 16777216,
+  "reviewPreflight": {
+    "baseReference": "main",
+    "preparationCommand": "npm ci",
+    "noOutputTimeoutMs": 600000
+  },
   "autonomy": "strict",
   "backup": {
     "enabled": true,
     "retention": 3,
     "maxAgeHours": 24,
     "onEvents": ["done"]
+  },
+  "modelEvaluation": {
+    "evidenceValidityDays": 30
   },
   "gates": {
     "maxLines": 350,
@@ -18,6 +27,18 @@
     "layout": true
   },
   "baseline": {
+    "ormApplicationSql": {
+      "count": 278,
+      "digest": "f3108cee2fbd38377d0d7c65b406f919ffa41801f2f1aa39c3e19bc4dccb2dcd"
+    },
+    "literalComparisons": {
+      "count": 276,
+      "digest": "b3693ff326051a74a6b06385cb1e0dd9498acb22ab415ab3c65c8771a37d9798"
+    },
+    "duplicateStrings": {
+      "count": 1327,
+      "digest": "b4baba9c8470670b9c0e7b20441006d019fa47513357c204c274e83ba3c3db86"
+    },
     "fingerprints": [
       "docs/packets/ADOPT-AURORA-001.md",
       "docs/packets/CLI-QUIET-001.md",

@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { command as importCommand } from './import.js';
 import type { Io } from '../command.types.js';
 import { stringColumn } from '../../db/rows.js';
+import { initTestRepo } from '../../testkit.js';
 
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = []; const errLines: string[] = [];
@@ -15,7 +15,7 @@ function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
 
 async function inTempRepo<T>(fn: () => Promise<T>): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), 'svp-import-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   const prev = process.cwd();
   process.chdir(root);
   try { return await fn(); } finally { process.chdir(prev); }

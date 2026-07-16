@@ -39,3 +39,8 @@ export interface BackupStatus {
   liveTerminalPacketCount: number | undefined;
   terminalCountRegressed: boolean;
 }
+
+export interface BackupStatusOptions {
+  maxAgeHours?: number;
+  liveTerminalPacketCount?: number;
+}

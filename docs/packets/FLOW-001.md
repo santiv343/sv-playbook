@@ -2,7 +2,7 @@
 ---
 id: FLOW-001
 title: dispatch run: the CLI executes the plan (worktree+lease+launch via adapters) + idle-watch makes inaction visible — knowing becomes doing
-depends_on: ["DISPATCH-PLAN-001"]
+depends_on: ["DISPATCH-PLAN-001","GATE-005"]
 write_set: ["src/dispatch/**","src/cli/commands/dispatch.ts","src/cli/commands/dispatch.test.ts","content/dispatch/adapters.md","content/cli.md"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]

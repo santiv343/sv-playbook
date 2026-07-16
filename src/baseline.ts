@@ -1,11 +1,12 @@
 import type { BaselineConfig } from './config.types.js';
+import { BASELINE_RESULT } from './baseline.constants.js';
 
 export function checkViolation(
   fingerprint: string,
   baseline: BaselineConfig | undefined,
-): 'grandfathered' | 'failing' {
+): typeof BASELINE_RESULT[keyof typeof BASELINE_RESULT] {
   if (baseline?.fingerprints?.includes(fingerprint)) {
-    return 'grandfathered';
+    return BASELINE_RESULT.GRANDFATHERED;
   }
-  return 'failing';
+  return BASELINE_RESULT.FAILING;
 }

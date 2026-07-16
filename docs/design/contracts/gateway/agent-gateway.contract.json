@@ -1,0 +1,360 @@
+{
+  "contract": "AgentGateway",
+  "contract_version": "1.0.0",
+  "scope": "Provider-, model-, harness-, transport-, operating-system-, and storage-agnostic boundary between the deterministic runtime and one agent backend adapter.",
+  "principles": [
+    "Runtime owns deterministic state, authority, ordering, policy, terminal verdicts, and process ownership.",
+    "An adapter translates generic operations and backend evidence; it never becomes the source of truth.",
+    "Every external mutating or launch effect requires a committed runtime intent before adapter execution.",
+    "Backend observations are evidence, not runtime success, failure, or cancellation verdicts.",
+    "Ambiguous delivery is never retried automatically and never becomes inferred success or failure.",
+    "All timeouts, grace periods, retry budgets, progress events, and security levels come from validated configuration.",
+    "Raw telemetry stays outside agent-to-agent context. Declared role output is a validated durable artifact.",
+    "An adapter is enabled only for an exact compatibility tuple with a passing conformance receipt."
+  ],
+  "authority": {
+    "runtime_controller": [
+      "sole fenced writer to the DEC-026 journal",
+      "allocates run_sequence",
+      "commits operation intents",
+      "accepts or rejects adapter receipt proposals",
+      "derives terminal state from typed evidence"
+    ],
+    "agent_gateway": [
+      "validates operation authorization",
+      "selects the configured adapter",
+      "normalizes adapter receipts and observations",
+      "does not open the runtime source of truth"
+    ],
+    "adapter": [
+      "maps generic operations to one backend",
+      "proves its effective execution profile",
+      "returns typed observations and receipts",
+      "cannot allocate runtime authority or terminal verdicts"
+    ],
+    "process_supervisor": [
+      "owns the backend process tree or equivalent execution resource",
+      "proves launch ownership and termination",
+      "never terminates an unowned resource"
+    ],
+    "backend": [
+      "owns provider authentication and backend-local session state unless its adapter declares otherwise",
+      "is an observed authority only in its declared domains"
+    ]
+  },
+  "configuration": {
+    "required_fields": [
+      "adapter_id",
+      "adapter_version_constraint",
+      "backend_compatibility_policy",
+      "effective_profile",
+      "no_observable_progress_timeout",
+      "cancellation_grace",
+      "observation_retry_policy",
+      "recovery_policy",
+      "security_level",
+      "telemetry_policy",
+      "output_contract_ref"
+    ],
+    "rules": [
+      "The engine contains no provider, model, endpoint, platform, duration, or adapter default.",
+      "Instance profiles may provide defaults, but RunSpec contains the resolved immutable values.",
+      "Adapter-specific fields live under adapter_config and are validated by that adapter's schema.",
+      "Changing a resolved value creates a new RunSpec or explicit reconciliation event; it never mutates an active run silently."
+    ]
+  },
+  "operation_authorization": {
+    "required": [
+      "run_id",
+      "active controller_generation",
+      "committed operation_intent_receipt",
+      "operation_key",
+      "adapter_id",
+      "expected backend_generation"
+    ],
+    "rule": "Gateway rejects a missing, stale, mismatched, duplicated, or finalized intent before the adapter performs an external effect.",
+    "read_rule": "Read-only probes may run without a mutating intent, but their results are observations and cannot create terminal authority."
+  },
+  "operations": {
+    "start_backend": {
+      "input": ["RunSpec gateway view", "BackendStartIntent receipt"],
+      "output": "BackendStartReceipt",
+      "postconditions": [
+        "execution resource is owned by ProcessSupervisorReceipt or equivalent declared mechanism",
+        "backend_generation is stable and recoverable",
+        "compatibility and effective profile must pass before session creation"
+      ]
+    },
+    "verify_compatibility": {
+      "input": [
+        "adapter descriptor",
+        "observed backend identity",
+        "platform identity",
+        "conformance registry"
+      ],
+      "output": "CompatibilityReceipt",
+      "postconditions": [
+        "exact compatibility tuple is enabled",
+        "any tuple component change invalidates the receipt",
+        "unsupported advertised capability is treated as absent"
+      ]
+    },
+    "verify_effective_profile": {
+      "input": [
+        "resolved RunSpec profile",
+        "adapter effective-profile observation"
+      ],
+      "output": "ProfileReceipt",
+      "postconditions": [
+        "agent, provider, canonical model, variant, directory, permissions, tools, prompt digest, and adapter config match using adapter-declared exact normalization",
+        "fallback, drift, extra capability, or ambiguous alias rejects dispatch"
+      ]
+    },
+    "create_session": {
+      "input": ["SessionCreateIntent receipt", "runtime metadata digest"],
+      "output": "SessionReceipt",
+      "postconditions": [
+        "adapter verifies the created session against the effective profile",
+        "ambiguous creation is reconciled by stable runtime metadata and never blindly repeated",
+        "zero or multiple matches remains blocked"
+      ]
+    },
+    "submit_turn": {
+      "input": [
+        "TurnIntent receipt",
+        "prompt ArtifactRef",
+        "declared output contract"
+      ],
+      "output": "TurnSubmissionReceipt",
+      "postconditions": [
+        "request acknowledgement is distinct from durable delivery",
+        "delivery requires adapter-declared positive evidence",
+        "only adapter-declared deterministic negative evidence permits a later new attempt",
+        "ambiguous delivery remains blocked and is never automatically replayed"
+      ]
+    },
+    "observe": {
+      "input": [
+        "current BackendStartReceipt",
+        "CompatibilityReceipt",
+        "SessionReceipt",
+        "gateway cursor"
+      ],
+      "output": "NormalizedObservation batch",
+      "postconditions": [
+        "each observation has SourceObservationKey and gateway_sequence",
+        "raw content is not copied into the runtime journal",
+        "opaque backend identifiers are never treated as ordered unless adapter conformance proves ordering"
+      ]
+    },
+    "reconcile": {
+      "input": [
+        "persisted runtime facts",
+        "adapter durable probes",
+        "process supervisor facts"
+      ],
+      "output": "ReconciliationReceipt",
+      "postconditions": [
+        "same fact snapshot produces the same derived state",
+        "conflicting or incomplete signals remain reconciling or blocked",
+        "reconciliation never invents success, failure, cancellation, or missing external effects"
+      ]
+    },
+    "collect_result": {
+      "input": [
+        "terminal provider candidate",
+        "declared output contract",
+        "shared artifact protocol"
+      ],
+      "output": "ArtifactReceipt",
+      "postconditions": [
+        "declared role envelope is validated",
+        "result bytes are materialized in runtime artifact storage",
+        "digest is verified before accepted EffectAcceptance",
+        "reasoning and raw telemetry are not promoted as declared output"
+      ]
+    },
+    "cancel": {
+      "input": ["CancellationIntent receipt", "configured cancellation_grace"],
+      "output": "CancellationReceipt",
+      "postconditions": [
+        "adapter may request graceful backend cancellation",
+        "after configured grace the supervisor terminates and verifies only the owned resource if still active",
+        "backend acknowledgement is supporting evidence only",
+        "terminal cancellation requires DEC-026 evidence"
+      ]
+    },
+    "resume": {
+      "input": [
+        "persisted receipts",
+        "current CompatibilityReceipt",
+        "current ProfileReceipt"
+      ],
+      "output": "ResumeReceipt",
+      "postconditions": [
+        "same backend_generation may continue observation after controller recovery",
+        "changed backend_generation never implies an active turn continued",
+        "old ambiguous turns are never silently replayed",
+        "new work waits until prior work is terminal or visibly blocked"
+      ]
+    },
+    "stop_backend": {
+      "input": ["BackendStopIntent receipt", "expected backend_generation"],
+      "output": "ProcessTerminationReceipt or equivalent",
+      "postconditions": [
+        "only owned resources are stopped",
+        "termination is verified",
+        "cleanup cannot delete the only durable declared output"
+      ]
+    }
+  },
+  "receipt_types": {
+    "common": [
+      "receipt_id",
+      "run_id",
+      "operation_key",
+      "adapter_id",
+      "adapter_version",
+      "backend_generation",
+      "gateway_sequence",
+      "SourceObservationKey"
+    ],
+    "BackendStartReceipt": [
+      "ownership_receipt",
+      "backend_identity",
+      "compatibility_inputs"
+    ],
+    "CompatibilityReceipt": [
+      "compatibility_tuple",
+      "conformance_suite_version",
+      "result",
+      "invalidators"
+    ],
+    "ProfileReceipt": [
+      "requested_projection_digest",
+      "effective_projection_digest",
+      "field_comparison"
+    ],
+    "SessionReceipt": [
+      "session_ref",
+      "runtime_metadata_digest",
+      "profile_receipt_id"
+    ],
+    "TurnSubmissionReceipt": [
+      "turn_operation_key",
+      "backend_correlation_ref",
+      "request_outcome",
+      "delivery_state",
+      "delivery_evidence_ref"
+    ],
+    "ReconciliationReceipt": [
+      "input_fact_keys",
+      "derived_state",
+      "conflicts",
+      "blocked_reason",
+      "last_material_progress_sequence"
+    ],
+    "CancellationReceipt": [
+      "cancellation_intent_id",
+      "backend_cancel_observation",
+      "ownership_termination_receipt",
+      "terminal_evidence_refs"
+    ],
+    "ResumeReceipt": [
+      "prior_backend_generation",
+      "current_backend_generation",
+      "session_viability",
+      "unresolved_turns"
+    ],
+    "ArtifactReceipt": [
+      "shared_protocol_envelope_ref",
+      "ArtifactRef",
+      "validation_receipt"
+    ]
+  },
+  "normalized_observation_classes": {
+    "material_progress": [
+      "backend lifecycle transition declared by adapter",
+      "new assistant turn or part",
+      "new reasoning/text size or digest",
+      "tool state or output digest transition",
+      "retry transition",
+      "artifact digest transition",
+      "blocked permission/question transition",
+      "turn terminal candidate"
+    ],
+    "not_progress": [
+      "heartbeat",
+      "process alive",
+      "unchanged poll",
+      "identical delta or digest",
+      "stream reconnect without new facts"
+    ],
+    "clock_rule": "Only configured material events reset the active turn's no-observable-progress clock. Recovery and cancellation use separate configured budgets."
+  },
+  "terminal_mapping": {
+    "succeeded": "requires provider-completed candidate, validated declared artifact, ArtifactReceipt, and accepted EffectAcceptance before StateEvent(succeeded)",
+    "failed": "requires typed FailureEvidence; silence, disconnect, timeout, missing output, retry exhaustion, and recovery exhaustion are insufficient alone",
+    "cancelled": "requires CancellationIntent and verified owned-resource termination or proof no resource launched",
+    "conflict": "remains reconciling or blocked; never picks a terminal by precedence"
+  },
+  "adapter_descriptor_contract": {
+    "required": [
+      "adapter_id and semantic version",
+      "adapter_config schema",
+      "backend identity and compatibility tuple schema",
+      "operation mapping for every enabled generic operation",
+      "effective-profile normalization rules",
+      "observation mapping and progress classification",
+      "delivery positive and negative evidence rules",
+      "reconciliation probes",
+      "process/resource ownership strategy",
+      "privacy and security limitations",
+      "conformance scenarios and receipts"
+    ],
+    "capability_rule": "Missing operation mapping or failed conformance disables that adapter capability. Gateway never supplies behavior by assumption or by another adapter's defaults."
+  },
+  "acceptance_scenarios": [
+    "GW-001: Engine starts with no registered adapter -> dispatch rejects without choosing a provider default.",
+    "GW-002: RunSpec omits a required resolved gateway field -> validation rejects before intent creation.",
+    "GW-003: Adapter-specific field appears outside adapter_config -> validation rejects.",
+    "GW-004: Unlisted compatibility tuple -> dispatch rejects before session creation.",
+    "GW-005: Advertised but unproven capability -> treated as unavailable.",
+    "GW-006: Effective agent/model/provider/variant differs -> dispatch rejects without fuzzy matching.",
+    "GW-007: Effective permissions contain an extra capability -> dispatch rejects.",
+    "GW-008: External effect request lacks active intent receipt -> Gateway rejects before adapter call.",
+    "GW-009: Stale controller generation supplies an intent -> Gateway rejects before adapter call.",
+    "GW-010: Session creation response is lost -> adapter reconciles by runtime metadata and never blindly creates a second session.",
+    "GW-011: Session creation reconciliation finds zero or multiple matches -> run remains blocked.",
+    "GW-012: Turn request acknowledgement arrives without delivery evidence -> status is acknowledged, not delivered.",
+    "GW-013: Ambiguous turn delivery -> no automatic resend and no new turn until resolution.",
+    "GW-014: Adapter proves deterministic pre-effect rejection -> runtime may plan a new attempt under retry policy.",
+    "GW-015: Observation identifier is opaque -> Gateway does not infer gaps or order from it.",
+    "GW-016: Stream disconnects -> adapter runs its declared durable reconciliation probes.",
+    "GW-017: Reconciliation signals conflict -> derived state remains blocked/reconciling.",
+    "GW-018: Repeated unchanged telemetry -> active progress clock is not reset.",
+    "GW-019: Material configured event occurs -> exactly one progress observation is appended.",
+    "GW-020: No-observable-progress timeout expires -> runtime creates cancellation intent; no failed state is inferred.",
+    "GW-021: Backend cancel acknowledges but owned resource remains active -> cancellation is not terminal.",
+    "GW-022: Grace expires -> supervisor terminates only the verified owned resource.",
+    "GW-023: Ownership cannot be verified -> resource is not killed and run remains blocked.",
+    "GW-024: Controller restarts while backend generation survives -> observation resumes without replaying the turn.",
+    "GW-025: Backend generation changes during active turn -> continuation is not assumed.",
+    "GW-026: Provider reports completion but declared output validation fails -> succeeded is rejected.",
+    "GW-027: Declared output validates -> bytes are materialized and digest verified before acceptance.",
+    "GW-028: Raw reasoning appears in telemetry -> it is not forwarded into orchestration context or promoted output.",
+    "GW-029: Adapter receipt proposal races with duplicate -> controller appends one fact by operation/source key.",
+    "GW-030: Gateway attempts direct source-of-truth write -> conformance fails.",
+    "GW-031: Adapter or backend tuple changes -> prior CompatibilityReceipt becomes invalid.",
+    "GW-032: Adapter omits a required operation mapping -> capability is disabled, not emulated.",
+    "GW-033: Cleanup runs before ArtifactReceipt -> cleanup rejects.",
+    "GW-034: Timeout/grace value changes in configuration -> new RunSpec uses it; engine code does not change.",
+    "GW-035: Two adapters conform to the same generic receipt contract -> runtime state reducer behaves identically for equivalent normalized facts."
+  ],
+  "residual_limits": [
+    "Adapter conformance proves measured behavior for a compatibility tuple, not future versions.",
+    "Provider-agnostic normalization preserves common facts but does not pretend backend capabilities are identical.",
+    "Security strength is declared by configured level and adapter evidence; this contract alone is not a sandbox.",
+    "Privacy, retention, redaction, and deletion are defined by the separate transversal privacy contract."
+  ]
+}

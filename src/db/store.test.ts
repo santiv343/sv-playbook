@@ -1,15 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { execFileSync } from 'node:child_process';
-import { openStore, migrateStore, worktreeRoot } from './store.js';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { createServer as createNetServer } from 'node:net';
+import { openStore, migrateStore, readDaemonPort, worktreeRoot } from './store.js';
+import { DAEMON_DEFAULT_PORT } from '../daemon/daemon.constants.js';
 import { EVENT_SCHEMA_MIGRATED, SCHEMA_VERSION } from './store.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
 import { randomUUID } from 'node:crypto';
+import { initTestRepo } from '../testkit.js';
 
 test('openStore creates .svp/playbook.sqlite and the schema tables', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-store-'));
@@ -19,7 +22,7 @@ test('openStore creates .svp/playbook.sqlite and the schema tables', async () =>
     .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     .all()
     .map((row) => stringColumn(row, 'name'));
-  for (const t of ['events', 'leases', 'packets', 'sessions', 'transitions']) {
+  for (const t of ['context_items', 'context_packs', 'events', 'leases', 'packets', 'sessions', 'transitions']) {
     assert.ok(tables.includes(t), `missing table ${t}`);
   }
   store.close();
@@ -34,7 +37,7 @@ test('openStore is idempotent (schema re-apply is safe)', async () => {
 
 test('worktreeRoot resolves the git working tree top-level', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-wt-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   await writeFile(join(root, 'marker.txt'), 'x');
   assert.ok(existsSync(join(worktreeRoot(root), 'marker.txt')));
 });
@@ -83,7 +86,7 @@ test('packets store has a body column, a type column, and a packet_deps table at
 
 test('doctor flags a review packet whose PR is already merged', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rev-merge-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   const store = openStore(root);
 
   store.db.prepare("INSERT INTO packets (id, title, path, status, body, write_set, pr, created_at, updated_at) VALUES ('P1', 'Test', '/tmp/test', 'review', '', '[]', '123', datetime('now'), datetime('now'))").run();
@@ -97,33 +100,57 @@ test('doctor flags a review packet whose PR is already merged', async () => {
   store.close();
 });
 
-test('the store runs in WAL mode and two concurrent writers both commit', async () => {
+test('the store runs in WAL mode with EXCLUSIVE locking (single-writer enforcement)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-wal-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   const store = openStore(root);
-
-  const sid1 = randomUUID();
-  const sid2 = randomUUID();
-  store.db.exec(`INSERT INTO sessions (id, worktree, started_at) VALUES ('${sid1}', '/tmp/wt1', datetime('now'))`);
-  store.db.exec(`INSERT INTO sessions (id, worktree, started_at) VALUES ('${sid2}', '/tmp/wt2', datetime('now'))`);
 
   const modeRow = store.db.prepare('PRAGMA journal_mode').get();
   assert.equal(stringColumn(modeRow, 'journal_mode'), 'wal');
 
+  const lockRow = store.db.prepare('PRAGMA locking_mode').get();
+  assert.equal(stringColumn(lockRow, 'locking_mode'), 'exclusive');
+
+  // EXCLUSIVE mode holds the write lock after the first write; a second
+  // process attempting to write receives SQLITE_BUSY. The probe must be a
+  // child process: POSIX fcntl locks are per-process, so an in-process second
+  // connection would always acquire the lock.
+  store.db.exec(`INSERT INTO sessions (id, worktree, started_at) VALUES ('${randomUUID()}', '/tmp/wt1', datetime('now'))`);
+
   const dbPath = join(root, '.svp', 'playbook.sqlite');
-  const db2 = new DatabaseSync(dbPath);
+  const result = spawnSync(process.execPath, ['-e', `
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(${JSON.stringify(dbPath)});
+    db.exec('BEGIN IMMEDIATE');
+  `], { encoding: 'utf8', timeout: 5000 });
+  assert.notEqual(result.status, 0, `second writer must fail with SQLITE_BUSY, got exit ${result.status}: ${result.stderr}`);
+  const msg = result.stderr + result.stdout;
+  assert.ok(/locked/i.test(msg) || /busy/i.test(msg), `stderr must mention locked/busy: ${result.stderr}`);
 
-  db2.exec(`INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('pk1', 'T1', '/tmp', 'draft', '[]', datetime('now'), datetime('now'))`);
-
-  store.db.exec(`INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('pk2', 'T2', '/tmp', 'draft', '[]', datetime('now'), datetime('now'))`);
-
-  const pk1 = store.db.prepare("SELECT id FROM packets WHERE id = 'pk1'").get();
-  const pk2 = store.db.prepare("SELECT id FROM packets WHERE id = 'pk2'").get();
-  assert.ok(pk1, 'writer 1 commit should be visible');
-  assert.ok(pk2, 'writer 2 commit should be visible');
-
-  db2.close();
   store.close();
+});
+
+test('red team: a cross-process writer is rejected when the store holds the exclusive lock (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-xp-'));
+  initTestRepo(root);
+  const store = openStore(root);
+
+  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  try {
+    const result = spawnSync(process.execPath, ['-e', `
+      const { DatabaseSync } = require('node:sqlite');
+      const db = new DatabaseSync(${JSON.stringify(dbPath)});
+      db.exec('BEGIN IMMEDIATE');
+    `], { encoding: 'utf8', timeout: 5000 });
+    assert.notEqual(result.status, 0, `child must fail with SQLITE_BUSY, got exit ${result.status}: ${result.stderr}`);
+    const msg = result.stderr + result.stdout;
+    assert.ok(
+      /locked/i.test(msg) || /busy/i.test(msg) || /exclusive/i.test(msg),
+      `stderr must mention locked/busy: ${result.stderr}`,
+    );
+  } finally {
+    store.close();
+  }
 });
 
 test('schema v6 includes constitution_sections and constitution_principles tables', async () => {
@@ -166,7 +193,7 @@ test('schema migration from v5 creates constitution tables', async () => {
   store.close();
 });
 
-test('schema migration from v7 to v8 rebuilds events table with extended CHECK including imported', async () => {
+test('schema migration rebuilds events with every current event command', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-mig7-'));
   openStore(root).close();
   const dbPath = join(root, '.svp', 'playbook.sqlite');
@@ -195,7 +222,7 @@ test('schema migration from v7 to v8 rebuilds events table with extended CHECK i
 
   const store = openStore(root);
   const ver = numberColumn(store.db.prepare('PRAGMA user_version').get(), 'user_version');
-  assert.equal(ver, 8);
+  assert.equal(ver, SCHEMA_VERSION);
   const count = numberColumn(store.db.prepare('SELECT COUNT(*) as c FROM events').get(), 'c');
   assert.equal(count, 5, '4 old events + schema-migrated event must survive migration');
   store.db.exec("INSERT INTO events (command, at) VALUES ('imported', datetime('now'))");
@@ -206,7 +233,7 @@ test('schema migration from v7 to v8 rebuilds events table with extended CHECK i
 
 test('schema migration refuses while a foreign live lease exists', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-mig-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
 
   openStore(root).close();
   const dbPath = join(root, '.svp', 'playbook.sqlite');
@@ -286,4 +313,92 @@ test('bypass via migrateLive is evented (writes a schema-migrated event)', async
   );
   assert.equal(eventCount, 1, 'bypass via migrateLive must write a schema-migrated event');
   store.close();
+});
+
+function freePort(): Promise<number> {
+  return new Promise((resolve) => {
+    const s = createNetServer();
+    s.listen(0, () => {
+      const addr = s.address();
+      let port = 0;
+      if (typeof addr === 'object' && addr !== null && 'port' in addr) {
+        port = addr.port;
+      }
+      s.close(() => { resolve(port); });
+    });
+  });
+}
+
+test('openStore from a worktree without daemon refuses with daemon guidance (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-store-wt-'));
+  initTestRepo(root);
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
+
+  const wtDir = join(root, 'wt');
+  execFileSync('git', ['branch', 'wt-branch'], { cwd: root });
+  execFileSync('git', ['worktree', 'add', wtDir, 'wt-branch'], { cwd: root });
+
+  const previousCwd = process.cwd();
+  const previousTestCtx = process.env.NODE_TEST_CONTEXT;
+  process.chdir(wtDir);
+  process.env.NODE_TEST_CONTEXT = '';
+  try {
+    assert.throws(
+      () => { openStore(root); },
+      /daemon/,
+    );
+  } finally {
+    process.env.NODE_TEST_CONTEXT = previousTestCtx;
+    process.chdir(previousCwd);
+  }
+});
+
+test('sync forward handles daemon dying mid-response without hanging (STORE-003)', async () => {
+  const port = await freePort();
+
+  const server = createNetServer((socket) => {
+    socket.once('data', () => {
+      socket.write('HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{"exi');
+      socket.destroySoon();
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.listen(port, '127.0.0.1', () => { resolve(); });
+    server.on('error', reject);
+  });
+
+  try {
+    // Exercises the exact shipped transport (client.js forwardToDaemonSync),
+    // run from a child process so this test's fake server stays responsive.
+    const clientUrl = new URL('../daemon/client.js', import.meta.url).href;
+    const script = `const { forwardToDaemonSync } = await import(${JSON.stringify(clientUrl)});process.exit(forwardToDaemonSync(['status'], 't', ${port}));`;
+    const code = await new Promise<number>((resolve) => {
+      const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'inherit', 'inherit'] });
+      child.on('exit', (c) => { resolve(c ?? 1); });
+    });
+    assert.notEqual(code, 0, `sync forward must fail when daemon dies mid-response, got exit ${code}`);
+  } finally {
+    server.close();
+  }
+});
+
+test('tryAutoForward targets the port recorded in the daemon lock file, not the default (STORE-003)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-lock-port-'));
+  const svpDir = join(root, '.svp');
+  await mkdir(svpDir, { recursive: true });
+
+  // No lock file → default port
+  assert.equal(readDaemonPort(root), DAEMON_DEFAULT_PORT);
+
+  // Lock file records pid\nport\nstarted_at → the recorded port wins
+  await writeFile(join(svpDir, '.svp-daemon.lock'), `${process.pid}\n5252\n${new Date().toISOString()}\n`);
+  assert.equal(readDaemonPort(root), 5252);
+
+  // Malformed port line → fall back to default
+  await writeFile(join(svpDir, '.svp-daemon.lock'), `${process.pid}\nnot-a-port\n`);
+  assert.equal(readDaemonPort(root), DAEMON_DEFAULT_PORT);
+
+  // Missing port line (legacy single-line lock) → fall back to default
+  await writeFile(join(svpDir, '.svp-daemon.lock'), `${process.pid}\n`);
+  assert.equal(readDaemonPort(root), DAEMON_DEFAULT_PORT);
 });

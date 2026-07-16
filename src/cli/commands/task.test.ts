@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { command as taskCommand } from './task.js';
 import type { Io } from '../command.types.js';
 import { stringColumn } from '../../db/rows.js';
+import { initializeTestGitRepository } from '../../tasks/service.test.support.js';
+
+const FULL_PACKET_ID = 'FULL-001';
 
 function arrayColumn(row: unknown, key: string): unknown[] {
   if (typeof row !== 'object' || row === null) throw new TypeError(`invalid row: expected object for ${key}`);
@@ -26,7 +28,7 @@ function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
 
 async function inTempRepo<T>(fn: () => Promise<T>): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), 'svp-cli-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initializeTestGitRepository(root);
   const prev = process.cwd();
   process.chdir(root);
   try { return await fn(); } finally { process.chdir(prev); }
@@ -138,7 +140,7 @@ test('note then show surfaces the breadcrumb', async () => {
   });
 });
 
-test('moving to done creates an automatic state backup', async () => {
+test('moving to done is blocked from task move; use promotion run instead', async () => {
   await inTempRepo(async () => {
     await writeFile('body.md', 'x');
     const io = fakeIo();
@@ -146,10 +148,7 @@ test('moving to done creates an automatic state backup', async () => {
     await taskCommand.run(['move', 'BK-001', 'ready'], io);
     await taskCommand.run(['start', 'BK-001'], io);
     await taskCommand.run(['move', 'BK-001', 'review'], io);
-    assert.equal(await taskCommand.run(['move', 'BK-001', 'done'], io), 0);
-    const files = await readdir(join(process.cwd(), '.svp', 'backups'));
-    assert.ok(files.some((file) => file.endsWith('.sqlite')));
-    assert.ok(files.some((file) => file.endsWith('.json')));
+    assert.notEqual(await taskCommand.run(['move', 'BK-001', 'done'], io), 0);
   });
 });
 
@@ -176,7 +175,7 @@ test('task list and show json expose the full definition including write_set and
     if (!Array.isArray(listRaw)) throw new Error('expected array');
     const listArr = listRaw;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const fullPacket = listArr.find((p: unknown) => stringColumn(p, 'id') === 'FULL-001');
+    const fullPacket = listArr.find((p: unknown) => stringColumn(p, 'id') === FULL_PACKET_ID);
     assert.ok(fullPacket !== undefined, 'FULL-001 should be in list');
     assert.deepStrictEqual(arrayColumn(fullPacket, 'write_set'), ['src/**', 'test/**']);
     assert.deepStrictEqual(arrayColumn(fullPacket, 'depends_on'), ['DEP-001']);
@@ -250,12 +249,12 @@ test('an existing packet file can be imported into the DB through the CLI and ne
 
       const fileAfter = await readFile(join('docs', 'packets', 'FLOW-IMP-001.md'), 'utf8');
       assert.equal(fileAfter, content);
-
-      const io2 = fakeIo();
-      assert.notEqual(await taskCommand.run(['import', 'FLOW-IMP-001'], io2), 0);
-      assert.ok(io2.errLines.some((l) => l.includes('amend')), 're-import must hint at amend');
     } finally {
       store.close();
     }
+
+    const io2 = fakeIo();
+    assert.notEqual(await taskCommand.run(['import', 'FLOW-IMP-001'], io2), 0);
+    assert.ok(io2.errLines.some((l) => l.includes('amend')), 're-import must hint at amend');
   });
 });

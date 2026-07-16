@@ -11,10 +11,11 @@ import {
   movePacket,
   startPacket,
 } from './service.js';
+import { initTestRepo } from '../testkit.js';
 
 test('move to review runs the configured verify command through the shell', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-verify-shell-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/verify-shell-test'], { cwd: root });
   await mkdir(join(root, 'src', 'a'), { recursive: true });

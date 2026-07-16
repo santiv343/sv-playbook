@@ -18,6 +18,8 @@ import {
   importPackets,
 } from '../tasks/service.js';
 import { STATUS } from '../tasks/service.constants.js';
+import { setupServiceTest } from '../tasks/service.test.support.js';
+import { initTestRepo } from '../testkit.js';
 
 const def = (id: string, deps: string[] = [], ws: string[] = ['src/redteam/**']) => ({
   id,
@@ -29,15 +31,7 @@ const def = (id: string, deps: string[] = [], ws: string[] = ['src/redteam/**'])
 });
 
 async function setupStore() {
-  const root = await mkdtemp(join(tmpdir(), 'svp-rt-'));
-  return { root, store: openStore(root) };
-}
-
-async function setupGitRepo() {
-  const root = await mkdtemp(join(tmpdir(), 'svp-rt-'));
-  execFileSync('git', ['init'], { cwd: root });
-  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
-  return { root, store: openStore(root) };
+  return setupServiceTest();
 }
 
 // ---- CHEAT 1: Evidence gate bypass ----
@@ -51,13 +45,13 @@ test('red team: moving to done without captured evidence is refused by the evide
   store.db.prepare('DELETE FROM events WHERE packet_id = ? AND command = ?').run('RT-EVIDENCE-001', 'evidence');
   assert.throws(
     () => { movePacket(store, session, 'RT-EVIDENCE-001', 'done'); },
-    /evidence/,
+    /illegal transition/,
   );
 });
 
 // ---- CHEAT 2: Write set violation on review and done ----
 test('red team: files changed outside write_set on review is refused by the write-set gate', async () => {
-  const { root, store } = await setupGitRepo();
+  const { root, store } = await setupStore();
   execFileSync('git', ['checkout', '-b', 'feature/rt-ws'], { cwd: root });
   await mkdir(join(root, 'outside'), { recursive: true });
   await writeFile(join(root, 'outside', 'sneaky.ts'), '', 'utf8');
@@ -163,17 +157,20 @@ test('red team: takeover without force on a live lease is refused', async () => 
 });
 
 // ---- CHEAT 6: Unmet dependencies ----
-test('red team: starting work with unmet dependencies is not enforced (known gap)', async () => {
+test('red team: starting work with unmet dependencies is refused', async () => {
   const { root, store } = await setupStore();
   createPacket(store, root, def('RT-DEP-CHILD-001'), 'a');
-  store.db.prepare('UPDATE packets SET status = ? WHERE id = ?').run(STATUS.DRAFT, 'RT-DEP-CHILD-001');
   createPacket(store, root, { ...def('RT-DEP-PARENT-001', ['RT-DEP-CHILD-001']), writeSet: ['src/other/**'] }, 'a');
-  movePacket(store, undefined, 'RT-DEP-PARENT-001', 'ready');
+  store.db.prepare('UPDATE packets SET status = ? WHERE id = ?').run(STATUS.READY, 'RT-DEP-PARENT-001');
   const session = ensureSession(store, root);
-  startPacket(store, session, root, 'RT-DEP-PARENT-001');
+  assert.throws(
+    () => { startPacket(store, session, root, 'RT-DEP-PARENT-001'); },
+    /unmet dependencies: RT-DEP-CHILD-001 \(draft\)/,
+  );
   const row = store.db.prepare('SELECT status FROM packets WHERE id = ?').get('RT-DEP-PARENT-001');
   const status = stringColumn(row, 'status');
-  assert.equal(status, STATUS.ACTIVE, 'packet starts despite dep in draft - dep readiness is not enforced');
+  assert.equal(status, STATUS.READY);
+  assert.equal(leaseOf(store, 'RT-DEP-PARENT-001'), undefined);
 });
 
 // ---- CHEAT 7: Illegal transitions ----
@@ -214,7 +211,7 @@ test('red team: moving active to ready (releasing without review) is refused by 
 // ---- CHEAT 8: Stale SHA / report integrity ----
 test('red team: fabricated SHA in evidence events does not match git HEAD', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rt-sha-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/rt-sha'], { cwd: root });
   await mkdir(join(root, 'src', 'redteam'), { recursive: true });
@@ -295,7 +292,7 @@ test('red team: stale-lease takeover succeeds when lease is expired', async () =
 // ---- CHEAT 12: Verify command bypass ----
 test('red team: moving to review when verify command fails is refused by the verify gate', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rt-verify-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/rt-verify'], { cwd: root });
   await mkdir(join(root, 'src', 'redteam'), { recursive: true });
@@ -330,7 +327,7 @@ test('red team: starting a draft packet is refused with the current status name'
 // ---- SAFETY: Store migration always uses fixture DBs, never the shared .svp ----
 test('red team: store fixture DB is used during migration, never the shared .svp', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rt-mig-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
 
   const store = openStore(root);
@@ -339,3 +336,6 @@ test('red team: store fixture DB is used during migration, never the shared .svp
   assert.ok(fixturePath.startsWith(root), 'fixture DB path must be under the test root');
   store.close();
 });
+
+// CHEAT 14 (worktree vs. daemon exclusive lock) and the STORE-003 worktree-CLI
+// refusal live in daemon.test.ts alongside the other daemon red-team tests.

@@ -41,6 +41,22 @@ asked twice).
 | M3 | EXEC | Pull main; only NOW `task move <id> done`, remove the worktree, delete the local branch, and rebuild the CLI package (`npm run build`) if src changed | Board shows done; `git worktree list` clean | Report the exact failing step. |
 
 ## Output (fixed structure, always)
+0. Machine envelope: respond with a single JSON object (optionally ```json fenced). The
+   gateway validates it at completion and rejects any other shape — before promotion ever
+   sees it. Verdict values are exact: `APPROVED` | `REQUEST_CHANGES` (underscore).
+   ```json
+   {
+     "kind": "review-verdict",
+     "payload": {
+       "verdict": "APPROVED | REQUEST_CHANGES",
+       "candidateSha": "<full 40-char sha you reviewed>",
+       "workDefinitionRef": { "id": "<work definition id>", "version": <integer>, "digest": "<sha256:...>" }
+     }
+   }
+   ```
+   Copy `workDefinitionRef` verbatim from the review candidate artifact's `workDefinition`
+   field (id, version, digest) — never a bare `packetId`. Extra payload fields (`summary`,
+   `findings`, `evidenceReferences`, `residualRisk`) are welcome.
 1. Verdict: `APPROVED` | `REQUEST CHANGES`.
 2. Evidence: literal outputs of steps 1–3 as run by YOU.
 3. Findings ranked by severity, each with file:line and exact fix.

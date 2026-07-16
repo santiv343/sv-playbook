@@ -41,6 +41,14 @@ path. This keeps worktrees scoped to the repo and hidden from project listings
 7. Every dispatch gets a boot timeout (no sign of life in 120s = kill +
    diagnose) and periodic polling. A dispatcher that waits forever is its
    own dead end (PRINCIPLE-010).
+8. Boot liveness and run progress are different clocks. After boot, this
+   instance applies `no_observable_progress_timeout = 10m`. Only a new session
+   transition, reasoning/text/message delta, tool transition, retry, artifact
+   update, or terminal event resets it. Runtime heartbeats, unchanged polls,
+   and process-alive checks do not. On expiry: record `NO_PROGRESS_TIMEOUT`,
+   preserve session/partial output, call the session abort endpoint, wait the
+   configured 10s cancellation grace, then terminate and verify only the owned
+   process tree.
 
 ## Recommended routing (until telemetry says otherwise)
 

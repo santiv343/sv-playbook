@@ -3,12 +3,14 @@ import { resolve } from 'node:path';
 import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
+import { getCwd } from '../../runtime/context.js';
 import { inventoryRepo } from '../../adopt/inventory.js';
 import { analyzeGaps } from '../../adopt/gap.js';
 import { scaffold } from '../../adopt/scaffold.js';
 import { DEFAULTS } from '../../config.constants.js';
 import type { InventoryReport } from '../../adopt/inventory.types.js';
 import type { GapReport } from '../../adopt/gap.types.js';
+import { GAP_STATUS } from '../../adopt/gap.types.js';
 import type { Io } from '../command.types.js';
 
 function printInventory(io: Io, targetDir: string, inventory: InventoryReport): void {
@@ -24,7 +26,7 @@ function printInventory(io: Io, targetDir: string, inventory: InventoryReport): 
 function printGaps(io: Io, gaps: GapReport): void {
   io.out('Gap analysis:');
   for (const check of gaps.checks) {
-    if (check.status !== 'present') {
+    if (check.status !== GAP_STATUS.PRESENT) {
       io.out(`  gap: ${check.requirement} (${check.status}) — ${check.reason}`);
     }
   }
@@ -34,7 +36,7 @@ function resolveTargetDir(positionals: (string | undefined)[]): string {
   if (positionals.length > 0 && positionals[0]) {
     return resolve(positionals[0]);
   }
-  return commonRoot(process.cwd());
+  return commonRoot(getCwd());
 }
 
 export const command: Command = {

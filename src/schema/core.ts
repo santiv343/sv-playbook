@@ -1,6 +1,8 @@
 import { SchemaError } from './core.errors.js';
 import type { Schema, ObjectShape } from './core.types.js';
 
+const MIN_NON_EMPTY_STRING_LENGTH = 1;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -16,6 +18,21 @@ export function string(): Schema<string> {
         throw new SchemaError([], `expected string, got ${typeof value}`);
       }
       return value;
+    },
+  };
+}
+
+export function nonEmptyString(): Schema<string> {
+  return {
+    parse(value: unknown): string {
+      if (typeof value !== 'string') {
+        throw new SchemaError([], `expected string, got ${typeof value}`);
+      }
+      const trimmed = value.trim();
+      if (trimmed.length < MIN_NON_EMPTY_STRING_LENGTH) {
+        throw new SchemaError([], 'expected non-empty string');
+      }
+      return trimmed;
     },
   };
 }

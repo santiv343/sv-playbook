@@ -9,12 +9,24 @@ import { createStateBackup } from '../db/backup.js';
 import { BACKUP_REASON } from '../db/backup.constants.js';
 import { reconcile } from './reconcile.js';
 import type { GhReader, ReconcilerExecutor, ReconcilerEvent, ReconcilerRow } from './reconcile.types.js';
+import {
+  RECONCILE_COMMAND,
+  RECONCILE_DRIVER_METHOD,
+  RECONCILE_SAFETY,
+  RECONCILER_ACTOR,
+} from './reconcile.constants.js';
+import { initTestRepo } from '../testkit.js';
 
 interface CallCapture { method: string; args: readonly unknown[] }
 
 function inTempRepo<T>(fn: () => Promise<T>): Promise<T> {
   return mkdtemp(join(tmpdir(), 'svp-reconcile-')).then(async (root) => {
-    execFileSync('git', ['init'], { cwd: root });
+    initTestRepo(root);
+    execFileSync('git', [
+      '-c', 'user.email=test@sv-playbook.local',
+      '-c', 'user.name=sv-playbook test',
+      'commit', '--allow-empty', '-m', 'initialize fixture',
+    ], { cwd: root });
     const previous = process.cwd();
     process.chdir(root);
     try { return await fn(); } finally { process.chdir(previous); }
@@ -71,11 +83,10 @@ test('reconcile computes divergences as an action table and applies only the saf
     };
 
     const store = openStore(process.cwd());
-
     // DRY RUN
     const dry = reconcile(store, process.cwd(), stubGh, stubExec, { dryRun: true });
 
-    assert.equal(dry.rows.length, 4, `expected 4 rows, got ${dry.rows.length}`);
+    assert.equal(dry.rows.length, 4, `expected 4 rows, got ${dry.rows.length}: ${JSON.stringify(dry.rows)}`);
     const behindRow = dry.rows.find((r) => r.command.includes('update-branch'));
     assert.ok(behindRow, 'missing behind-PR divergence');
     assert.equal(behindRow.safety, 'safe');
@@ -84,7 +95,7 @@ test('reconcile computes divergences as an action table and applies only the saf
     assert.ok(reviewRow, 'missing review-merged divergence');
     assert.equal(reviewRow.safety, 'safe');
 
-    const backupRow = dry.rows.find((r) => r.command === 'backup');
+    const backupRow = dry.rows.find((r) => r.command === RECONCILE_COMMAND.BACKUP);
     assert.ok(backupRow, 'missing stale-backup divergence');
     assert.equal(backupRow.safety, 'safe');
 
@@ -105,15 +116,15 @@ test('reconcile computes divergences as an action table and applies only the saf
     assert.equal(executed.length, 3, `expected 3 executed, got ${executed.length}: ${executed.join(', ')}`);
     assert.ok(executed.some((e) => e.startsWith('update-branch 10')), 'branch not updated');
     assert.ok(executed.some((e) => e.startsWith('task-close')), 'task not closed');
-    assert.ok(executed.some((e) => e === 'backup'), 'backup not created');
+    assert.ok(executed.some((e) => e === RECONCILE_COMMAND.BACKUP), 'backup not created');
 
     // Conflicting PR is NOT executed
     assert.ok(!executed.some((e) => e.includes('20')), 'conflicting PR was executed');
 
     // Events recorded for each executed action
     assert.ok(events.length >= 3, `expected >=3 events, got ${events.length}`);
-    assert.ok(events.every((e) => e.who === 'reconciler'), 'all events must have who=reconciler');
-    assert.ok(apply.rows.every((r) => r.executed === (r.safety === 'safe')), 'executed flag mismatch');
+    assert.ok(events.every((e) => e.who === RECONCILER_ACTOR), 'all events must have who=reconciler');
+    assert.ok(apply.rows.every((r) => r.executed === (r.safety === RECONCILE_SAFETY.SAFE)), 'executed flag mismatch');
   });
 });
 
@@ -156,11 +167,11 @@ test('apply builds the exact argv for each safe action and refuses partial comma
     try {
       const result = reconcile(store, process.cwd(), stubGh, stubExec, { dryRun: false });
 
-      const upd = calls.find((c) => c.method === 'updateBranch');
+      const upd = calls.find((c) => c.method === RECONCILE_DRIVER_METHOD.UPDATE_BRANCH);
       assert.ok(upd, 'updateBranch must be called for valid PR');
       assert.deepEqual(upd.args, ['129']);
 
-      const close = calls.find((c) => c.method === 'taskClose');
+      const close = calls.find((c) => c.method === RECONCILE_DRIVER_METHOD.TASK_CLOSE);
       assert.ok(close, 'taskClose must be called for merged review PR');
       assert.deepEqual(close.args, ['REVIEW-001', '42']);
 

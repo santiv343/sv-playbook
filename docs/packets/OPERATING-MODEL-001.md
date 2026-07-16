@@ -3,7 +3,7 @@
 id: OPERATING-MODEL-001
 title: operating model configurable: entry role, pipeline mode, founder-led profile without hardcoding Santi's workflow
 depends_on: ["CONSTITUTION-001","HANDOFF-CMD-001","ROLE-SCHEMA-001"]
-write_set: ["src/config.types.ts","src/config.ts","src/config.constants.ts","src/config.test.ts","src/cli/commands/handoff.constants.ts","src/cli/commands/handoff.test.ts","content/roles/format.md","content/roles/orchestrator.md","content/roles/founder-interface.md","docs/QUICKSTART.md","docs/specs/2026-07-07-sv-playbook-design.md"]
+write_set: ["src/config.types.ts","src/config.ts","src/config.constants.ts","src/config.test.ts","src/cli/commands/handoff.ts","src/cli/commands/handoff.constants.ts","src/cli/commands/handoff.test.ts","content/roles/format.md","content/roles/orchestrator.md","content/roles/founder-interface.md","docs/QUICKSTART.md","docs/specs/2026-07-07-sv-playbook-design.md"]
 requirements: []
 evidence_required: ["red-test-output","verify-root","final-sha"]
 ---

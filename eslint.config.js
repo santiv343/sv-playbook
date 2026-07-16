@@ -33,15 +33,97 @@ const gates = readGates();
 const domainLiterals = ['draft', 'ready', 'active', 'review', 'done', 'blocked', 'dropped', 'transition', 'note', 'takeover', 'evidence'];
 const singleSourceMessage = "single source: use the constant from the module's .constants.ts";
 const testFiles = '**/*.test.ts';
+const stringComparisonOperators = new Set(['===', '!==', '==', '!=']);
+const stringComparisonMethods = new Set(['endsWith', 'has', 'includes', 'indexOf', 'lastIndexOf', 'localeCompare', 'startsWith']);
+const typeofResults = new Set(['bigint', 'boolean', 'function', 'number', 'object', 'string', 'symbol', 'undefined']);
+const structuralStringSentinel = /^(?:|\d+)$/;
+
+function stringLiteral(node) {
+  return node.type === 'Literal' && typeof node.value === 'string' ? node.value : undefined;
+}
+
+function isTypeofComparison(node, value) {
+  const other = stringLiteral(node.left) === value ? node.right : node.left;
+  return other.type === 'UnaryExpression' && other.operator === 'typeof' && typeofResults.has(value);
+}
+
+function reportStringLiteral(context, node) {
+  const value = stringLiteral(node);
+  if (value === undefined || structuralStringSentinel.test(value)) return;
+  context.report({ node, messageId: 'useConstant', data: { value } });
+}
+
+function memberMethodName(callee) {
+  if (callee.type !== 'MemberExpression') return undefined;
+  if (!callee.computed && callee.property.type === 'Identifier') return callee.property.name;
+  return stringLiteral(callee.property);
+}
+
+function comparisonCollection(callee) {
+  if (callee.type !== 'MemberExpression') return undefined;
+  if (callee.object.type === 'ArrayExpression') return callee.object;
+  if (callee.object.type !== 'NewExpression' || callee.object.callee.type !== 'Identifier') return undefined;
+  if (callee.object.callee.name !== 'Set') return undefined;
+  const first = callee.object.arguments[0];
+  return first?.type === 'ArrayExpression' ? first : undefined;
+}
+
+function reportCallArguments(context, node) {
+  for (const argument of node.arguments) {
+    if (argument.type !== 'SpreadElement') reportStringLiteral(context, argument);
+  }
+}
+
+function reportCollectionElements(context, callee) {
+  const collection = comparisonCollection(callee);
+  for (const element of collection?.elements ?? []) {
+    if (element !== null && element.type !== 'SpreadElement') reportStringLiteral(context, element);
+  }
+}
+
+const playbookRules = {
+  'no-string-literal-comparison': {
+    meta: {
+      type: 'problem',
+      schema: [{
+        type: 'object',
+        properties: { checkMethods: { type: 'boolean' } },
+        additionalProperties: false,
+      }],
+      messages: { useConstant: "Compare against a named constant or enum member, never the string literal '{{value}}'." },
+    },
+    create(context) {
+      const checkMethods = context.options[0]?.checkMethods !== false;
+      return {
+        BinaryExpression(node) {
+          if (!stringComparisonOperators.has(node.operator)) return;
+          const value = stringLiteral(node.left) ?? stringLiteral(node.right);
+          if (value === undefined || structuralStringSentinel.test(value) || isTypeofComparison(node, value)) return;
+          context.report({ node, messageId: 'useConstant', data: { value } });
+        },
+        SwitchCase(node) {
+          if (node.test !== null) reportStringLiteral(context, node.test);
+        },
+        CallExpression(node) {
+          if (!checkMethods) return;
+          const method = memberMethodName(node.callee);
+          if (method === undefined || !stringComparisonMethods.has(method)) return;
+          reportCallArguments(context, node);
+          reportCollectionElements(context, node.callee);
+        },
+      };
+    },
+  },
+};
 
 export default tseslint.config(
-  { ignores: ['dist/', 'node_modules/', 'scripts/**/*.mjs', '.worktrees/'] },
+  { ignores: ['dist/', 'node_modules/', 'scripts/**/*.mjs', '.worktrees/', '.tmp/'] },
   ...tseslint.configs.strictTypeChecked,
   {
     languageOptions: {
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
-    plugins: { sonarjs },
+    plugins: { sonarjs, playbook: { rules: playbookRules } },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-non-null-assertion': 'error',
@@ -88,6 +170,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/**/*.ts', 'content/ui/**/*.js'],
+    rules: {
+      'playbook/no-string-literal-comparison': 'error',
+    },
+  },
+  {
     files: ['src/schema/**/*.ts'],
     rules: {
       'no-restricted-syntax': 'off',
@@ -106,6 +194,7 @@ export default tseslint.config(
       'sonarjs/no-duplicate-string': 'off',
       'max-lines-per-function': 'off',
       'no-restricted-properties': 'off',
+      'playbook/no-string-literal-comparison': ['error', { checkMethods: false }],
     },
   },
   {

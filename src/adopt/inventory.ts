@@ -1,6 +1,8 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
+import { FILE_EXTENSION } from '../platform.constants.js';
+import { INVENTORY_DEPENDENCY, INVENTORY_STACK } from './inventory.constants.js';
 import type { InventoryReport } from './inventory.types.js';
 
 function field(raw: object, key: string): unknown {
@@ -72,11 +74,11 @@ function getDepKeys(pkg: object): string[] {
 }
 
 function addDepFlags(stack: string[], root: string, depKeys: string[]): void {
-  if (depKeys.includes('typescript') || existsSync(join(root, 'tsconfig.json'))) {
-    stack.push('typescript');
+  if (depKeys.includes(INVENTORY_DEPENDENCY.TYPESCRIPT) || existsSync(join(root, 'tsconfig.json'))) {
+    stack.push(INVENTORY_DEPENDENCY.TYPESCRIPT);
   }
-  if (depKeys.includes('react') || depKeys.includes('react-dom')) {
-    stack.push('react');
+  if (depKeys.includes(INVENTORY_DEPENDENCY.REACT) || depKeys.includes(INVENTORY_DEPENDENCY.REACT_DOM)) {
+    stack.push(INVENTORY_DEPENDENCY.REACT);
   }
   for (const tech of DEP_BASED_TECHS) {
     if (depKeys.includes(tech)) stack.push(tech);
@@ -93,7 +95,7 @@ function addFileFlags(stack: string[], root: string): void {
 }
 
 function detectStack(root: string, pkg: object): string[] {
-  const stack: string[] = ['node'];
+  const stack: string[] = [INVENTORY_STACK.NODE];
   addDepFlags(stack, root, getDepKeys(pkg));
   addFileFlags(stack, root);
   return [...new Set(stack)];
@@ -126,7 +128,7 @@ function checkPlaybookArtifacts(root: string): Record<string, boolean> {
 function scanCiWorkflows(root: string): string[] {
   try {
     const dir = join(root, '.github', 'workflows');
-    return readdirSync(dir).filter(e => e.endsWith('.yml') || e.endsWith('.yaml'));
+    return readdirSync(dir).filter(e => e.endsWith(FILE_EXTENSION.YAML) || e.endsWith(FILE_EXTENSION.YAML_LONG));
   } catch {
     return [];
   }
