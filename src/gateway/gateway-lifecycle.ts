@@ -269,8 +269,11 @@ function handleTerminal(
 ): GatewayCompletionReceipt | undefined {
   if (observation.state === ADAPTER_RUN_STATE.RUNNING) return undefined;
   if (observation.state === ADAPTER_RUN_STATE.COMPLETED) return validateCompletion(context, observation, nowMs);
+  const gatewayStatus = observation.state === ADAPTER_RUN_STATE.UNKNOWN
+    ? GATEWAY_RUN_STATUS.FAILED
+    : observation.state;
   const detail = adapterFailureDetail(observation);
-  finishRun(context.store, context.runSpec, observation.state, observation, nowMs, detail);
+  finishRun(context.store, context.runSpec, gatewayStatus, observation, nowMs, detail);
   throw adapterFailure(observation);
 }
 

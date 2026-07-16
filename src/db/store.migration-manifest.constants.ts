@@ -23,6 +23,7 @@ export const STORE_MIGRATION_IDS = [
   'event-commands-1',
   'event-commands-2',
   'event-commands-3',
+  'event-commands-4',
   'schema-11',
   'schema-12',
   'schema-13',
