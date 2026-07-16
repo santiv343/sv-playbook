@@ -12,6 +12,7 @@ import { runWithContext, createContext } from '../runtime/context.js';
 import type { Store } from '../db/store.types.js';
 import type { DaemonInstance, DaemonDeps, TerminationState } from './daemon.types.js';
 import type { DaemonBackgroundWorker } from './daemon.types.js';
+import { DaemonListenError } from './daemon.errors.js';
 import { createProductionDaemonDeps } from './daemon.production.js';
 import type { CommandPort, SignalPort } from '../runtime/context.types.js';
 import {
@@ -219,9 +220,11 @@ function handleExec(token: string, state: TerminationState, commandPort: Command
     if (parsed === null) return;
 
     const execIo = buildExecIo();
-    const execP = parsed.ctx !== undefined
+    // Promise.resolve().then(...) so a synchronous throw from the command port
+    // is routed through the same stable-500 path as an async rejection.
+    const execP = Promise.resolve().then(() => parsed.ctx !== undefined
       ? runWithContext(parsed.ctx, () => commandPort.execute(parsed.argv, execIo))
-      : commandPort.execute(parsed.argv, execIo);
+      : commandPort.execute(parsed.argv, execIo));
 
     return execP.then((exitCode) => {
       const stdout = execIo.outLines.join('\n') + (execIo.outLines.length > 0 ? '\n' : '');
@@ -347,12 +350,23 @@ function listenForRequests(
   });
   state.server = server;
   subscribeToSignals(state, deps.signalPort, () => { shutdown.initiate(); });
-  server.on(PROCESS_EVENT.ERROR, (error: NodeJS.ErrnoException) => {
-    if (state.causalError === null) state.causalError = error;
-    if (!state.stopping) shutdown.initiate();
-  });
-  return new Promise((resolve) => {
-    server.listen(port, '127.0.0.1', () => { resolve({ port, token, store, stop: () => shutdown.wait() }); });
+  return new Promise((resolve, reject) => {
+    let listening = false;
+    server.on(PROCESS_EVENT.ERROR, (error: NodeJS.ErrnoException) => {
+      if (state.causalError === null) state.causalError = error;
+      if (!state.stopping) shutdown.initiate();
+      if (!listening) {
+        // Startup rejection is delivered only after termination cleanup
+        // completes: wait for the terminal receipt, then reject with it.
+        void state.receiptLatch.then((receipt) => {
+          reject(new DaemonListenError(port, error, receipt));
+        });
+      }
+    });
+    server.listen(port, '127.0.0.1', () => {
+      listening = true;
+      resolve({ port, token, store, done: state.receiptLatch, stop: () => shutdown.wait().then(() => state.receiptLatch) });
+    });
   });
 }
 
