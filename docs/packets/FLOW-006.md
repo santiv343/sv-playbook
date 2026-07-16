@@ -3,9 +3,10 @@
 id: FLOW-006
 title: task import: sanctioned single-packet import so raw SQL never happens again
 depends_on: []
-write_set: ["src/cli/commands/task*","src/tasks/**","src/cli/commands/doctor*"]
+write_set: ["src/cli/commands/task*","src/tasks/**","src/cli/commands/doctor*","src/db/store.constants.ts","src/db/store.ts","src/db/store.test.ts","docs/packets/FLOW-006.md"]
 requirements: []
-evidence_required: ["red-test-output","verify-root","final-sha"]
+evidence_required: ["final-sha","red-test-output","verify-root"]
+tags: []
 ---
 
 ## Task
