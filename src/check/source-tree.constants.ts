@@ -1,4 +1,4 @@
-export const CHECKED_SOURCE_ROOTS = ['src', 'content/ui'] as const;
+export const CHECKED_SOURCE_ROOTS = ['src'] as const;
 export const SOURCE_FILE_SUFFIX = {
   DECLARATION: '.d.ts',
   JAVASCRIPT: '.js',

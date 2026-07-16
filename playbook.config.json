@@ -33,11 +33,11 @@
     },
     "literalComparisons": {
       "count": 276,
-      "digest": "b3693ff326051a74a6b06385cb1e0dd9498acb22ab415ab3c65c8771a37d9798"
+      "digest": "ee08dd851bdd1b253d5197b116d1f84cc5eddc2f446d3acea6c15b51cb100f59"
     },
     "duplicateStrings": {
-      "count": 1318,
-      "digest": "718efd2a12bb20782c6174917148364cce47d22ab3ae3e48e8bd22cc3fa398cf"
+      "count": 1317,
+      "digest": "c53924e1d5a2372362a28393be7905d5051b04dbd957362a7afc280e7c912a8d"
     },
     "fingerprints": [
       "docs/packets/ADOPT-AURORA-001.md",

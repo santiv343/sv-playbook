@@ -141,7 +141,7 @@ export function ensureSession(store: Store, worktree: string): string {
   if (existsSync(file)) { const id = readFileSync(file, 'utf8').trim(); if (store.db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(id) !== undefined) return id; }
   const id = randomUUID();
   store.db.prepare('INSERT INTO sessions (id, worktree, started_at) VALUES (?,?,?)').run(id, worktree, now());
-  writeFileSync(file, `${id}\n`, 'utf8');
+  mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, `${id}\n`, 'utf8');
   return id;
 }
 export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
