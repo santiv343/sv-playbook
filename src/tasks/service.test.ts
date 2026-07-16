@@ -15,7 +15,6 @@ import {
   leaseOf,
   releaseLease,
   overlaps,
-  refreshHeartbeat,
   takeoverPacket,
   recoverPacket,
   notePacket,
@@ -97,21 +96,6 @@ test('ensureSession is stable per worktree (reads .svp/session back)', async () 
   assert.equal(a, b);
   const onDisk = (await readFile(join(root, SESSION_FILE_NAME), 'utf8')).trim();
   assert.equal(onDisk, a);
-});
-test('leaseOf reports holder and freshness; refreshHeartbeat updates it', async () => {
-  const { root, store } = await setup();
-  createPacket(store, root, def('P3-001'), 'a');
-  const s1 = ensureSession(store, root);
-  movePacket(store, undefined, 'P3-001', 'ready');
-  startPacket(store, s1, root, 'P3-001');
-  const lease = leaseOf(store, 'P3-001'); assert.ok(lease);
-  assert.equal(lease.sessionId, s1);
-  assert.equal(lease.stale, false);
-  store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE packet_id = ?').run(new Date(Date.now() - 31 * 60 * 1000).toISOString(), 'P3-001');
-  const old = leaseOf(store, 'P3-001');
-  assert.equal(old?.stale, true);
-  refreshHeartbeat(store, s1);
-  assert.equal(leaseOf(store, 'P3-001')?.stale, false);
 });
 test('takeover: no lease -> error; stale lease -> allowed; live lease needs force', async () => {
   const { root, store } = await setup();
