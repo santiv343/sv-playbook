@@ -3,15 +3,20 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { Ajv } from 'ajv';
 import type { Check, ConformanceReceipt } from './conformance.types.js';
+import { CONFORMANCE_VERDICT, CONTRACT_FIELD, ENFORCEMENT_CLASSIFICATION, INDEX_NOT_FOUND, JSON_TOKEN } from './conformance.constants.js';
+import { EMPTY_SIZE, HASH_ALGORITHM, HASH_ENCODING, SINGLE_SIZE, TEXT_ENCODING } from '../platform.constants.js';
+import { JSON_SCHEMA_TYPE } from '../schema/json-schema.constants.js';
+import { PROPOSAL_FORBIDDEN_KEYWORDS } from '../contracts/protocol-work.constants.js';
+import { DATABASE_COLUMN } from '../db/schema-vocabulary.constants.js';
+import { VERIFICATION_STATUS } from '../verification/verification.constants.js';
 
 const _require = createRequire(import.meta.url);
 const AJV_PKG_RAW: unknown = _require('ajv/package.json');
-const AJV_VERSION = isRecord(AJV_PKG_RAW) && typeof AJV_PKG_RAW['version'] === 'string' ? AJV_PKG_RAW['version'] : '';
+const AJV_PACKAGE_META: Record<string, unknown> = isRecord(AJV_PKG_RAW) ? AJV_PKG_RAW : {};
+const { version: AJV_PACKAGE_VERSION } = AJV_PACKAGE_META;
+const AJV_VERSION = isString(AJV_PACKAGE_VERSION) ? AJV_PACKAGE_VERSION : '';
 
 const AGENT_OWNER_PATTERN = /\b(llm|agent|ai)\b/i;
-
-const CHECK_PASS = 'pass' as const;
-const CHECK_FAIL = 'fail' as const;
 
 const FAILURE_CODES = {
   SCHEMA_INVALID: 'SCHEMA_INVALID',
@@ -26,9 +31,9 @@ const FAILURE_CODES = {
 const REQUIRED_ENFORCEMENT_FIELDS = [
   'enforcement_point',
   'deterministic_outcome',
-  'failure_code',
+  DATABASE_COLUMN.FAILURE_CODE,
   'evidence_receipt',
-  'test_ids',
+  CONTRACT_FIELD.TEST_IDS,
 ] as const;
 
 class ConformanceError extends Error {
@@ -39,14 +44,18 @@ class ConformanceError extends Error {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === JSON_SCHEMA_TYPE.OBJECT && value !== null && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === JSON_SCHEMA_TYPE.STRING;
 }
 
 function readUtf8File(path: string): string {
   if (!existsSync(path)) {
     throw new ConformanceError(`File not found: ${path}`, path);
   }
-  return readFileSync(path, 'utf-8');
+  return readFileSync(path, TEXT_ENCODING.UTF8);
 }
 
 function parseJsonStrict(raw: string, path: string): Record<string, unknown> {
@@ -76,7 +85,7 @@ function canonicalJsonStringify(obj: Record<string, unknown>): string {
 }
 
 function sha256Hex(content: string): string {
-  return createHash('sha256').update(content, 'utf-8').digest('hex');
+  return createHash(HASH_ALGORITHM.SHA256).update(content, TEXT_ENCODING.UTF8).digest(HASH_ENCODING.HEX);
 }
 
 function parseAndCanonicalize(raw: string): string {
@@ -91,9 +100,9 @@ function extractScenarioIds(scenarios: unknown): string[] {
   if (!Array.isArray(scenarios)) return [];
   const ids: string[] = [];
   for (const item of scenarios) {
-    if (typeof item !== 'string') continue;
-    const colonIdx = item.indexOf(':');
-    if (colonIdx === -1) continue;
+    if (!isString(item)) continue;
+    const colonIdx = item.indexOf(JSON_TOKEN.COLON);
+    if (colonIdx === INDEX_NOT_FOUND) continue;
     ids.push(item.slice(0, colonIdx).trim());
   }
   return ids;
@@ -101,7 +110,7 @@ function extractScenarioIds(scenarios: unknown): string[] {
 
 function getStringField(obj: Record<string, unknown>, key: string): string | undefined {
   const v = obj[key];
-  return typeof v === 'string' ? v : undefined;
+  return isString(v) ? v : undefined;
 }
 
 function getStringArray(obj: Record<string, unknown>, key: string): string[] {
@@ -109,7 +118,7 @@ function getStringArray(obj: Record<string, unknown>, key: string): string[] {
   if (!Array.isArray(v)) return [];
   const result: string[] = [];
   for (const item of v) {
-    if (typeof item === 'string') result.push(item);
+    if (isString(item)) result.push(item);
   }
   return result;
 }
@@ -120,7 +129,7 @@ function findJsonContainerStart(rawJson: string, containerKey: string): number {
   if (!match) return -1;
   let pos = match.index + match[0].length;
   while (pos < rawJson.length && rawJson[pos]?.trim() === '') pos++;
-  return rawJson[pos] === '{' ? pos + 1 : -1;
+  return rawJson[pos] === JSON_TOKEN.OPEN_BRACE ? pos + 1 : -1;
 }
 
 function recordOneKey(key: string, seen: Set<string>, dups: Set<string>): void {
@@ -131,35 +140,35 @@ function recordOneKey(key: string, seen: Set<string>, dups: Set<string>): void {
 function scanOneJsonKey(json: string, quotePos: number, seen: Set<string>, dups: Set<string>): number {
   let p = quotePos + 1;
   while (p < json.length) {
-    if (json[p] === '\\') { p += 2; continue; }
-    if (json[p] === '"') break;
+    if (json[p] === JSON_TOKEN.BACKSLASH) { p += 2; continue; }
+    if (json[p] === JSON_TOKEN.DOUBLE_QUOTE) break;
     p++;
   }
   if (p >= json.length) return quotePos + 1;
   const key = json.slice(quotePos + 1, p);
   p++;
   while (p < json.length && json[p]?.trim() === '') p++;
-  if (json[p] === ':') recordOneKey(key, seen, dups);
+  if (json[p] === JSON_TOKEN.COLON) recordOneKey(key, seen, dups);
   return p;
 }
 
 function scanStep(ch: string, st: { pos: number; depth: number; inString: boolean; escaped: boolean }): void {
   if (st.escaped) { st.escaped = false; st.pos++; return; }
-  if (ch === '\\' && st.inString) { st.escaped = true; st.pos++; return; }
-  if (ch === '"') { st.inString = !st.inString; st.pos++; return; }
+  if (ch === JSON_TOKEN.BACKSLASH && st.inString) { st.escaped = true; st.pos++; return; }
+  if (ch === JSON_TOKEN.DOUBLE_QUOTE) { st.inString = !st.inString; st.pos++; return; }
   if (st.inString) { st.pos++; return; }
-  if (ch === '{') st.depth++;
-  else if (ch === '}') st.depth--;
+  if (ch === JSON_TOKEN.OPEN_BRACE) st.depth++;
+  else if (ch === JSON_TOKEN.CLOSE_BRACE) st.depth--;
   st.pos++;
 }
 
 function scanJsonKeysAtDepth(rawJson: string, startPos: number): string[] {
-  const st = { pos: startPos, depth: 1, inString: false, escaped: false };
+  const st = { pos: startPos, depth: SINGLE_SIZE, inString: false, escaped: false };
   const seen = new Set<string>();
   const dups = new Set<string>();
 
-  while (st.pos < rawJson.length && st.depth > 0) {
-    if (!st.inString && st.depth === 1 && rawJson[st.pos] === '"' && !st.escaped) {
+  while (st.pos < rawJson.length && st.depth > EMPTY_SIZE) {
+    if (!st.inString && st.depth === SINGLE_SIZE && rawJson[st.pos] === JSON_TOKEN.DOUBLE_QUOTE && !st.escaped) {
       st.pos = scanOneJsonKey(rawJson, st.pos, seen, dups);
       continue;
     }
@@ -170,14 +179,14 @@ function scanJsonKeysAtDepth(rawJson: string, startPos: number): string[] {
 
 function findJsonKeyDuplicates(rawJson: string, containerKey: string): string[] {
   const bodyStart = findJsonContainerStart(rawJson, containerKey);
-  if (bodyStart < 0) return [];
+  if (bodyStart === INDEX_NOT_FOUND) return [];
   return scanJsonKeysAtDepth(rawJson, bodyStart);
 }
 
 function withoutSchema(raw: Record<string, unknown>): Record<string, unknown> {
   const copy: Record<string, unknown> = {};
   for (const key of Object.keys(raw)) {
-    if (key !== '$schema') copy[key] = raw[key];
+    if (!PROPOSAL_FORBIDDEN_KEYWORDS.has(key)) copy[key] = raw[key];
   }
   return copy;
 }
@@ -200,25 +209,25 @@ function runSchemaCheck(schema: Record<string, unknown>, profile: Record<string,
 }
 
 function isFieldMissing(field: string, value: unknown): boolean {
-  if (field === 'test_ids') {
-    return !Array.isArray(value) || value.length === 0;
+  if (field === CONTRACT_FIELD.TEST_IDS) {
+    return !Array.isArray(value) || value.length === EMPTY_SIZE;
   }
-  return typeof value !== 'string' || value.length === 0;
+  return !isString(value) || value.length === EMPTY_SIZE;
 }
 
 function buildCheck(name: string, failed: boolean, failDetail: string, passDetail: string): Check {
-  return { name, status: failed ? CHECK_FAIL : CHECK_PASS, detail: failed ? failDetail : passDetail };
+  return { name, status: failed ? VERIFICATION_STATUS.FAIL : VERIFICATION_STATUS.PASS, detail: failed ? failDetail : passDetail };
 }
 
 function pushCheck(checks: Check[], codes: string[], name: string, ids: string[], failPrefix: string, code: string, passDetail: string): void {
-  const failed = ids.length > 0;
+  const failed = ids.length > EMPTY_SIZE;
   const detail = failed ? `${failPrefix}${ids.join(', ')}` : passDetail;
   checks.push(buildCheck(name, failed, detail, detail));
   if (failed) codes.push(code);
 }
 
 function runDuplicateControlsCheck(rawContract: string): string[] {
-  return findJsonKeyDuplicates(rawContract, 'control_catalog');
+  return findJsonKeyDuplicates(rawContract, CONTRACT_FIELD.CONTROL_CATALOG);
 }
 
 function runDuplicateScenariosCheck(scenarioIds: string[]): string[] {
@@ -263,7 +272,7 @@ function runIncompleteControlsCheck(
   const incomplete: string[] = [];
   for (const ctrl of controls) {
     const cls = ctrl.classification;
-    if (cls !== 'runtime_enforced' && cls !== 'adapter_enforced') continue;
+    if (cls !== ENFORCEMENT_CLASSIFICATION.RUNTIME && cls !== ENFORCEMENT_CLASSIFICATION.ADAPTER) continue;
     if (REQUIRED_ENFORCEMENT_FIELDS.some((f) => isFieldMissing(f, ctrl.control[f]))) {
       incomplete.push(ctrl.id);
     }
@@ -293,9 +302,9 @@ function parseControls(controlCatalog: Record<string, unknown>): { controls: Ctr
   for (const id of controlIds) {
     const rawCtrl = controlCatalog[id];
     if (!isRecord(rawCtrl)) continue;
-    const classification = getStringField(rawCtrl, 'classification') ?? '';
+    const classification = getStringField(rawCtrl, DATABASE_COLUMN.CLASSIFICATION) ?? '';
     const owner = getStringField(rawCtrl, 'owner') ?? '';
-    const testIds = getStringArray(rawCtrl, 'test_ids');
+    const testIds = getStringArray(rawCtrl, CONTRACT_FIELD.TEST_IDS);
     for (const tid of testIds) allReferencedIds.add(tid);
     controls.push({ id, classification, owner, testIds, control: rawCtrl });
   }
@@ -340,7 +349,8 @@ export function runConformance(contractPath: string, schemaPath: string, profile
   const schema = parseJsonStrict(schemaRaw, schemaPath);
   const profile = parseJsonStrict(profileRaw, profilePath);
   const contractVersion = getStringField(contract, 'contract_version') ?? '';
-  const controlCatalog: Record<string, unknown> = isRecord(contract['control_catalog']) ? contract['control_catalog'] : {};
+  const controlCatalogRaw: unknown = contract[CONTRACT_FIELD.CONTROL_CATALOG];
+  const controlCatalog: Record<string, unknown> = isRecord(controlCatalogRaw) ? controlCatalogRaw : {};
   const rawScenarios = contract['acceptance_scenarios'];
   const scenarioIds = extractScenarioIds(Array.isArray(rawScenarios) ? rawScenarios : []);
   const parsedControls = parseControls(controlCatalog);
@@ -353,7 +363,7 @@ export function runConformance(contractPath: string, schemaPath: string, profile
   const incompleteControls = runIncompleteControlsCheck(parsedControls.controls);
   const agentOwnerControls = runAgentOwnerCheck(parsedControls.controls.map((c) => ({ id: c.id, owner: c.owner })));
   const result = buildResultChecks(schemaResult, duplicateControlIds, duplicateScenarioIds, orphanedScenarios, danglingReferences, incompleteControls, agentOwnerControls);
-  const verdict = result.checks.some((c) => c.status === 'fail') ? 'nonconformant' as const : 'conformant' as const;
+  const verdict = result.checks.some((c) => c.status === VERIFICATION_STATUS.FAIL) ? CONFORMANCE_VERDICT.NONCONFORMANT : CONFORMANCE_VERDICT.CONFORMANT;
   return {
     contract_path: contractPath, schema_path: schemaPath, profile_path: profilePath,
     contract_digest: contractDigest, schema_digest: schemaDigest, profile_digest: profileDigest,

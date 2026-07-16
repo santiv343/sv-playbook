@@ -7,6 +7,9 @@ import { main } from '../main.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import type { ConformanceReceipt } from '../../enforcement/conformance.types.js';
+import { EMPTY_SIZE } from '../../platform.constants.js';
+
+const SHA256_HEX_DIGEST_LENGTH = 64;
 
 function isConformanceReceipt(value: unknown): value is ConformanceReceipt {
   return typeof value === 'object' && value !== null && 'verdict' in value;
@@ -63,7 +66,7 @@ test('invalid profile exits non-zero with schema failure', async () => {
     assert.notEqual(code, EXIT.OK);
     const receipt = readReceipt(io.outLines);
     assert.equal(receipt.verdict, 'nonconformant');
-    assert.ok(receipt.schema_errors.length > 0, 'expected schema errors');
+    assert.ok(receipt.schema_errors.length > EMPTY_SIZE, 'expected schema errors');
     assert.ok(receipt.failure_codes.includes('SCHEMA_INVALID'), 'expected SCHEMA_INVALID failure code');
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -148,7 +151,7 @@ test('dangling references detected', async () => {
     const code = await main(['enforce', join(dir, 'contract.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io);
     assert.notEqual(code, EXIT.OK);
     const receipt = readReceipt(io.outLines);
-    assert.ok(receipt.dangling_references.length > 0);
+    assert.ok(receipt.dangling_references.length > EMPTY_SIZE);
     assert.ok(receipt.dangling_references[0]?.includes('SC-999'));
     assert.equal(receipt.verdict, 'nonconformant');
     assert.ok(receipt.failure_codes.includes('DANGLING_REFERENCES'));
@@ -363,11 +366,11 @@ test('valid fixture produces exit 0 with conformant receipt', async () => {
     assert.deepEqual(receipt.dangling_references, []);
     assert.deepEqual(receipt.incomplete_controls, []);
     assert.deepEqual(receipt.agent_owner_controls, []);
-    assert.ok(receipt.contract_digest.length === 64, 'expected hex sha256 digest');
-    assert.ok(receipt.schema_digest.length === 64, 'expected hex sha256 digest');
-    assert.ok(receipt.profile_digest.length === 64, 'expected hex sha256 digest');
+    assert.ok(receipt.contract_digest.length === SHA256_HEX_DIGEST_LENGTH, 'expected hex sha256 digest');
+    assert.ok(receipt.schema_digest.length === SHA256_HEX_DIGEST_LENGTH, 'expected hex sha256 digest');
+    assert.ok(receipt.profile_digest.length === SHA256_HEX_DIGEST_LENGTH, 'expected hex sha256 digest');
     assert.equal(receipt.ruleset_version, '1.0.0');
-    assert.ok(typeof receipt.validator_version === 'string' && receipt.validator_version.length > 0);
+    assert.ok(typeof receipt.validator_version === 'string' && receipt.validator_version.length > EMPTY_SIZE);
     assert.equal(receipt.failure_codes.length, 0);
 
     const code2 = await main(['enforce', join(dir, 'contract.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], fakeIo());

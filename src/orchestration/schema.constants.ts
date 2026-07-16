@@ -6,6 +6,7 @@ import {
   WORKFLOW_STATUSES,
 } from './orchestration.constants.js';
 import { ARTIFACT_CONTRACT_STATUS } from '../contracts/artifact.constants.js';
+import { DATABASE_COLUMN } from '../db/schema-vocabulary.constants.js';
 import { executionProfiles } from '../gateway/schema.constants.js';
 import { roleContracts } from '../roles/schema.constants.js';
 
@@ -100,7 +101,7 @@ export const workflowRuns = sqliteTable('workflow_runs', {
   revision: integer('revision').notNull(),
   inputArtifactId: text('input_artifact_id').notNull(),
   outputArtifactId: text('output_artifact_id'),
-  failureCode: text('failure_code'),
+  failureCode: text(DATABASE_COLUMN.FAILURE_CODE),
   failureDetail: text('failure_detail'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
