@@ -25,6 +25,9 @@
     "test:quiet": "npm run build && node --test --test-reporter dot \"dist/**/*.test.js\"",
     "verify": "npm run build && node dist/verification/cli.js"
   },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.0",

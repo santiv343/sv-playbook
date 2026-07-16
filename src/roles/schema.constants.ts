@@ -3,7 +3,7 @@ import { DATABASE_COLUMN, SQLITE_INTEGER_MODE } from '../db/schema-vocabulary.co
 
 export const responsibilities = sqliteTable('responsibilities', {
   id: text(DATABASE_COLUMN.ID).primaryKey(),
-  classification: text('classification').notNull(),
+  classification: text(DATABASE_COLUMN.CLASSIFICATION).notNull(),
   description: text(DATABASE_COLUMN.DESCRIPTION).notNull(),
 });
 
