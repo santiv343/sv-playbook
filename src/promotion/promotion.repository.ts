@@ -113,6 +113,7 @@ export function loadCandidateEvidence(store: Store, reviewCandidateId: string): 
     artifactDigest: row.artifactDigest,
     producerSessionId: value.producerSessionId,
     changedFiles: value.changedFiles,
+    integration: value.integration,
     preflightOverall: value.preflightOverall,
     cleanVerificationCandidateSha: value.cleanVerificationCandidateSha,
     cleanVerificationStatus: value.cleanVerificationStatus,

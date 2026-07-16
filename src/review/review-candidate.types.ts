@@ -1,4 +1,7 @@
 import type { PreflightReport } from './preflight.types.js';
+import type { REVIEW_CANDIDATE_INTEGRATION } from './review-candidate.constants.js';
+
+export type ReviewCandidateIntegration = (typeof REVIEW_CANDIDATE_INTEGRATION)[keyof typeof REVIEW_CANDIDATE_INTEGRATION];
 
 export interface ReviewCandidateValue {
   readonly kind: string;
@@ -10,6 +13,7 @@ export interface ReviewCandidateValue {
     readonly changedFiles: readonly string[];
     readonly diffDigest: string;
     readonly diff: string;
+    readonly integration?: ReviewCandidateIntegration;
   };
   readonly producer: { readonly sessionId: string };
   readonly evidence: {

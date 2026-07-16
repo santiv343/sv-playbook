@@ -2,6 +2,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { canonicalJson, digest } from '../context/digest.js';
 import type { Store } from '../db/store.types.js';
 import { SINGLE_SIZE } from '../platform.constants.js';
+import type { ReviewCandidateIntegration } from '../review/review-candidate.types.js';
 import { packets, taskEvents } from '../tasks/schema.constants.js';
 import { EVENT_TRANSITION, STATUS } from '../tasks/service.constants.js';
 import { transact } from '../tasks/transaction.js';
@@ -36,6 +37,7 @@ function receipt(row: typeof promotionReceipts.$inferSelect): PromotionReceipt {
     candidateSha: row.candidateSha,
     targetRef: row.targetRef,
     resultSha: row.resultSha,
+    integration: row.integration,
     reviewerRunSpecId: row.reviewerRunSpecId,
     verificationDigest: row.verificationDigest,
     createdAt: row.createdAt,
@@ -80,6 +82,7 @@ export function closePromotedTask(
   candidate: CandidateIdentity,
   targetRef: string,
   resultSha: string,
+  integration: ReviewCandidateIntegration,
   reviewerRunSpecId: string,
   verificationDigest: string,
   controllerDigest: string,
@@ -95,6 +98,7 @@ export function closePromotedTask(
     candidateSha: candidate.candidateSha,
     targetRef,
     resultSha,
+    integration,
     reviewerRunSpecId,
     verificationDigest,
     createdAt,

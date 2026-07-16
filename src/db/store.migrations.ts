@@ -15,10 +15,11 @@ import { STORE_MIGRATION_ID } from './store.migration-manifest.constants.js';
 import type { MigrateStoreOptions, OpenStoreOptions } from './store.types.js';
 import { loadConfig } from '../config.js';
 import { ORCHESTRATION_STORE_SCHEMA } from './orchestration.schema.constants.js';
+import { SQLITE_COLUMN_TYPE } from './schema-vocabulary.constants.js';
 import { migrateTableColumn } from './store.migration-helpers.js';
 import { RUN_SPECS_TABLE } from './context.schema.constants.js';
 import { addModelCapabilityEvaluations, addReviewCandidates, addRoleProjectionReceipts, addSemanticRoleContractFields, addTypedRunSpecReferences, addVersionedRoleCatalog, addVersionedWorkDefinitions } from './store.migration-functions.js';
-import { addPromotionTables } from './promotion.migrations.js';
+import { addPromotionReceiptIntegration, addPromotionTables } from './promotion.migrations.js';
 import { addRunRetryLinkage } from './run-retry.migrations.js';
 import { addRunDurationCeiling } from './run-duration.migrations.js';
 import { applyExclusiveStorePragmas, readStoreSchemaVersion } from './store.pragmas.js';
@@ -133,8 +134,8 @@ function tableColumnExists(db: Database.Database, table: string, column: string)
 }
 
 function migratePacketContentColumns(db: Database.Database): void {
-  migratePacketColumn(db, 'body', 'TEXT', true, "''");
-  migratePacketColumn(db, 'type', 'TEXT', true, "''");
+  migratePacketColumn(db, 'body', SQLITE_COLUMN_TYPE.TEXT, true, "''");
+  migratePacketColumn(db, 'type', SQLITE_COLUMN_TYPE.TEXT, true, "''");
 }
 
 function migrateConstitutionAndSprints(db: Database.Database): void {
@@ -182,7 +183,7 @@ function addWorkflowRuntimeConfiguration(db: Database.Database): void {
 }
 
 function addRunSpecDispatchRef(db: Database.Database): void {
-  migrateTableColumn(db, RUN_SPECS_TABLE, 'dispatch_ref', 'TEXT', true, "''");
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'dispatch_ref', SQLITE_COLUMN_TYPE.TEXT, true, "''");
   db.exec("UPDATE run_specs SET dispatch_ref = task_ref WHERE dispatch_ref = ''");
 }
 
@@ -218,7 +219,7 @@ function profileSnapshot(db: Database.Database, profileId: string): string {
 }
 
 function addRunSpecProfileSnapshot(db: Database.Database): void {
-  migrateTableColumn(db, RUN_SPECS_TABLE, 'execution_profile_json', 'TEXT', true, "'{}'");
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'execution_profile_json', SQLITE_COLUMN_TYPE.TEXT, true, "'{}'");
   const rows = db.prepare('SELECT id, execution_profile_id FROM run_specs').all();
   const update = db.prepare('UPDATE run_specs SET execution_profile_json = ? WHERE id = ?');
   for (const row of rows) {
@@ -242,7 +243,7 @@ type StoreMigration = (db: Database.Database, repoRoot: string) => void;
 
 const migrations = {
   'packet-content-columns': migratePacketContentColumns,
-  'packet-type-column': (db: Database.Database): void => { migratePacketColumn(db, 'type', 'TEXT', true, "''"); },
+  'packet-type-column': (db: Database.Database): void => { migratePacketColumn(db, 'type', SQLITE_COLUMN_TYPE.TEXT, true, "''"); },
   'constitution-and-sprints': migrateConstitutionAndSprints,
   'sprints': migrateSprintsTables,
   'event-commands-1': migrateEventsTable,
@@ -275,6 +276,7 @@ const migrations = {
   [STORE_MIGRATION_ID.PROMOTION_TABLES]: addPromotionTables,
   [STORE_MIGRATION_ID.RUN_RETRY_LINKAGE]: addRunRetryLinkage,
   [STORE_MIGRATION_ID.RUN_DURATION_CEILING]: addRunDurationCeiling,
+  [STORE_MIGRATION_ID.PROMOTION_RECEIPT_INTEGRATION]: addPromotionReceiptIntegration,
 } satisfies Readonly<Record<StoreMigrationId, StoreMigration>>;
 
 function runVersionMigration(db: Database.Database, repoRoot: string, fromVersion: number): void {

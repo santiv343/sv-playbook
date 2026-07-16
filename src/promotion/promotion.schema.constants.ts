@@ -1,5 +1,7 @@
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { DATABASE_COLUMN } from '../db/schema-vocabulary.constants.js';
+import { REVIEW_CANDIDATE_INTEGRATION_FIELD } from '../review/review-candidate.constants.js';
+import type { ReviewCandidateIntegration } from '../review/review-candidate.types.js';
 import { TRANSITION_COLUMN } from '../tasks/service.constants.js';
 import type { IntegrationOutcome, PromotionStatus, PromotionVerdict } from './promotion.types.js';
 
@@ -113,6 +115,7 @@ export const promotionReceipts = sqliteTable(PROMOTION_TABLE.RECEIPTS, {
   candidateSha: text(COLUMN.CANDIDATE_SHA).notNull(),
   targetRef: text(COLUMN.TARGET_REF).notNull(),
   resultSha: text(COLUMN.RESULT_SHA).notNull(),
+  integration: text(REVIEW_CANDIDATE_INTEGRATION_FIELD).$type<ReviewCandidateIntegration>().notNull(),
   reviewerRunSpecId: text(COLUMN.REVIEWER_RUN_SPEC_ID).notNull(),
   verificationDigest: text('verification_digest').notNull(),
   receiptJson: text(DATABASE_COLUMN.RECEIPT_JSON).notNull(),
