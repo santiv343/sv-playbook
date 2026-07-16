@@ -50,6 +50,20 @@ test('start requires ready; wrong state names the state', async () => {
   const s = ensureSession(store, root);
   assert.throws(() => { startPacket(store, s, root, 'P2-001'); }, /wrong state draft/);
 });
+test('task start is refused when a depends_on packet is not done', async () => {
+  const { root, store } = await setup();
+  const dep = { ...def('DEP-001') };
+  const dependent = { ...def('TASK-001'), dependsOn: ['DEP-001'] };
+  createPacket(store, root, dep, 'dependency');
+  createPacket(store, root, dependent, 'dependent');
+  store.db.prepare('UPDATE packets SET status = ? WHERE id = ?').run('ready', 'TASK-001');
+  const s = ensureSession(store, root);
+  assert.throws(
+    () => { startPacket(store, s, root, 'TASK-001'); },
+    /unmet dependencies: DEP-001 \(draft\)/,
+  );
+  assert.equal(leaseOf(store, 'TASK-001'), undefined);
+});
 test('start matrix: same-session idempotent, other-session refused', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P2-001'), 'a');
