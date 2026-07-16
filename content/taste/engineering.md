@@ -105,3 +105,44 @@ implementation drifts silently and weakens the rail (PR #124 F2).
 versions, populated rows). A suite that only exercises freshly created state
 certifies nothing about the store users actually have.
 **Date**: 2026-07-11
+
+### ENTRY-012: Generality is earned by the second consumer, never the first
+**Scope**: global
+**Rationale**: Machinery for variation (config surfaces, registries, per-aspect
+tables, plugin points) is built only when the SECOND concrete consumer exists.
+Until then, ship the direct implementation and leave a seam (one versioned
+definition artifact with a digest). Origin: the 20-table role catalog was built
+for configurable roles (IDEA-050, still unvalidated) with one consumer; the
+correct rule already existed locally in IDEA-066 ("the registry is earned by
+the second kind") but had not been promoted to a rule. PRINCIPLE-013 says
+opinions become config; this entry says WHEN.
+**Date**: 2026-07-16
+
+### ENTRY-013: A new mechanism must state why an existing one cannot carry it
+**Scope**: global
+**Rationale**: Before introducing a new table, receipt kind, gate, command,
+module, or config surface, name the existing mechanism considered and why it
+is insufficient. This is PRINCIPLE-011 (single source) applied to mechanisms
+instead of data. Origin: seven receipt types with the identical shape
+(kind, subject, payload, digest, timestamp), each born from one incident,
+none reusing the previous one.
+**Date**: 2026-07-16
+
+### ENTRY-014: Placement before durability
+**Scope**: architecture
+**Rationale**: If work needs to survive process death, first ask whether it
+belongs in a longer-lived process — only then reach for persistence machinery.
+Durability that compensates for wrong placement grows without bound. Origin:
+the gateway's per-poll snapshots / resume / re-attach machinery exists because
+a long-lived observation loop runs inside a short-lived CLI process, while a
+long-lived daemon already existed.
+**Date**: 2026-07-16
+
+### ENTRY-015: Uniform rules over non-uniform things need thresholds, and thresholds are config
+**Scope**: global
+**Rationale**: A rule applied uniformly regardless of size manufactures
+ceremony at the small end (94 of 156 satellite files under 25 LOC from the
+module-layout rule; max-lines forcing worse test code) and pressure at the
+large end. Every structural rule declares its applicability threshold, and per
+PRINCIPLE-013 the threshold lives in config.
+**Date**: 2026-07-16
