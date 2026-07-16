@@ -23,7 +23,10 @@ export interface DaemonInstance {
   port: number;
   token: string;
   store: Store;
-  stop(): Promise<void>;
+  /** Resolves with the single terminal receipt once termination completes,
+   *  regardless of how it was initiated (stop, shutdown route, signal, error). */
+  done: Promise<TerminationReceipt>;
+  stop(): Promise<TerminationReceipt>;
 }
 
 export interface DaemonExecResponse {
@@ -47,4 +50,6 @@ export interface TerminationState {
   causalError: Error | null;
   finalized: boolean;
   receipt: TerminationReceipt | null;
+  receiptResolve: (receipt: TerminationReceipt) => void;
+  receiptLatch: Promise<TerminationReceipt>;
 }

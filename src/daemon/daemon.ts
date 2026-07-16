@@ -12,6 +12,9 @@ import { runWithContext, createContext } from '../runtime/context.js';
 import type { Store } from '../db/store.types.js';
 import type { DaemonInstance, DaemonDeps, TerminationState } from './daemon.types.js';
 import type { DaemonBackgroundWorker } from './daemon.types.js';
+import { DaemonListenError } from './daemon.errors.js';
+import { ERR_INVALID_CONTEXT } from './daemon.constants.js';
+import { enforceWorkspaceBinding, parseExecContext } from './daemon.context.js';
 import { createProductionDaemonDeps } from './daemon.production.js';
 import type { CommandPort, SignalPort } from '../runtime/context.types.js';
 import {
@@ -80,24 +83,7 @@ function redactError(): string {
   return ERR_INTERNAL;
 }
 
-function sessionIdFrom(value: unknown): string | null {
-  if (typeof value === 'string') return value;
-  if (value === null) return null;
-  return '';
-}
-
-function contextFromPayload(parsed: object): ReturnType<typeof createContext> | undefined {
-  const parsedContext: unknown = Reflect.get(parsed, 'context');
-  if (typeof parsedContext === 'object' && parsedContext !== null && 'cwd' in parsedContext) {
-    const cwVal: unknown = Reflect.get(parsedContext, 'cwd');
-    if (typeof cwVal === 'string') {
-      return createContext(cwVal, sessionIdFrom(Reflect.get(parsedContext, 'sessionId')));
-    }
-  }
-  return undefined;
-}
-
-function parseExecRequest(raw: string, token: string, res: ServerResponse): { argv: string[]; ctx: ReturnType<typeof createContext> | undefined } | null {
+function parseExecRequest(raw: string, token: string, res: ServerResponse): { argv: string[]; ctx: ReturnType<typeof createContext> } | null {
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
   if (typeof parsed !== 'object' || parsed === null) { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
@@ -109,7 +95,10 @@ function parseExecRequest(raw: string, token: string, res: ServerResponse): { ar
   const argv = Array.isArray(parsedArgv) ? parsedArgv.filter((a): a is string => typeof a === 'string') : [];
   if (argv.length === 0) { jsonResponse(res, 400, { error: 'argv required' }); return null; }
 
-  return { argv, ctx: contextFromPayload(parsed) };
+  const ctx = parseExecContext(parsed);
+  if (ctx === null) { jsonResponse(res, 400, { error: ERR_INVALID_CONTEXT }); return null; }
+
+  return { argv, ctx };
 }
 
 function acquireLock(lockPath: string, pid: number, port: number): void {
@@ -142,12 +131,13 @@ function handleExecRoute(
   commandPort: CommandPort,
   req: IncomingMessage,
   res: ServerResponse,
+  repoRoot: string,
 ): void {
   if (req.method !== HTTP_METHOD.POST) {
     methodNotAllowed(res);
     return;
   }
-  handleExec(token, state, commandPort, req, res);
+  handleExec(token, state, commandPort, req, res, repoRoot);
 }
 
 function handleShutdownRoute(
@@ -163,14 +153,14 @@ function handleShutdownRoute(
   handleShutdown(token, req, res, initiateShutdown);
 }
 
-function handleRequest(token: string, state: TerminationState, commandPort: CommandPort, req: IncomingMessage, res: ServerResponse, initiateShutdown: () => void): void {
+function handleRequest(token: string, state: TerminationState, commandPort: CommandPort, req: IncomingMessage, res: ServerResponse, initiateShutdown: () => void, repoRoot: string): void {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   if (url.pathname === DAEMON_ROUTE.HEALTH) {
     handleHealth(req, res);
     return;
   }
   if (url.pathname === DAEMON_ROUTE.EXECUTE) {
-    handleExecRoute(token, state, commandPort, req, res);
+    handleExecRoute(token, state, commandPort, req, res, repoRoot);
     return;
   }
   if (url.pathname === DAEMON_ROUTE.SHUTDOWN) {
@@ -203,7 +193,7 @@ function handleShutdown(token: string, req: IncomingMessage, res: ServerResponse
   });
 }
 
-function handleExec(token: string, state: TerminationState, commandPort: CommandPort, req: IncomingMessage, res: ServerResponse): void {
+function handleExec(token: string, state: TerminationState, commandPort: CommandPort, req: IncomingMessage, res: ServerResponse, repoRoot: string): void {
   if (state.stopping) {
     jsonResponse(res, 503, { error: ERR_SHUTTING_DOWN });
     return;
@@ -218,10 +208,22 @@ function handleExec(token: string, state: TerminationState, commandPort: Command
     const parsed = parseExecRequest(raw, token, res);
     if (parsed === null) return;
 
+    const store = state.store;
+    if (store === null) {
+      jsonResponse(res, 500, { error: redactError(), daemonVersion: DAEMON_VERSION });
+      return;
+    }
+    try {
+      enforceWorkspaceBinding(store, repoRoot, parsed.ctx);
+    } catch {
+      jsonResponse(res, 400, { error: ERR_INVALID_CONTEXT });
+      return;
+    }
+
     const execIo = buildExecIo();
-    const execP = parsed.ctx !== undefined
-      ? runWithContext(parsed.ctx, () => commandPort.execute(parsed.argv, execIo))
-      : commandPort.execute(parsed.argv, execIo);
+    // Promise.resolve().then(...) so a synchronous throw from the command port
+    // is routed through the same stable-500 path as an async rejection.
+    const execP = Promise.resolve().then(() => runWithContext(parsed.ctx, () => commandPort.execute(parsed.argv, execIo)));
 
     return execP.then((exitCode) => {
       const stdout = execIo.outLines.join('\n') + (execIo.outLines.length > 0 ? '\n' : '');
@@ -339,20 +341,32 @@ function listenForRequests(
   state: TerminationState,
   deps: DaemonDeps,
   shutdown: ShutdownControl,
+  repoRoot: string,
 ): Promise<DaemonInstance> {
   const store = state.store;
   if (store === null) return Promise.reject(new Error('daemon store is unavailable'));
   const server = createServer((req, res) => {
-    handleRequest(token, state, deps.commandPort, req, res, () => { shutdown.initiate(); });
+    handleRequest(token, state, deps.commandPort, req, res, () => { shutdown.initiate(); }, repoRoot);
   });
   state.server = server;
   subscribeToSignals(state, deps.signalPort, () => { shutdown.initiate(); });
-  server.on(PROCESS_EVENT.ERROR, (error: NodeJS.ErrnoException) => {
-    if (state.causalError === null) state.causalError = error;
-    if (!state.stopping) shutdown.initiate();
-  });
-  return new Promise((resolve) => {
-    server.listen(port, '127.0.0.1', () => { resolve({ port, token, store, stop: () => shutdown.wait() }); });
+  return new Promise((resolve, reject) => {
+    let listening = false;
+    server.on(PROCESS_EVENT.ERROR, (error: NodeJS.ErrnoException) => {
+      if (state.causalError === null) state.causalError = error;
+      if (!state.stopping) shutdown.initiate();
+      if (!listening) {
+        // Startup rejection is delivered only after termination cleanup
+        // completes: wait for the terminal receipt, then reject with it.
+        void state.receiptLatch.then((receipt) => {
+          reject(new DaemonListenError(port, error, receipt));
+        });
+      }
+    });
+    server.listen(port, '127.0.0.1', () => {
+      listening = true;
+      resolve({ port, token, store, done: state.receiptLatch, stop: () => shutdown.wait().then(() => state.receiptLatch) });
+    });
   });
 }
 
@@ -362,7 +376,7 @@ export function createDaemon(repoRoot: string, port: number, deps: DaemonDeps): 
     const backgroundWorker = state.store === null ? undefined : deps.backgroundWorkerFactory?.(state.store, repoRoot);
     backgroundWorker?.start();
     const shutdown = createShutdownControl(state, backgroundWorker);
-    return listenForRequests(port, token, state, deps, shutdown);
+    return listenForRequests(port, token, state, deps, shutdown, repoRoot);
   } catch (error: unknown) {
     const reason = error instanceof Error ? error : new Error(String(error));
     return Promise.reject(reason);

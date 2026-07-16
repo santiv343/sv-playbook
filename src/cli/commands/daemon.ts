@@ -40,15 +40,21 @@ export const command: Command = {
         io.out('Press Ctrl+C to stop');
         // Clean shutdown on Ctrl+C / kill: release the store and remove the
         // lock and token files instead of leaving them behind.
+        let userInitiated = false;
         const shutdown = (): void => {
-          void instance.stop().then(
-            () => { resolve(EXIT.OK); },
-            () => { resolve(EXIT.SYSTEM); },
-          );
+          userInitiated = true;
+          void instance.stop().then(() => undefined, () => undefined);
         };
         process.once('SIGINT', shutdown);
         process.once('SIGTERM', shutdown);
         process.once('SIGBREAK', shutdown);
+        // Settle on the single terminal receipt for every termination path —
+        // signals, the shutdown endpoint, or a listener failure — so the
+        // process always exits deterministically.
+        void instance.done.then(
+          (receipt) => { resolve(receipt.clean || userInitiated ? EXIT.OK : EXIT.SYSTEM); },
+          () => { resolve(EXIT.SYSTEM); },
+        );
       }).catch((err: unknown) => {
         io.err(`Failed to start daemon: ${String(err)}`);
         resolve(EXIT.SYSTEM);
