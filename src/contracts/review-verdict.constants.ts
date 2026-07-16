@@ -24,6 +24,7 @@ export const ReviewVerdictEnvelopeSchema = s.object({
       version: s.integer(),
       digest: s.nonEmptyString(),
     }),
+    rationale: s.optional(s.nonEmptyString()),
   }),
 });
 
@@ -34,10 +35,9 @@ const openObject = <T extends Readonly<Record<string, unknown>>>(properties: T) 
   properties,
 });
 
-// JSON Schema mirror of ReviewVerdictEnvelopeSchema, single-sourced from the same
-// kind/verdict constants. Objects stay open (no additionalProperties: false) to
-// match s.object semantics exactly; review-verdict.test.ts locks the equivalence.
-export const REVIEW_VERDICT_PAYLOAD_JSON_SCHEMA = openObject({
+// rationale is OPTIONAL (HJ-002: the reason must be able to travel mechanically,
+// but absence stays valid): it joins properties after required is computed.
+const REVIEW_VERDICT_PAYLOAD_PROPERTIES = {
   candidateSha: nonEmptyStringSchema(),
   verdict: { enum: [...REVIEW_VERDICT_VALUES] },
   workDefinitionRef: openObject({
@@ -45,7 +45,16 @@ export const REVIEW_VERDICT_PAYLOAD_JSON_SCHEMA = openObject({
     version: { type: JSON_SCHEMA_TYPE.INTEGER },
     digest: nonEmptyStringSchema(),
   }),
-});
+} as const;
+const reviewVerdictPayloadBase = openObject(REVIEW_VERDICT_PAYLOAD_PROPERTIES);
+
+// JSON Schema mirror of ReviewVerdictEnvelopeSchema, single-sourced from the same
+// kind/verdict constants. Objects stay open (no additionalProperties: false) to
+// match s.object semantics exactly; review-verdict.test.ts locks the equivalence.
+export const REVIEW_VERDICT_PAYLOAD_JSON_SCHEMA = {
+  ...reviewVerdictPayloadBase,
+  properties: { ...reviewVerdictPayloadBase.properties, rationale: nonEmptyStringSchema() },
+};
 
 export const REVIEW_VERDICT_ENVELOPE_JSON_SCHEMA = {
   $schema: JSON_SCHEMA_DRAFT_2020_12,

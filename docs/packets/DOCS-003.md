@@ -3,9 +3,10 @@
 id: DOCS-003
 title: migrate non-baselined packet definitions to the canonical authored structure
 depends_on: ["CHECK-001"]
-write_set: ["docs/packets/**"]
+write_set: ["docs/packets/**","playbook.config.json"]
 requirements: ["machine-first","no-placeholders","generated-projections"]
-evidence_required: ["before-after-structure-receipts","semantic-mapping","idempotency-digest","baseline-diff","independent-review"]
+evidence_required: ["baseline-diff","before-after-structure-receipts","idempotency-digest","independent-review","semantic-mapping"]
+tags: []
 ---
 
 ## Problem

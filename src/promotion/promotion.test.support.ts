@@ -119,6 +119,7 @@ interface FixtureOptions {
   readonly outputCandidateSha?: string;
   readonly reviewerSessionId?: string;
   readonly integrated?: boolean;
+  readonly rationale?: string;
 }
 
 interface CandidateWork {
@@ -190,6 +191,7 @@ export async function promotionFixture(options: FixtureOptions = {}): Promise<Pr
         version: work.definition.version,
         digest: work.definition.digest,
       },
+      ...(options.rationale === undefined ? {} : { rationale: options.rationale }),
     },
   };
   completeReviewRun(store, runSpec, output, options.reviewerSessionId ?? FIXTURE.ADAPTER_SESSION);

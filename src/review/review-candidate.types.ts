@@ -3,6 +3,11 @@ import type { REVIEW_CANDIDATE_INTEGRATION } from './review-candidate.constants.
 
 export type ReviewCandidateIntegration = (typeof REVIEW_CANDIDATE_INTEGRATION)[keyof typeof REVIEW_CANDIDATE_INTEGRATION];
 
+export interface ReviewCandidateNote {
+  readonly at: string;
+  readonly detail: string;
+}
+
 export interface ReviewCandidateValue {
   readonly kind: string;
   readonly workDefinition: { readonly id: string; readonly version: number; readonly digest: string };
@@ -24,6 +29,7 @@ export interface ReviewCandidateValue {
       readonly receiptId: string;
       readonly artifactDigest: string;
     }[];
+    readonly notes: readonly ReviewCandidateNote[];
   };
   readonly createdAt: string;
 }
