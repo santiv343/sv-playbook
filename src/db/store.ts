@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync as fsRealpathSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { stringColumn } from './rows.js';
 import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
@@ -47,7 +47,7 @@ function execGitTopLevel(s: string): string {
 // canonical long-name path.
 function normalizePathForCompare(p: string): string {
   try {
-    const canonical = realpathSync(p);
+    const canonical = process.platform === OS_PLATFORM.WINDOWS ? fsRealpathSync.native(p) : fsRealpathSync(p);
     return process.platform === OS_PLATFORM.WINDOWS ? canonical.toLowerCase() : canonical;
   } catch {
     const resolved = resolve(p);
@@ -113,24 +113,10 @@ function bindingWorkspace(cwd: string): string {
 // A workspace belongs to the daemon's repository when it sits inside the
 // blessed root or when its git common dir resolves back to it (linked
 // worktrees may live anywhere on disk).
-function debugWorkspaceWithinRepo(repoRoot: string, cwd: string, workspaceRaw: string, workspace: string, root: string, common: unknown): void {
-  const payload = { repoRoot, cwd, workspaceRaw, workspace, root, common, sep, platform: process.platform };
-  process.stderr.write(`SVP_DEBUG_WORKSPACE ${JSON.stringify(payload)}\n`);
-}
-
 export function workspaceWithinRepo(repoRoot: string, cwd: string): boolean {
-  const workspaceRaw = (() => { try { return execGitTopLevel(cwd); } catch { return cwd; } })();
   const workspace = bindingWorkspace(cwd);
   const root = normalizePathForCompare(repoRoot);
-  const result = workspace === root || workspace.startsWith(`${root}${sep}`);
-  if (!result) {
-    try {
-      debugWorkspaceWithinRepo(repoRoot, cwd, workspaceRaw, workspace, root, normalizePathForCompare(commonRoot(workspace)));
-    } catch (e) {
-      debugWorkspaceWithinRepo(repoRoot, cwd, workspaceRaw, workspace, root, String(e));
-    }
-  }
-  if (result) return true;
+  if (workspace === root || workspace.startsWith(`${root}${sep}`)) return true;
   try {
     return normalizePathForCompare(commonRoot(workspace)) === root;
   } catch {
