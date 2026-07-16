@@ -1,10 +1,18 @@
 const REVIEW_CANDIDATE_NAME = 'review-candidate';
+// v1 is frozen: immutable artifacts in live stores reference review-candidate-v1,
+// and ensureManagedArtifactContract refuses in-place schema drift once artifacts exist.
 export const REVIEW_CANDIDATE_CONTRACT_REF = `${REVIEW_CANDIDATE_NAME}-v1`;
+export const REVIEW_CANDIDATE_CONTRACT_REF_V2 = `${REVIEW_CANDIDATE_NAME}-v2`;
 export const REVIEW_CANDIDATE_KIND = REVIEW_CANDIDATE_NAME;
 export const REVIEW_CANDIDATE_SOURCE_KIND = REVIEW_CANDIDATE_NAME;
 export const REVIEW_CANDIDATE_ID_PREFIX = 'RC-';
 export const REVIEW_CANDIDATE_ARTIFACT_ID_PREFIX = 'ART-RC-';
 export const REQUIRED_INPUT_POLICY_COUNT = 1;
+
+export const REVIEW_CANDIDATE_INTEGRATION = {
+  PENDING: 'pending-integration',
+  INTEGRATED: 'already-integrated',
+} as const;
 
 export const REVIEW_CANDIDATE_ERROR = {
   AMBIGUOUS_POLICY: 'AMBIGUOUS_MANUAL_INPUT_POLICY',
@@ -65,5 +73,32 @@ const REVIEW_CANDIDATE_PROPERTIES = {
 export const REVIEW_CANDIDATE_SCHEMA = {
   $schema: JSON_SCHEMA_DRAFT_2020_12,
   ...closedObject(REVIEW_CANDIDATE_PROPERTIES),
+} as const;
+
+// v2: empty diffs are first-class (already-integrated close path). `changedFiles`
+// may be empty, `diff` may be the empty string, and `integration` is an OPTIONAL
+// enum so v1-shaped values (no field) still validate — absence means pending.
+// The field name is also the promotion_receipts column name: keep the single literal here.
+export const REVIEW_CANDIDATE_INTEGRATION_FIELD = 'integration';
+const CANDIDATE_PROPERTIES_V2 = {
+  sha: stringValueSchema(),
+  branch: stringValueSchema(),
+  baseSha: stringValueSchema(),
+  changedFiles: { type: JSON_SCHEMA_TYPE.ARRAY, items: stringValueSchema() },
+  diffDigest: stringValueSchema(),
+  diff: { type: JSON_SCHEMA_TYPE.STRING },
+  integration: { enum: Object.values(REVIEW_CANDIDATE_INTEGRATION) },
+} as const;
+const candidateSchemaV2 = () => {
+  const base = closedObject(CANDIDATE_PROPERTIES_V2);
+  return { ...base, required: base.required.filter((key) => key !== REVIEW_CANDIDATE_INTEGRATION_FIELD) };
+};
+const REVIEW_CANDIDATE_PROPERTIES_V2 = {
+  ...REVIEW_CANDIDATE_PROPERTIES,
+  candidate: candidateSchemaV2(),
+} as const;
+export const REVIEW_CANDIDATE_SCHEMA_V2 = {
+  $schema: JSON_SCHEMA_DRAFT_2020_12,
+  ...closedObject(REVIEW_CANDIDATE_PROPERTIES_V2),
 } as const;
 import { JSON_SCHEMA_DRAFT_2020_12, JSON_SCHEMA_TYPE } from '../schema/json-schema.constants.js';

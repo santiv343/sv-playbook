@@ -29,3 +29,10 @@ export interface PreparedReviewCandidate {
 
 import type { PendingReviewCandidate } from '../review/review-candidate.types.js';
 import type { StoredWorkDefinition } from './work-definition.types.js';
+
+export interface ReviewMoveResult {
+  readonly from: string;
+  readonly integration: ReviewCandidateIntegration | undefined;
+}
+
+import type { ReviewCandidateIntegration } from '../review/review-candidate.types.js';

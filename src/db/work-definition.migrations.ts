@@ -7,6 +7,7 @@ import { REFERENCE_MIN_ID_LENGTH, REFERENCE_MIN_VERSION, REFERENCE_VERSION_SEPAR
 import { WORK_DEFINITION_INITIAL_VERSION, WORK_DEFINITION_SCHEMA_VERSION } from '../tasks/work-definition.constants.js';
 import { stringColumn } from './rows.js';
 import { StoreVersionError } from './store.errors.js';
+import { SQLITE_COLUMN_TYPE } from './schema-vocabulary.constants.js';
 import { migrateTableColumn } from './store.migration-helpers.js';
 import { RUN_SPECS_TABLE } from './context.schema.constants.js';
 
@@ -68,8 +69,8 @@ export function addVersionedWorkDefinitions(db: Database.Database, repoRoot: str
     PRIMARY KEY (packet_id, version),
     UNIQUE (packet_id, definition_digest)
   )`);
-  migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_ref', 'TEXT', false);
-  migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_digest', 'TEXT', false);
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_ref', SQLITE_COLUMN_TYPE.TEXT, false);
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_digest', SQLITE_COLUMN_TYPE.TEXT, false);
   const rows = db.prepare(`SELECT id, title, path, body, write_set, type, created_at
     FROM packets WHERE NOT EXISTS (
       SELECT 1 FROM packet_definitions WHERE packet_id = packets.id
@@ -98,7 +99,7 @@ function parseLegacyReference(ref: string): { id: string; version: number } {
 }
 
 export function addTypedRunSpecReferences(db: Database.Database): void {
-  migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_id', 'TEXT', false);
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_id', SQLITE_COLUMN_TYPE.TEXT, false);
   migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_version', 'INTEGER', false);
   migrateTableColumn(db, RUN_SPECS_TABLE, 'workflow_effect_id', 'TEXT REFERENCES workflow_effects(id)', false);
   const rows = db.prepare(`SELECT id, work_definition_ref FROM run_specs

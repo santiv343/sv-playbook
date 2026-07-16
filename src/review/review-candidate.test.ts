@@ -18,8 +18,15 @@ import { BUNDLED_ROLE_ID } from '../roles/bundled-profile.constants.js';
 import { createPacket, ensureSession, movePacket, startPacket } from '../tasks/service.js';
 import { movePacketToReview } from '../tasks/review-transition.js';
 import { loadWorkDefinition } from '../tasks/work-definitions.js';
+import { validateArtifact } from '../contracts/artifacts.js';
+import { s } from '../schema/index.js';
 import { reviewCandidates } from './schema.constants.js';
-import { REVIEW_CANDIDATE_ERROR } from './review-candidate.constants.js';
+import {
+  REVIEW_CANDIDATE_CONTRACT_REF,
+  REVIEW_CANDIDATE_CONTRACT_REF_V2,
+  REVIEW_CANDIDATE_ERROR,
+  REVIEW_CANDIDATE_INTEGRATION,
+} from './review-candidate.constants.js';
 
 const git = (root: string, args: readonly string[]): string => execFileSync('git', args, {
   cwd: root, encoding: 'utf8', stdio: 'pipe',
@@ -150,5 +157,126 @@ test('review dispatch is blocked until runtime creates an immutable SHA-bound ca
   });
   assert.equal(runSpec.inputArtifactId, candidate.artifactId);
   assert.match(runSpec.specDigest, /^sha256:/);
+  store.close();
+});
+
+test('review candidate is assembled for already-integrated work (empty diff)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-review-candidate-integrated-'));
+  git(root, ['init', '-b', 'main']);
+  git(root, ['config', 'user.email', 'test@example.com']);
+  git(root, ['config', 'user.name', 'Test']);
+  await writeFile(join(root, 'README.md'), 'base\n', 'utf8');
+  await writeFile(join(root, '.gitignore'), '.svp/\n.svp-session\n.worktrees/\n.verify-*\n', 'utf8');
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({
+    verifyCommand: 'node .verify-runner.cjs',
+    reviewPreflight: {
+      preparationCommand: "node -e \"require('node:fs').writeFileSync('.verify-dependency','available')\"",
+      noOutputTimeoutMs: 5_000,
+    },
+  }), 'utf8');
+  await writeFile(join(root, '.verify-runner.cjs'), [
+    "const fs = require('node:fs');",
+    "if (!fs.existsSync('.verify-dependency')) process.exit(2);",
+  ].join('\n'), 'utf8');
+  git(root, ['add', 'README.md', '.gitignore', 'playbook.config.json']);
+  git(root, ['add', '-f', '.verify-runner.cjs']);
+  git(root, ['commit', '-m', 'base']);
+
+  const store = openStore(root);
+  bootstrapBundledRoleCatalog(store);
+  const catalog = requireActiveRoleCatalog(store);
+  const projectionReceipt = {
+    id: 'RPR-INTEGRATED',
+    adapterId: 'test-projection',
+    catalogVersion: catalog.version,
+    catalogDigest: catalog.catalogDigest,
+    profileDigest: 'sha256:test-profile',
+    artifactDigest: 'sha256:test-artifact',
+    createdAt: new Date().toISOString(),
+  };
+  store.orm.insert(roleProjectionReceipts).values(projectionReceipt).run();
+  store.orm.insert(roleProjectionActivation).values({
+    adapterId: projectionReceipt.adapterId,
+    receiptId: projectionReceipt.id,
+    activatedAt: projectionReceipt.createdAt,
+  }).run();
+  createPacket(store, root, {
+    id: 'REVIEW-INTEGRATED-001',
+    title: 'Already-integrated candidate fixture',
+    dependsOn: [],
+    writeSet: ['src/**'],
+    requirements: ['Certify the integrated state.'],
+    evidenceRequired: [],
+    tags: ['backend'],
+  }, 'Work that already merged.');
+  git(root, ['add', 'docs/packets/REVIEW-INTEGRATED-001.md']);
+  git(root, ['commit', '-m', 'task definition']);
+  const definition = loadWorkDefinition(store, 'REVIEW-INTEGRATED-001');
+  movePacket(store, undefined, definition.packetId, 'ready');
+  const sessionId = ensureSession(store, root);
+  startPacket(store, sessionId, root, definition.packetId);
+
+  // No feature branch, no pending diff: HEAD is the tip of the base reference.
+  await movePacketToReview(store, sessionId, definition.packetId);
+  const candidate = store.orm.select().from(reviewCandidates).get();
+  assert.ok(candidate);
+  assert.equal(candidate.candidateSha, git(root, ['rev-parse', 'HEAD']));
+  const artifactRow = store.orm.select({ valueJson: workflowArtifacts.valueJson }).from(workflowArtifacts)
+    .where(eq(workflowArtifacts.id, candidate.artifactId)).get();
+  assert.ok(artifactRow);
+  const value = s.json(s.object({
+    candidate: s.object({
+      integration: s.string(),
+      changedFiles: s.array(s.string()),
+      baseSha: s.string(),
+    }),
+  })).parse(artifactRow.valueJson);
+  assert.equal(value.candidate.integration, REVIEW_CANDIDATE_INTEGRATION.INTEGRATED);
+  assert.deepEqual(value.candidate.changedFiles, []);
+  assert.equal(value.candidate.baseSha, candidate.candidateSha);
+  store.close();
+});
+
+test('candidate values written before the integration field still validate against the v2 contract', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-review-candidate-v1-'));
+  const store = openStore(root);
+  bootstrapBundledRoleCatalog(store);
+  // Shape produced before v2 existed: non-empty diff, no `integration` field.
+  const v1ShapedValue = {
+    kind: 'review-candidate',
+    workDefinition: { id: 'BUG-015', version: 1, digest: 'sha256:definition' },
+    candidate: {
+      sha: 'a'.repeat(40),
+      branch: 'feature/bug-015',
+      baseSha: 'b'.repeat(40),
+      changedFiles: ['src/a.ts'],
+      diffDigest: 'sha256:diff',
+      diff: 'diff --git a/src/a.ts b/src/a.ts\n',
+    },
+    producer: { sessionId: 'session-1' },
+    evidence: {
+      preflight: {},
+      catalog: { version: 1, digest: 'sha256:catalog' },
+      projections: [{ adapterId: 'adapter', receiptId: 'RPR-1', artifactDigest: 'sha256:artifact' }],
+    },
+    createdAt: new Date().toISOString(),
+  };
+  validateArtifact(store, REVIEW_CANDIDATE_CONTRACT_REF_V2, v1ShapedValue);
+  validateArtifact(store, REVIEW_CANDIDATE_CONTRACT_REF, v1ShapedValue);
+  // v1 stays frozen: the new integrated shape must NOT silently validate against it.
+  assert.throws(
+    () => {
+      validateArtifact(store, REVIEW_CANDIDATE_CONTRACT_REF, {
+        ...v1ShapedValue,
+        candidate: {
+          ...v1ShapedValue.candidate,
+          changedFiles: [],
+          diff: '',
+          integration: REVIEW_CANDIDATE_INTEGRATION.INTEGRATED,
+        },
+      });
+    },
+    (error: unknown) => error instanceof ContextError,
+  );
   store.close();
 });

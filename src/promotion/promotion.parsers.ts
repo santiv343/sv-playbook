@@ -1,6 +1,7 @@
 import { s } from '../schema/index.js';
 import { SchemaError } from '../schema/core.errors.js';
 import { ReviewVerdictEnvelopeSchema } from '../contracts/review-verdict.constants.js';
+import { REVIEW_CANDIDATE_INTEGRATION } from '../review/review-candidate.constants.js';
 import { PROMOTION_ERROR } from './promotion.constants.js';
 import { PromotionError } from './promotion.errors.js';
 import type { ParsedReviewCandidateArtifact, ParsedReviewOutput } from './promotion.types.js';
@@ -15,6 +16,7 @@ const ReviewCandidateArtifactSchema = s.json(s.object({
     baseSha: s.nonEmptyString(),
     sha: s.nonEmptyString(),
     changedFiles: s.array(s.string()),
+    integration: s.optional(s.nonEmptyString()),
   }),
   producer: s.object({
     sessionId: s.nonEmptyString(),
@@ -56,6 +58,9 @@ export function parseReviewCandidateArtifact(valueJson: string): ParsedReviewCan
     candidateSha: parsed.candidate.sha,
     producerSessionId: parsed.producer.sessionId,
     changedFiles: parsed.candidate.changedFiles,
+    integration: parsed.candidate.integration === REVIEW_CANDIDATE_INTEGRATION.INTEGRATED
+      ? REVIEW_CANDIDATE_INTEGRATION.INTEGRATED
+      : REVIEW_CANDIDATE_INTEGRATION.PENDING,
     preflightOverall: parsed.evidence.preflight.overall,
     cleanVerificationCandidateSha: cleanVerification.candidateSha ?? null,
     cleanVerificationStatus: cleanVerification.status,

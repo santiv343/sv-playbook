@@ -5,6 +5,7 @@ import { ROLE_CATALOG_STORE_SCHEMA } from './role-catalog.schema.constants.js';
 import { ROLE_PROJECTION_STORE_SCHEMA } from './role-projection.schema.constants.js';
 import { MODEL_CAPABILITY_EVALUATION_STORE_SCHEMA } from './model-capability-evaluation.schema.constants.js';
 import { REVIEW_CANDIDATE_STORE_SCHEMA } from './review-candidate.schema.constants.js';
+import { REVIEW_CANDIDATE_INTEGRATION } from '../review/review-candidate.constants.js';
 import {
   INTEGRATION_OUTCOME_VALUES,
   PROMOTION_STATUS_VALUES,
@@ -121,6 +122,7 @@ CREATE TABLE IF NOT EXISTS promotion_receipts (
   candidate_sha TEXT NOT NULL,
   target_ref TEXT NOT NULL,
   result_sha TEXT NOT NULL,
+  integration TEXT NOT NULL DEFAULT '${REVIEW_CANDIDATE_INTEGRATION.PENDING}',
   reviewer_run_spec_id TEXT NOT NULL REFERENCES run_specs(id),
   verification_digest TEXT NOT NULL,
   receipt_json TEXT NOT NULL,

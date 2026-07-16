@@ -12,6 +12,7 @@ import { DAEMON_DEFAULT_PORT, DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE } from '../dae
 import { forwardToDaemonSync } from '../daemon/client.js';
 import type { OpenStoreOptions, Store } from './store.types.js';
 import { checkVersionAndMigrate, migratePacketColumn } from './store.migrations.js';
+import { SQLITE_COLUMN_TYPE } from './schema-vocabulary.constants.js';
 import { createStoreOrm } from './orm.js';
 import { applyExclusiveStorePragmas, applyReadOnlyStorePragmas, readStoreSchemaVersion } from './store.pragmas.js';
 import { STORE_PRAGMA } from './store.pragmas.constants.js';
@@ -234,7 +235,7 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   } else if (!options?.skipVersionCheck) {
     checkVersionAndMigrate(db, repoRoot, options);
   }
-  migratePacketColumn(db, 'pr', 'TEXT', false);
+  migratePacketColumn(db, 'pr', SQLITE_COLUMN_TYPE.TEXT, false);
   return { db, orm: createStoreOrm(db), dir, close: () => { db.close(); } };
 }
 export function openStoreReadOnly(repoRoot: string): Store {
