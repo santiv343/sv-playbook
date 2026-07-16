@@ -178,6 +178,14 @@ export function loadLatestTurn(
   };
 }
 
+export function loadTurnStartedMs(store: Store, runSpecId: string, turnSequence: number): number | undefined {
+  const row = store.orm.select({ createdAt: gatewayTurns.createdAt }).from(gatewayTurns)
+    .where(and(eq(gatewayTurns.runSpecId, runSpecId), eq(gatewayTurns.turnSequence, turnSequence))).get();
+  if (row === undefined) return undefined;
+  const parsed = Date.parse(row.createdAt);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 export function nextTurnSequence(store: Store, runSpecId: string): number {
   return nextOperationSequence(store, GATEWAY_OPERATION.SUBMIT_TURN, runSpecId);
 }

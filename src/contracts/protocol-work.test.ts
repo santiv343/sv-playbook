@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import type { Store } from '../db/store.types.js';
 import { openStore } from '../db/store.js';
 import { CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from '../context/context.constants.js';
-import { addContextItem } from '../context/repository.js';
+import { addContextItem, replaceContextPrecedence } from '../context/repository.js';
 import {
   addModelCapability,
   addResponsibility,
@@ -74,6 +74,7 @@ function registerSupport(store: Store): void {
 }
 
 function addRole(store: Store, escalationClass = 'contract-violation'): void {
+  replaceContextPrecedence(store, ['role']);
   addModelCapability(store, { id: 'planning', description: 'Can make planning judgments.' });
   addContextItem(store, {
     id: 'ROLE-PLANNER', version: 1, kind: 'role', status: CONTEXT_ITEM_STATUS.ACTIVE,
@@ -96,6 +97,7 @@ function addRole(store: Store, escalationClass = 'contract-violation'): void {
 }
 
 function addTargetRole(store: Store): void {
+  replaceContextPrecedence(store, ['role']);
   addModelCapability(store, { id: 'review', description: 'Can review plans.' });
   addContextItem(store, {
     id: 'ROLE-TARGET', version: 1, kind: 'role', status: CONTEXT_ITEM_STATUS.ACTIVE,

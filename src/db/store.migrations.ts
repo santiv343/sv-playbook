@@ -16,8 +16,11 @@ import type { MigrateStoreOptions, OpenStoreOptions } from './store.types.js';
 import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import { ORCHESTRATION_STORE_SCHEMA } from './orchestration.schema.constants.js';
 import { migrateTableColumn } from './store.migration-helpers.js';
+import { RUN_SPECS_TABLE } from './context.schema.constants.js';
 import { addModelCapabilityEvaluations, addReviewCandidates, addRoleProjectionReceipts, addSemanticRoleContractFields, addTypedRunSpecReferences, addVersionedRoleCatalog, addVersionedWorkDefinitions } from './store.migration-functions.js';
 import { addPromotionTables } from './promotion.migrations.js';
+import { addRunRetryLinkage } from './run-retry.migrations.js';
+import { addRunDurationCeiling } from './run-duration.migrations.js';
 import { applyExclusiveStorePragmas, readStoreSchemaVersion } from './store.pragmas.js';
 import { STORE_PRAGMA } from './store.pragmas.constants.js';
 
@@ -171,7 +174,7 @@ function noVersionSpecificMigration(): void {}
 
 function addDurableWorkflowCoordinator(db: Database.Database): void {
   db.exec(ORCHESTRATION_STORE_SCHEMA);
-  migrateTableColumn(db, 'run_specs', 'input_artifact_id', 'TEXT REFERENCES workflow_artifacts(id)', false);
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'input_artifact_id', 'TEXT REFERENCES workflow_artifacts(id)', false);
 }
 
 function addWorkflowRuntimeConfiguration(db: Database.Database): void {
@@ -179,7 +182,7 @@ function addWorkflowRuntimeConfiguration(db: Database.Database): void {
 }
 
 function addRunSpecDispatchRef(db: Database.Database): void {
-  migrateTableColumn(db, 'run_specs', 'dispatch_ref', 'TEXT', true, "''");
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'dispatch_ref', 'TEXT', true, "''");
   db.exec("UPDATE run_specs SET dispatch_ref = task_ref WHERE dispatch_ref = ''");
 }
 
@@ -215,7 +218,7 @@ function profileSnapshot(db: Database.Database, profileId: string): string {
 }
 
 function addRunSpecProfileSnapshot(db: Database.Database): void {
-  migrateTableColumn(db, 'run_specs', 'execution_profile_json', 'TEXT', true, "'{}'");
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'execution_profile_json', 'TEXT', true, "'{}'");
   const rows = db.prepare('SELECT id, execution_profile_id FROM run_specs').all();
   const update = db.prepare('UPDATE run_specs SET execution_profile_json = ? WHERE id = ?');
   for (const row of rows) {
@@ -270,6 +273,8 @@ const migrations = {
   [STORE_MIGRATION_ID.MODEL_CAPABILITY_EVALUATIONS]: addModelCapabilityEvaluations,
   [STORE_MIGRATION_ID.REVIEW_CANDIDATES]: addReviewCandidates,
   [STORE_MIGRATION_ID.PROMOTION_TABLES]: addPromotionTables,
+  [STORE_MIGRATION_ID.RUN_RETRY_LINKAGE]: addRunRetryLinkage,
+  [STORE_MIGRATION_ID.RUN_DURATION_CEILING]: addRunDurationCeiling,
 } satisfies Readonly<Record<StoreMigrationId, StoreMigration>>;
 
 function runVersionMigration(db: Database.Database, repoRoot: string, fromVersion: number): void {

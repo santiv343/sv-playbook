@@ -13,7 +13,6 @@ import type { Store } from '../db/store.types.js';
 import type { StoreOrm } from '../db/orm.types.js';
 import { artifactContracts } from '../orchestration/schema.constants.js';
 import { EMPTY_SIZE } from '../platform.constants.js';
-import { JSON_SCHEMA_DRAFT_2020_12, JSON_SCHEMA_TYPE } from '../schema/json-schema.constants.js';
 import { activateRoleCatalog } from './catalog-activation.js';
 import {
   BUNDLED_ROLE_BOOTSTRAP_KEY,
@@ -53,19 +52,11 @@ import {
   roleStopConditions,
 } from './schema.constants.js';
 import { ensureBundledInputPolicies } from './bundled-input-policies.js';
+import { BUNDLED_ARTIFACT_SCHEMA } from './bundled-envelope.constants.js';
+import { ensureBundledEnvelopeContract } from './managed-contracts.js';
 
 const BUNDLED_CONTEXT_PROVENANCE = 'bundled-role-profile';
 const BUNDLED_ROLE_SELECTOR = 'role';
-const BUNDLED_ARTIFACT_SCHEMA = {
-  $schema: JSON_SCHEMA_DRAFT_2020_12,
-  type: JSON_SCHEMA_TYPE.OBJECT,
-  required: ['kind', 'payload'],
-  properties: {
-    kind: { type: JSON_SCHEMA_TYPE.STRING, minLength: 1 },
-    payload: { type: JSON_SCHEMA_TYPE.OBJECT },
-  },
-  additionalProperties: false,
-} as const;
 
 type RoleSeedTransaction = Parameters<Parameters<StoreOrm['transaction']>[0]>[0];
 
@@ -316,6 +307,7 @@ export function bootstrapBundledRoleCatalog(store: Store): BundledRoleBootstrapR
   ensureBundledContextPrecedence(store);
   if (availability.receipt !== undefined) {
     ensureBundledInputPolicies(store);
+    ensureBundledEnvelopeContract(store);
     return availability.receipt;
   }
   const createdAt = new Date().toISOString();
@@ -323,6 +315,7 @@ export function bootstrapBundledRoleCatalog(store: Store): BundledRoleBootstrapR
     seedBundledRoleCatalog(store, createdAt, availability.mode);
   }
   ensureBundledInputPolicies(store);
+  ensureBundledEnvelopeContract(store);
   const activation = activateRoleCatalog(store);
   const receipt: BundledRoleBootstrapReceipt = {
     profileId: BUNDLED_ROLE_PROFILE.id,

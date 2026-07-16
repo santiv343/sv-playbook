@@ -13,6 +13,7 @@ export interface ExecutionProfileInput {
   observationIntervalMs: number;
   noProgressTimeoutMs: number;
   cancellationGraceMs: number;
+  maxRunDurationMs?: number;
   tools: Readonly<Record<string, boolean>>;
   enabled: boolean;
 }
@@ -66,7 +67,30 @@ export interface RunSpec {
   outputContractRef: string;
   noProgressTimeoutMs: number;
   cancellationGraceMs: number;
+  maxRunDurationMs?: number;
+  retryOfRunSpecId: string | null;
   specDigest: string;
+}
+
+export interface RunSpecContractSnapshot {
+  contextItemRef: string;
+  inputContractRef: string;
+  outputContractRef: string;
+}
+
+export interface ResolvedRunSpecRequest {
+  roleId: string;
+  phase: string;
+  storageSubjectRef: string;
+  storageDispatchRef: string;
+  workDefinitionRef: ResolvedWorkDefinitionReference | null;
+  workflowEffectRef: WorkflowEffectReference | null;
+  inputArtifactId: string | null;
+  contextTags: readonly string[];
+  contextReferenceStrings: readonly string[];
+  requestedCapabilities: readonly string[];
+  retryOfRunSpecId: string | null;
+  executionProfileId?: string;
 }
 
 export interface AdapterOperationRequest {
@@ -130,6 +154,9 @@ export interface AdapterRunObservation {
   progressToken: string;
   observedToolIds: readonly string[];
   output?: string;
+  // First completed in-flight response, surfaced while the provider session is
+  // still busy; the gateway completes from it only if it passes the output contract.
+  candidateOutput?: string;
   failure?: AdapterRunFailure;
   evidence: Readonly<Record<string, unknown>>;
 }

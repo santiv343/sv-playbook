@@ -247,9 +247,13 @@ function isBusy(value: unknown, sessionId: string): boolean {
   return record(status, SESSION_STATUS_LABEL).type === OPENCODE_SESSION_STATUS.BUSY;
 }
 
+function messageFinish(info: Record<string, unknown>): string {
+  return typeof info.finish === 'string' ? info.finish : '';
+}
+
 function finalState(info: Record<string, unknown>): AdapterRunObservation['state'] {
   if (info.error !== undefined) return ADAPTER_RUN_STATE.FAILED;
-  const finish = typeof info.finish === 'string' ? info.finish : '';
+  const finish = messageFinish(info);
   if (finish === OPENCODE_FINISH.ABORT || finish === OPENCODE_FINISH.CANCELLED) return ADAPTER_RUN_STATE.CANCELLED;
   return finish.length > 0 ? ADAPTER_RUN_STATE.COMPLETED : ADAPTER_RUN_STATE.RUNNING;
 }
@@ -290,14 +294,31 @@ function assistantMessages(relevant: readonly Record<string, unknown>[]): Record
   return relevant.filter((message) => messageInfo(message).role === OPENCODE_MESSAGE_ROLE.ASSISTANT);
 }
 
-function terminalOutput(lastAssistant: Record<string, unknown> | undefined, state: AdapterRunObservation['state']): string | undefined {
-  if (lastAssistant === undefined || state !== ADAPTER_RUN_STATE.COMPLETED) return undefined;
-  const structured = messageInfo(lastAssistant)[OPENCODE_MESSAGE_FIELD.STRUCTURED_OUTPUT];
+function messageOutput(message: Record<string, unknown>): string | undefined {
+  const structured = messageInfo(message)[OPENCODE_MESSAGE_FIELD.STRUCTURED_OUTPUT];
   if (structured !== undefined) return canonicalJson(structured);
-  const texts = messageParts(lastAssistant)
+  const texts = messageParts(message)
     .filter((part) => part.type === OPENCODE_PART_TYPE.TEXT && typeof part.text === 'string')
     .map((part) => String(part.text));
   return texts.length === 0 ? undefined : texts.join('');
+}
+
+function terminalOutput(lastAssistant: Record<string, unknown> | undefined, state: AdapterRunObservation['state']): string | undefined {
+  if (lastAssistant === undefined || state !== ADAPTER_RUN_STATE.COMPLETED) return undefined;
+  return messageOutput(lastAssistant);
+}
+
+function candidateOutput(assistants: readonly Record<string, unknown>[], state: AdapterRunObservation['state']): string | undefined {
+  if (state !== ADAPTER_RUN_STATE.RUNNING) return undefined;
+  for (const assistant of assistants) {
+    const info = messageInfo(assistant);
+    if (info.error !== undefined) continue;
+    const finish = messageFinish(info);
+    if (finish === '' || finish === OPENCODE_FINISH.ABORT || finish === OPENCODE_FINISH.CANCELLED) continue;
+    const output = messageOutput(assistant);
+    if (output !== undefined) return output;
+  }
+  return undefined;
 }
 
 function toObservation(
@@ -323,6 +344,7 @@ function toObservation(
   const state = busy || lastInfo === undefined ? 'running' : finalState(lastInfo);
   const evidence = progressEvidence(relevant);
   const output = terminalOutput(lastAssistant, state);
+  const candidate = candidateOutput(assistants, state);
   const observation: AdapterRunObservation = {
     adapterId: OPENCODE_ADAPTER_ID,
     sessionId: request.sessionId,
@@ -338,7 +360,9 @@ function toObservation(
       providerError: providerError(failure),
     },
   };
-  return withTerminalFields(observation, output, failure);
+  withTerminalFields(observation, output, failure);
+  if (candidate !== undefined) observation.candidateOutput = candidate;
+  return observation;
 }
 
 export async function observeOpenCodeRun(config: AdapterConfig, request: AdapterObservationRequest): Promise<AdapterRunObservation> {

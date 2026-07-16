@@ -117,7 +117,7 @@ const playbookRules = {
 };
 
 export default tseslint.config(
-  { ignores: ['dist/', 'node_modules/', 'scripts/**/*.mjs', '.worktrees/'] },
+  { ignores: ['dist/', 'node_modules/', 'scripts/**/*.mjs', '.worktrees/', '.tmp/'] },
   ...tseslint.configs.strictTypeChecked,
   {
     languageOptions: {

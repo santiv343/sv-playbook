@@ -8,6 +8,7 @@ import { WORK_DEFINITION_INITIAL_VERSION, WORK_DEFINITION_SCHEMA_VERSION } from 
 import { stringColumn } from './rows.js';
 import { StoreVersionError } from './store.errors.js';
 import { migrateTableColumn } from './store.migration-helpers.js';
+import { RUN_SPECS_TABLE } from './context.schema.constants.js';
 
 function stringArrayColumn(row: unknown, key: string): string[] {
   const value: unknown = JSON.parse(stringColumn(row, key));
@@ -67,8 +68,8 @@ export function addVersionedWorkDefinitions(db: Database.Database, repoRoot: str
     PRIMARY KEY (packet_id, version),
     UNIQUE (packet_id, definition_digest)
   )`);
-  migrateTableColumn(db, 'run_specs', 'work_definition_ref', 'TEXT', false);
-  migrateTableColumn(db, 'run_specs', 'work_definition_digest', 'TEXT', false);
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_ref', 'TEXT', false);
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_digest', 'TEXT', false);
   const rows = db.prepare(`SELECT id, title, path, body, write_set, type, created_at
     FROM packets WHERE NOT EXISTS (
       SELECT 1 FROM packet_definitions WHERE packet_id = packets.id
@@ -97,9 +98,9 @@ function parseLegacyReference(ref: string): { id: string; version: number } {
 }
 
 export function addTypedRunSpecReferences(db: Database.Database): void {
-  migrateTableColumn(db, 'run_specs', 'work_definition_id', 'TEXT', false);
-  migrateTableColumn(db, 'run_specs', 'work_definition_version', 'INTEGER', false);
-  migrateTableColumn(db, 'run_specs', 'workflow_effect_id', 'TEXT REFERENCES workflow_effects(id)', false);
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_id', 'TEXT', false);
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_version', 'INTEGER', false);
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'workflow_effect_id', 'TEXT REFERENCES workflow_effects(id)', false);
   const rows = db.prepare(`SELECT id, work_definition_ref FROM run_specs
     WHERE work_definition_ref IS NOT NULL AND work_definition_id IS NULL`).all();
   const updateWork = db.prepare(`UPDATE run_specs SET work_definition_id = ?, work_definition_version = ? WHERE id = ?`);

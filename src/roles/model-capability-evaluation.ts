@@ -101,6 +101,7 @@ function evaluationRunSpec(profile: ExecutionProfile, evaluationId: string): Run
     outputContractRef: MODEL_CAPABILITY_EVALUATION_SUITE_ID,
     noProgressTimeoutMs: profile.noProgressTimeoutMs,
     cancellationGraceMs: profile.cancellationGraceMs,
+    retryOfRunSpecId: null,
     specDigest: digest(semanticInput),
   };
 }

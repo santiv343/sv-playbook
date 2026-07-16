@@ -16,12 +16,13 @@ import type {
 } from './gateway.types.js';
 import { ADAPTER_RUN_STATE } from './gateway.types.js';
 import {
+  DEFAULT_MAX_RUN_DURATION_MS,
   GATEWAY_LIFECYCLE_ERROR,
   GATEWAY_OPERATION,
   GATEWAY_RUN_STATUS,
   type GatewayRunStatus,
 } from './gateway.constants.js';
-import { isRunObserving, loadRunSnapshot } from './gateway-repository.js';
+import { isRunObserving, loadRunSnapshot, loadTurnStartedMs } from './gateway-repository.js';
 import {
   createObservingGatewayRun,
   failGatewayRun,
@@ -34,6 +35,7 @@ const SYSTEM_RUNTIME: GatewayRuntime = {
   sleep: (delayMs) => new Promise((resolve) => { setTimeout(resolve, delayMs); }),
 };
 const MISSING_OUTPUT_DETAIL = 'completed run has no output';
+const CANDIDATE_COMPLETION_DETAIL = 'completed from in-flight candidate output; provider session still busy';
 const OUTPUT_INVALID_STATUS: TerminalStatus = GATEWAY_RUN_STATUS.OUTPUT_INVALID;
 
 type TerminalStatus = Exclude<GatewayRunStatus, typeof GATEWAY_RUN_STATUS.OBSERVING>;
@@ -49,6 +51,7 @@ interface LifecycleContext {
   adapter: AgentAdapter;
   request: AdapterObservationRequest;
   runtime: GatewayRuntime;
+  turnStartedMs: number;
 }
 
 function iso(timestamp: number): string {
@@ -228,6 +231,37 @@ function validateCompletion(
   }
 }
 
+function tryParseContractOutput(context: LifecycleContext, candidateOutput: string): unknown {
+  try {
+    const parsed = parseAgentJsonOutput(candidateOutput);
+    // The same strict envelope kinds as terminal completion: a malformed review
+    // verdict candidate is not a completion, it just keeps the run observing.
+    if (hasReviewVerdictKind(parsed.value)) parseReviewVerdict(parsed.value);
+    validateArtifact(context.store, context.runSpec.outputContractRef, parsed.value);
+    return parsed.value;
+  } catch {
+    return undefined;
+  }
+}
+
+async function completeFromCandidate(
+  context: LifecycleContext,
+  observation: AdapterRunObservation,
+  nowMs: number,
+): Promise<GatewayCompletionReceipt | undefined> {
+  if (observation.state !== ADAPTER_RUN_STATE.RUNNING || observation.candidateOutput === undefined) return undefined;
+  const output = tryParseContractOutput(context, observation.candidateOutput);
+  if (output === undefined) return undefined;
+  finishRun(context.store, context.runSpec, GATEWAY_RUN_STATUS.COMPLETED, observation, nowMs,
+    CANDIDATE_COMPLETION_DETAIL, undefined, output);
+  try {
+    await context.adapter.cancelRun(context.request);
+  } catch {
+    // Best-effort provider hygiene: the durable completion is already committed.
+  }
+  return { output, outputDigest: digest(output), observation };
+}
+
 function handleTerminal(
   context: LifecycleContext,
   observation: AdapterRunObservation,
@@ -253,6 +287,22 @@ async function enforceProgressTimeout(context: LifecycleContext, state: Observat
   );
 }
 
+async function enforceRunDurationCeiling(context: LifecycleContext, nowMs: number): Promise<void> {
+  const ceilingMs = context.runSpec.maxRunDurationMs ?? DEFAULT_MAX_RUN_DURATION_MS;
+  if (nowMs - context.turnStartedMs < ceilingMs) return;
+  const stopped = await cancelAndAwait(context.adapter, context.request, context.runSpec, context.runtime);
+  const detail = stopped.confirmed
+    ? 'run cancelled after exceeding max run duration'
+    : 'run exceeded max run duration and cancellation was not confirmed';
+  finishRun(context.store, context.runSpec,
+    stopped.confirmed ? GATEWAY_RUN_STATUS.TIMED_OUT : GATEWAY_RUN_STATUS.FAILED, stopped.observation,
+    context.runtime.now(), detail, stopped.cancellation);
+  throw new ContextError(
+    stopped.confirmed ? GATEWAY_LIFECYCLE_ERROR.RUN_DURATION_EXCEEDED : GATEWAY_LIFECYCLE_ERROR.CANCELLATION_UNCONFIRMED,
+    detail,
+  );
+}
+
 async function runObservationLoop(context: LifecycleContext, initialState: ObservationState): Promise<GatewayCompletionReceipt> {
   let state = initialState;
   for (;;) {
@@ -263,7 +313,10 @@ async function runObservationLoop(context: LifecycleContext, initialState: Obser
     await enforceToolPolicy(context, observation);
     const completion = handleTerminal(context, observation, nowMs);
     if (completion !== undefined) return completion;
+    const candidateCompletion = await completeFromCandidate(context, observation, nowMs);
+    if (candidateCompletion !== undefined) return candidateCompletion;
     await enforceProgressTimeout(context, state, nowMs);
+    await enforceRunDurationCeiling(context, nowMs);
     await context.runtime.sleep(context.runSpec.executionProfile.observationIntervalMs);
   }
 }
@@ -286,7 +339,10 @@ export async function observeTurnToCompletion(
     sessionId: turn.sessionId,
     messageId: turn.messageId,
   };
-  const context: LifecycleContext = { store, runSpec, adapter, request, runtime };
+  // The durable turn row anchors the run-duration ceiling so it survives
+  // resumes; the runtime clock is only a fallback for a turn never persisted.
+  const turnStartedMs = loadTurnStartedMs(store, runSpec.id, turnSequence) ?? runtime.now();
+  const context: LifecycleContext = { store, runSpec, adapter, request, runtime, turnStartedMs };
   const initialState = beginOrResumeObservation(store, runSpec, turn, runtime.now());
   try {
     return await runObservationLoop(context, initialState);

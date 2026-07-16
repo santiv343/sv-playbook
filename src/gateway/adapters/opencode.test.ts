@@ -35,7 +35,7 @@ function runSpec(executionProfile: ExecutionProfile): RunSpec {
     id: 'RUN-1', roleId: 'reviewer', phase: 'review',
     workDefinitionRef: null, workflowEffectRef: null, inputArtifactId: null, contextPackId: 'CTX-1',
     executionProfile, contextTags: [], contextReferences: [], requestedCapabilities: [], outputContractRef: 'review-v1',
-    noProgressTimeoutMs: 600_000, cancellationGraceMs: 10_000, specDigest: 'sha256:spec',
+    noProgressTimeoutMs: 600_000, cancellationGraceMs: 10_000, retryOfRunSpecId: null, specDigest: 'sha256:spec',
   };
 }
 
@@ -52,6 +52,8 @@ interface MockState {
   structuredOutput?: unknown;
   assistantText?: string;
   assistantError?: Readonly<Record<string, unknown>>;
+  busy?: boolean;
+  priorAssistantTexts?: readonly string[];
 }
 
 const SAFE_AGENT_PERMISSIONS = [
@@ -71,11 +73,17 @@ function staticResponse(url: URL, response: ServerResponse, state: MockState): b
   return true;
 }
 
-function getResponse(url: URL, response: ServerResponse, state: MockState): boolean {
-  if (url.pathname === TEST_SESSION_PATH) response.end(JSON.stringify(state.session));
-  else if (url.pathname === OPENCODE_API_PATH.SESSION_STATUS) response.end('{}');
-  else if (url.pathname === openCodeSessionMessagePath(TEST_SESSION_ID)) response.end(JSON.stringify([
+function sessionStatusBody(state: MockState): string {
+  return state.busy === true ? JSON.stringify({ [TEST_SESSION_ID]: { type: 'busy' } }) : '{}';
+}
+
+function sessionMessages(state: MockState): unknown[] {
+  return [
     { info: { id: state.submitted?.messageID, role: 'user' }, parts: [] },
+    ...(state.priorAssistantTexts ?? []).map((text, index) => ({
+      info: { id: `assistant-prior-${index}`, role: 'assistant', parentID: state.submitted?.messageID, finish: 'stop' },
+      parts: [{ id: `text-prior-${index}`, type: 'text', text }],
+    })),
     { info: {
       id: 'assistant-1', role: 'assistant', parentID: state.submitted?.messageID,
       finish: state.assistantError === undefined ? 'stop' : undefined,
@@ -84,7 +92,13 @@ function getResponse(url: URL, response: ServerResponse, state: MockState): bool
     },
       parts: [{ id: 'tool-1', type: 'tool', tool: 'engram', state: { status: state.toolStatus ?? 'completed' } },
         { id: 'text-1', type: 'text', text: state.assistantText ?? '{"ok":true}' }] },
-  ]));
+  ];
+}
+
+function getResponse(url: URL, response: ServerResponse, state: MockState): boolean {
+  if (url.pathname === TEST_SESSION_PATH) response.end(JSON.stringify(state.session));
+  else if (url.pathname === OPENCODE_API_PATH.SESSION_STATUS) response.end(sessionStatusBody(state));
+  else if (url.pathname === openCodeSessionMessagePath(TEST_SESSION_ID)) response.end(JSON.stringify(sessionMessages(state)));
   else return false;
   return true;
 }
@@ -224,6 +238,39 @@ test('OpenCode adapter rejects an agent that is not default-deny before creating
       (error: unknown) => error instanceof Error && error.message.includes('not default-deny'),
     );
     assert.equal(state.promptPosts, 0);
+  } finally {
+    await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve(); }); });
+  }
+});
+
+test('OpenCode adapter surfaces the first finished response as a candidate while the session stays busy', async () => {
+  const state: MockState = {
+    promptPosts: 0,
+    busy: true,
+    priorAssistantTexts: ['{"verdict":"APPROVED"}'],
+    assistantText: 'Acknowledged.',
+  };
+  const server = createServer((incoming, response) => { void handleRequest(incoming, response, state); });
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+  try {
+    const address = server.address();
+    if (address === null || typeof address === 'string') throw new Error('test server has no TCP address');
+    const adapter = new OpenCodeAdapter();
+    const executionProfile = profile(`http://127.0.0.1:${address.port}`);
+    const createRequest = sessionRequest(executionProfile);
+    const verified = await adapter.verifyProfile(createRequest.runSpec, createRequest.directory);
+    const created = await adapter.createSession(createRequest, verified);
+    const turnRequest: AdapterTurnRequest = {
+      ...createRequest, intentId: 'INT-2', operationKey: 'submit-turn:RUN-1:1',
+      sessionId: created.sessionId, prompt: '{"task":"review"}', outputSchema: { type: 'object' },
+    };
+    const receipt = await adapter.submitTurn(turnRequest);
+
+    const observation = await adapter.observeRun({ ...turnRequest, messageId: receipt.messageId });
+
+    assert.equal(observation.state, 'running');
+    assert.equal(observation.candidateOutput, '{"verdict":"APPROVED"}');
+    assert.equal(observation.output, undefined);
   } finally {
     await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve(); }); });
   }

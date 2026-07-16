@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import type { Store } from '../db/store.types.js';
 import { DATABASE_COLUMN } from '../db/schema-vocabulary.constants.js';
 import { numberColumn, stringColumn } from '../db/rows.js';
@@ -6,6 +7,7 @@ import { REFERENCE_VERSION_SEPARATOR } from '../platform.constants.js';
 import { ContextError } from './context.errors.js';
 import type { CapabilityEffect, ContextItemInput, ContextItemStatus, ContextItemStrength, StoredContextItem } from './context.types.js';
 import type { ContextCatalog } from './repository.types.js';
+import { contextPrecedence } from './schema.constants.js';
 
 function refParts(ref: string): { id: string; version: number } {
   const separator = ref.lastIndexOf(REFERENCE_VERSION_SEPARATOR);
@@ -63,6 +65,16 @@ function supersedeTargets(store: Store, targets: readonly ReturnType<typeof refP
   }
 }
 
+// An item whose kind has no configured precedence poisons every compile
+// (rankOf throws on it), so intake fails closed before the insert.
+function validateKindPrecedence(store: Store, item: ContextItemInput): void {
+  const row = store.orm.select({ kind: contextPrecedence.kind }).from(contextPrecedence)
+    .where(eq(contextPrecedence.kind, item.kind)).get();
+  if (row === undefined) {
+    throw new ContextError(CONTEXT_ERROR.MISSING_PRECEDENCE, `no precedence configured for context kind ${item.kind}`);
+  }
+}
+
 export function addContextItem(store: Store, item: ContextItemInput): void {
   validateInput(item);
   const now = new Date().toISOString();
@@ -77,6 +89,7 @@ export function addContextItem(store: Store, item: ContextItemInput): void {
 
   store.db.exec(BEGIN_WRITE);
   try {
+    validateKindPrecedence(store, item);
     validateSupersessions(store, item, supersessionTargets);
     store.db.prepare(`INSERT INTO context_items
       (id, version, kind, status, strength, semantic_key, body, provenance, created_at, updated_at)

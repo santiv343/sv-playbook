@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { eq } from 'drizzle-orm';
 import { numberColumn, stringColumn } from '../db/rows.js';
 import { ARTIFACT_CONTRACT_STATUS } from '../contracts/artifact.constants.js';
-import { addArtifactContract } from '../contracts/artifacts.js';
+import { addArtifactContract, resolvedArtifactSchema } from '../contracts/artifacts.js';
 import { ContextError } from '../context/context.errors.js';
 import { digest } from '../context/digest.js';
 import { CONTEXT_ERROR, CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from '../context/context.constants.js';
@@ -344,6 +344,13 @@ test('RunSpec prompt receives the typed workflow artifact without redundant task
   const inputArtifact = isRecord(prompt) ? prompt[RUN_PROMPT_FIELD.INPUT_ARTIFACT] : undefined;
   assert.deepEqual(inputArtifact, {
     id: effect.inputArtifactId, contractRef: 'task-v1', value: input, digest: digest(input),
+  });
+  const outputContract = isRecord(prompt) ? prompt[RUN_PROMPT_FIELD.OUTPUT_CONTRACT] : undefined;
+  const resolvedSchema = resolvedArtifactSchema(store, runSpec.outputContractRef);
+  assert.deepEqual(outputContract, {
+    ref: runSpec.outputContractRef,
+    schemaDigest: digest(resolvedSchema),
+    schema: resolvedSchema,
   });
   store.close();
 });

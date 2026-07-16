@@ -63,6 +63,7 @@ interface GatewayFixtureOptions {
   readonly observationIntervalMs?: number;
   readonly noProgressTimeoutMs?: number;
   readonly cancellationGraceMs?: number;
+  readonly maxRunDurationMs?: number;
   readonly activateCatalog?: boolean;
   readonly seedModelEvidence?: boolean;
 }
@@ -72,11 +73,16 @@ export class FakeAdapter implements AgentAdapter {
   turnRequest: AdapterTurnRequest | undefined;
   observations: AdapterRunObservation[] = [];
   cancelled = false;
+  verifyProfileCount = 0;
   sessionCreateCount = 0;
   turnSubmitCount = 0;
   turnError: Error | undefined;
+  // Adapter identities are globally unique in the real world; tests that drive
+  // several runs through one store set a suffix to keep that invariant.
+  idSuffix = '';
 
   verifyProfile(): Promise<AdapterProfileReceipt> {
+    this.verifyProfileCount += 1;
     return Promise.resolve({ adapterId: this.id, profileDigest: 'sha256:profile', evidence: { verified: true } });
   }
 
@@ -84,7 +90,7 @@ export class FakeAdapter implements AgentAdapter {
     this.sessionCreateCount += 1;
     return Promise.resolve({
       adapterId: this.id,
-      sessionId: 'session-1',
+      sessionId: `session-1${this.idSuffix}`,
       profileDigest: profile.profileDigest,
       sessionReceipt: { status: 'confirmed' },
     });
@@ -95,7 +101,7 @@ export class FakeAdapter implements AgentAdapter {
     if (this.turnError !== undefined) return Promise.reject(this.turnError);
     this.turnRequest = request;
     return Promise.resolve({
-      adapterId: this.id, sessionId: request.sessionId, messageId: 'message-1',
+      adapterId: this.id, sessionId: request.sessionId, messageId: `message-1${this.idSuffix}`,
       submissionReceipt: { deliveryStatus: 'observed' },
     });
   }
@@ -198,6 +204,7 @@ function seedGatewayProfile(store: Store, options: GatewayFixtureOptions): void 
     observationIntervalMs: options.observationIntervalMs ?? DEFAULT_OBSERVATION_INTERVAL_MS,
     noProgressTimeoutMs: options.noProgressTimeoutMs ?? DEFAULT_NO_PROGRESS_TIMEOUT_MS,
     cancellationGraceMs: options.cancellationGraceMs ?? DEFAULT_CANCELLATION_GRACE_MS,
+    ...(options.maxRunDurationMs === undefined ? {} : { maxRunDurationMs: options.maxRunDurationMs }),
     tools: { read: true }, enabled: true,
   });
   if (options.seedModelEvidence === false) return;

@@ -89,6 +89,8 @@ export function loadRunSpec(store: Store, id: string): RunSpec {
     outputContractRef: row.outputContractRef,
     noProgressTimeoutMs: row.noProgressTimeoutMs,
     cancellationGraceMs: row.cancellationGraceMs,
+    ...(row.maxRunDurationMs === null ? {} : { maxRunDurationMs: row.maxRunDurationMs }),
+    retryOfRunSpecId: row.retryOfRunSpecId,
     specDigest: row.specDigest,
   };
 }

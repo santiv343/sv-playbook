@@ -42,23 +42,35 @@ export const RUN_SPEC_ERROR = {
   UNKNOWN: 'UNKNOWN_RUN_SPEC',
   MISSING_INPUT_ARTIFACT: 'MISSING_INPUT_ARTIFACT',
   INVALID_CONTEXT_REFERENCE: 'INVALID_CONTEXT_ITEM_REFERENCE',
+  RETRY_NOT_TERMINAL: 'RUN_RETRY_NOT_TERMINAL',
+  RETRY_COMPLETED: 'RUN_RETRY_COMPLETED',
+  WORKFLOW_RETRY: 'WORKFLOW_RUN_RETRY_IS_ENGINE_OWNED',
 } as const;
 
-export const RUN_PROMPT_PROTOCOL = 'sv-playbook-run-prompt-v4';
-export const RUN_PROMPT_INSTRUCTION = 'Use only this resolved context. Return exactly one value conforming to the declared JSON Schema output contract, with no Markdown or surrounding prose. Encode contradictions or missing authority through contract fields; never replace the contract with a narrative.';
+export const RUN_PROMPT_PROTOCOL = 'sv-playbook-run-prompt-v5';
+export const RUN_PROMPT_INSTRUCTION = 'Use only this resolved context. Return exactly one value conforming to the JSON Schema in outputContract.schema, with no Markdown or surrounding prose. Encode contradictions or missing authority through contract fields; never replace the contract with a narrative.';
 export const RUN_SPEC_ID_PREFIX = 'RUN-';
 export const MANUAL_DISPATCH_PREFIX = 'manual:';
 export const RUN_PROMPT_FIELD = {
   INPUT_ARTIFACT: 'inputArtifact',
   WORK_DEFINITION: 'workDefinition',
+  OUTPUT_CONTRACT: 'outputContract',
 } as const;
 
 export const GATEWAY_LIFECYCLE_ERROR = {
   AGENT_RUN_FAILED: 'AGENT_RUN_FAILED',
   PROHIBITED_TOOL_USE: 'PROHIBITED_TOOL_USE',
   NO_PROGRESS_TIMEOUT: 'NO_PROGRESS_TIMEOUT',
+  RUN_DURATION_EXCEEDED: 'RUN_DURATION_EXCEEDED',
   CANCELLATION_UNCONFIRMED: 'CANCELLATION_UNCONFIRMED',
   TERMINAL_RUN: 'GATEWAY_RUN_ALREADY_TERMINAL',
+} as const;
+
+export const DEFAULT_MAX_RUN_DURATION_MS = 1_800_000;
+
+export const GATEWAY_STATE_ERROR = {
+  INVALID: 'INVALID_GATEWAY_STATE',
+  ADAPTER_UNAVAILABLE: 'ADAPTER_UNAVAILABLE',
 } as const;
 
 export const GATEWAY_RUN_STATUS = {

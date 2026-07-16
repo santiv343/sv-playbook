@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AdapterRoleProjection } from '../../check/catalog-closure.types.js';
 import type { ExecutionProfile } from '../gateway.types.js';
+import { adapterConfig } from './opencode.js';
 import {
   OPENCODE_ADAPTER_ID,
   OPENCODE_API_PATH,
@@ -40,18 +41,6 @@ function requiredString(value: unknown, label: string): string {
   return value;
 }
 
-function adapterBaseUrl(profile: ExecutionProfile): string {
-  return requiredString(profile.adapterConfig.baseUrl, `${profile.id} adapter baseUrl`).replace(/\/$/, '');
-}
-
-function allowedVersions(profile: ExecutionProfile): readonly string[] {
-  const versions = profile.adapterConfig.allowedVersions;
-  if (!Array.isArray(versions) || versions.some((version) => typeof version !== 'string')) {
-    throw new TypeError(`${profile.id} allowedVersions must be a string array`);
-  }
-  return versions.filter((version): version is string => typeof version === 'string');
-}
-
 function endpoint(baseUrl: string, path: string, repoRoot: string): string {
   const url = new URL(`${baseUrl}${path}`);
   url.searchParams.set('directory', repoRoot);
@@ -65,11 +54,11 @@ async function responseJson(url: string, label: string): Promise<unknown> {
   return value;
 }
 
-async function verifyEffectiveHealth(baseUrl: string, profile: ExecutionProfile): Promise<void> {
+async function verifyEffectiveHealth(baseUrl: string, config: ReturnType<typeof adapterConfig>): Promise<void> {
   const health = record(await responseJson(`${baseUrl}${OPENCODE_API_PATH.HEALTH}`, 'OpenCode health'));
   if (health?.healthy !== true) throw new TypeError('OpenCode is not healthy');
   const version = requiredString(health.version, 'OpenCode version');
-  if (!allowedVersions(profile).includes(version)) throw new TypeError(`OpenCode ${version} is not allowed`);
+  if (!config.allowedVersions.includes(version)) throw new TypeError(`OpenCode ${version} is not allowed`);
 }
 
 async function verifyEffectiveTools(baseUrl: string, repoRoot: string, profile: ExecutionProfile): Promise<void> {
@@ -99,10 +88,12 @@ function verifyEffectiveAgent(agent: Record<string, unknown>, profile: Execution
 }
 
 async function effectiveProfile(repoRoot: string, profile: ExecutionProfile): Promise<string[]> {
-  const baseUrl = adapterBaseUrl(profile);
-  await verifyEffectiveHealth(baseUrl, profile);
-  await verifyEffectiveTools(baseUrl, repoRoot, profile);
-  verifyEffectiveAgent(await effectiveAgent(baseUrl, repoRoot, profile), profile);
+  // Parse with the adapter's own validator first: whatever the runtime requires
+  // (baseUrl, allowedVersions, outputMode) the check surfaces before any fetch.
+  const config = adapterConfig(profile);
+  await verifyEffectiveHealth(config.baseUrl, config);
+  await verifyEffectiveTools(config.baseUrl, repoRoot, profile);
+  verifyEffectiveAgent(await effectiveAgent(config.baseUrl, repoRoot, profile), profile);
   return [profile.agentId];
 }
 

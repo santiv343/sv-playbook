@@ -36,6 +36,11 @@ function requiredSnapshotInteger(value: Record<string, unknown>, field: string):
   return Number(result);
 }
 
+function optionalSnapshotInteger(value: Record<string, unknown>, field: string): number | undefined {
+  if (Reflect.get(value, field) === undefined) return undefined;
+  return requiredSnapshotInteger(value, field);
+}
+
 function snapshotTools(value: unknown): Readonly<Record<string, boolean>> {
   const tools = recordValue(value, 'execution profile snapshot tools');
   if (Object.values(tools).some((enabled) => typeof enabled !== 'boolean') || Object.keys(tools).length === 0) {
@@ -73,6 +78,8 @@ export function parseExecutionProfileSnapshot(text: string): ExecutionProfile {
   else if (value.variant !== undefined) {
     throw new ContextError(EXECUTION_PROFILE_ERROR.INVALID, 'execution profile snapshot variant must be a string');
   }
+  const maxRunDurationMs = optionalSnapshotInteger(value, 'maxRunDurationMs');
+  if (maxRunDurationMs !== undefined) profile.maxRunDurationMs = maxRunDurationMs;
   return profile;
 }
 
@@ -94,6 +101,7 @@ function profileRow(profile: ExecutionProfileInput) {
     observationIntervalMs: profile.observationIntervalMs,
     noProgressTimeoutMs: profile.noProgressTimeoutMs,
     cancellationGraceMs: profile.cancellationGraceMs,
+    maxRunDurationMs: profile.maxRunDurationMs ?? null,
     enabled: profile.enabled,
   };
 }
@@ -149,6 +157,7 @@ export function loadExecutionProfile(store: Store, profileId: string): Execution
     enabled: row.enabled,
   };
   if (row.variant !== null) profile.variant = row.variant;
+  if (row.maxRunDurationMs !== null) profile.maxRunDurationMs = row.maxRunDurationMs;
   return profile;
 }
 

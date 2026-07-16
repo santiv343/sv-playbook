@@ -6,6 +6,11 @@ const statuses = quoted(Object.values(CONTEXT_ITEM_STATUS));
 const strengths = quoted(Object.values(CONTEXT_ITEM_STRENGTH));
 const effects = quoted(Object.values(CAPABILITY_EFFECT));
 
+export const RUN_SPECS_TABLE = 'run_specs';
+export const RUN_SPEC_RETRY_OF_COLUMN = 'retry_of_run_spec_id';
+export const EXECUTION_PROFILES_TABLE = 'execution_profiles';
+export const MAX_RUN_DURATION_COLUMN = 'max_run_duration_ms';
+
 export const CONTEXT_STORE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS context_items (
   id TEXT NOT NULL,
@@ -91,7 +96,7 @@ CREATE TABLE IF NOT EXISTS context_pack_capabilities (
   source_ref TEXT,
   PRIMARY KEY (pack_id, capability)
 );
-CREATE TABLE IF NOT EXISTS execution_profiles (
+CREATE TABLE IF NOT EXISTS ${EXECUTION_PROFILES_TABLE} (
   id TEXT PRIMARY KEY,
   role_id TEXT NOT NULL REFERENCES role_contracts(role_id),
   adapter_id TEXT NOT NULL,
@@ -103,16 +108,17 @@ CREATE TABLE IF NOT EXISTS execution_profiles (
   observation_interval_ms INTEGER NOT NULL CHECK (observation_interval_ms > 0),
   no_progress_timeout_ms INTEGER NOT NULL CHECK (no_progress_timeout_ms > 0),
   cancellation_grace_ms INTEGER NOT NULL CHECK (cancellation_grace_ms > 0),
+  ${MAX_RUN_DURATION_COLUMN} INTEGER CHECK (${MAX_RUN_DURATION_COLUMN} > 0),
   enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
   UNIQUE (role_id, id)
 );
 CREATE TABLE IF NOT EXISTS execution_profile_tools (
-  profile_id TEXT NOT NULL REFERENCES execution_profiles(id),
+  profile_id TEXT NOT NULL REFERENCES ${EXECUTION_PROFILES_TABLE}(id),
   tool_id TEXT NOT NULL,
   enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
   PRIMARY KEY (profile_id, tool_id)
 );
-CREATE TABLE IF NOT EXISTS run_specs (
+CREATE TABLE IF NOT EXISTS ${RUN_SPECS_TABLE} (
   id TEXT PRIMARY KEY,
   role_id TEXT NOT NULL REFERENCES role_contracts(role_id),
   phase TEXT NOT NULL,
@@ -125,7 +131,7 @@ CREATE TABLE IF NOT EXISTS run_specs (
   workflow_effect_id TEXT REFERENCES workflow_effects(id),
   input_artifact_id TEXT REFERENCES workflow_artifacts(id),
   context_pack_id TEXT NOT NULL REFERENCES context_packs(id),
-  execution_profile_id TEXT NOT NULL REFERENCES execution_profiles(id),
+  execution_profile_id TEXT NOT NULL REFERENCES ${EXECUTION_PROFILES_TABLE}(id),
   execution_profile_json TEXT NOT NULL,
   tags_json TEXT NOT NULL,
   references_json TEXT NOT NULL,
@@ -133,8 +139,10 @@ CREATE TABLE IF NOT EXISTS run_specs (
   output_contract_ref TEXT NOT NULL,
   no_progress_timeout_ms INTEGER NOT NULL,
   cancellation_grace_ms INTEGER NOT NULL,
+  ${MAX_RUN_DURATION_COLUMN} INTEGER CHECK (${MAX_RUN_DURATION_COLUMN} > 0),
   spec_digest TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  ${RUN_SPEC_RETRY_OF_COLUMN} TEXT REFERENCES ${RUN_SPECS_TABLE}(id)
 );
 CREATE TABLE IF NOT EXISTS run_dispatches (
   dispatch_ref TEXT NOT NULL,

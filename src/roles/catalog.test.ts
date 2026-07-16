@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { openStore } from '../db/store.js';
 import { CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from '../context/context.constants.js';
 import { ContextError } from '../context/context.errors.js';
-import { addContextItem } from '../context/repository.js';
+import { addContextItem, replaceContextPrecedence } from '../context/repository.js';
 import { addArtifactContract } from '../contracts/artifacts.js';
 import { ROLE_CATALOG_ERROR } from './catalog.constants.js';
 import {
@@ -31,6 +31,7 @@ const REVIEWER_ROLE_ID = 'reviewer';
 test('role catalog assigns semantic judgment once and rejects deterministic ownership', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-roles-'));
   const store = openStore(root);
+  replaceContextPrecedence(store, ['role']);
   const schema = {
     $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', additionalProperties: false,
   } as const;

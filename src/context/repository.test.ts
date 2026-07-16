@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { openStore } from '../db/store.js';
 import { numberColumn } from '../db/rows.js';
 import { compileContext } from './compiler.js';
-import { CAPABILITY_EFFECT, CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from './context.constants.js';
+import { CAPABILITY_EFFECT, CONTEXT_ERROR, CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from './context.constants.js';
+import { ContextError } from './context.errors.js';
 import { persistContextPack } from './packs.js';
 import { addContextItem, loadContextCatalog, replaceContextPrecedence } from './repository.js';
 
@@ -69,6 +70,7 @@ test('adding a superseding context version atomically retires the active version
 test('an invalid context supersession rolls back without retiring its target', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-context-invalid-supersession-'));
   const store = openStore(root);
+  replaceContextPrecedence(store, ['taste']);
   addContextItem(store, {
     id: 'TASTE-UI', version: 1, kind: 'taste', status: CONTEXT_ITEM_STATUS.ACTIVE,
     strength: CONTEXT_ITEM_STRENGTH.MANDATORY, semanticKey: 'taste.frontend',
@@ -85,5 +87,27 @@ test('an invalid context supersession rolls back without retiring its target', a
   assert.deepEqual(loadContextCatalog(store).items.map((item) => [item.version, item.status]), [
     [1, CONTEXT_ITEM_STATUS.ACTIVE],
   ]);
+  store.close();
+});
+
+test('a context item whose kind has no precedence is refused at intake', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-context-kind-precedence-'));
+  const store = openStore(root);
+  const item = {
+    id: 'TASTE-UI', version: 1, kind: 'taste', status: CONTEXT_ITEM_STATUS.ACTIVE,
+    strength: CONTEXT_ITEM_STRENGTH.MANDATORY, semanticKey: 'taste.frontend',
+    body: 'Use the established theme.', provenance: 'human decision',
+  } as const;
+
+  assert.throws(
+    () => { addContextItem(store, item); },
+    (error: unknown) => error instanceof ContextError
+      && error.code === CONTEXT_ERROR.MISSING_PRECEDENCE
+      && error.message.includes('taste'),
+  );
+  assert.equal(loadContextCatalog(store).items.length, 0);
+  replaceContextPrecedence(store, ['taste']);
+  addContextItem(store, item);
+  assert.equal(loadContextCatalog(store).items.length, 1);
   store.close();
 });

@@ -1,6 +1,7 @@
 import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { EXECUTION_PROFILES_TABLE, MAX_RUN_DURATION_COLUMN, RUN_SPECS_TABLE, RUN_SPEC_RETRY_OF_COLUMN } from '../db/context.schema.constants.js';
 
-export const executionProfiles = sqliteTable('execution_profiles', {
+export const executionProfiles = sqliteTable(EXECUTION_PROFILES_TABLE, {
   id: text('id').primaryKey(),
   roleId: text('role_id').notNull(),
   adapterId: text('adapter_id').notNull(),
@@ -12,6 +13,7 @@ export const executionProfiles = sqliteTable('execution_profiles', {
   observationIntervalMs: integer('observation_interval_ms').notNull(),
   noProgressTimeoutMs: integer('no_progress_timeout_ms').notNull(),
   cancellationGraceMs: integer('cancellation_grace_ms').notNull(),
+  maxRunDurationMs: integer(MAX_RUN_DURATION_COLUMN),
   enabled: integer('enabled', { mode: 'boolean' }).notNull(),
 });
 
@@ -21,7 +23,7 @@ export const executionProfileTools = sqliteTable('execution_profile_tools', {
   enabled: integer('enabled', { mode: 'boolean' }).notNull(),
 }, (table) => [primaryKey({ columns: [table.profileId, table.toolId] })]);
 
-export const runSpecs = sqliteTable('run_specs', {
+export const runSpecs = sqliteTable(RUN_SPECS_TABLE, {
   id: text('id').primaryKey(),
   roleId: text('role_id').notNull(),
   phase: text('phase').notNull(),
@@ -41,8 +43,10 @@ export const runSpecs = sqliteTable('run_specs', {
   outputContractRef: text('output_contract_ref').notNull(),
   noProgressTimeoutMs: integer('no_progress_timeout_ms').notNull(),
   cancellationGraceMs: integer('cancellation_grace_ms').notNull(),
+  maxRunDurationMs: integer(MAX_RUN_DURATION_COLUMN),
   specDigest: text('spec_digest').notNull(),
   createdAt: text('created_at').notNull(),
+  retryOfRunSpecId: text(RUN_SPEC_RETRY_OF_COLUMN),
 });
 
 export const runDispatches = sqliteTable('run_dispatches', {

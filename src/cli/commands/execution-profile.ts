@@ -10,14 +10,16 @@ import type { Command, Io } from '../command.types.js';
 
 const USAGE = [
   'Usage:',
-  '  sv-playbook execution-profile add --id <id> --role <role> --adapter <id> --agent <id> --provider <id> --model <id> --adapter-config-file <path> --poll-ms <n> --timeout-ms <n> --grace-ms <n> --tool <id=allow|deny>...',
-  '  sv-playbook execution-profile set --id <id> --role <role> --adapter <id> --agent <id> --provider <id> --model <id> --adapter-config-file <path> --poll-ms <n> --timeout-ms <n> --grace-ms <n> --tool <id=allow|deny>...',
+  '  sv-playbook execution-profile add --id <id> --role <role> --adapter <id> --agent <id> --provider <id> --model <id> --adapter-config-file <path> --poll-ms <n> --timeout-ms <n> --grace-ms <n> [--max-duration-ms <n>] --tool <id=allow|deny>...',
+  '  sv-playbook execution-profile set --id <id> --role <role> --adapter <id> --agent <id> --provider <id> --model <id> --adapter-config-file <path> --poll-ms <n> --timeout-ms <n> --grace-ms <n> [--max-duration-ms <n>] --tool <id=allow|deny>...',
   '  sv-playbook execution-profile clone --from <id> --id <id> --role <role> --agent <id> [--provider <id>] [--model <id>] [--variant <id>] [--tool <id=allow|deny>]...',
   '  sv-playbook execution-profile list',
 ].join('\n');
 
 class UsageError extends Error {}
 const TOOL_POLICY_EFFECT = { ALLOW: 'allow', DENY: 'deny' } as const;
+const STRING_OPTION_TYPE = 'string';
+const MAX_DURATION_MS_FLAG = 'max-duration-ms';
 const EXECUTION_PROFILE_SUBCOMMAND = { ADD: 'add', CLONE: 'clone', LIST: 'list', SET: 'set' } as const;
 
 function listProfiles(args: string[], io: Io): number {
@@ -65,11 +67,12 @@ function toolPolicy(values: readonly string[] | undefined): Record<string, boole
 
 function writeProfile(args: string[], io: Io, operation: typeof EXECUTION_PROFILE_SUBCOMMAND[keyof typeof EXECUTION_PROFILE_SUBCOMMAND]): number {
   const parsed = parseArgs({ args, allowPositionals: false, options: {
-    id: { type: 'string' }, role: { type: 'string' }, adapter: { type: 'string' }, agent: { type: 'string' },
-    provider: { type: 'string' }, model: { type: 'string' }, variant: { type: 'string' },
-    'adapter-config-file': { type: 'string' }, 'poll-ms': { type: 'string' },
-    'timeout-ms': { type: 'string' }, 'grace-ms': { type: 'string' },
-    tool: { type: 'string', multiple: true },
+    id: { type: STRING_OPTION_TYPE }, role: { type: STRING_OPTION_TYPE }, adapter: { type: STRING_OPTION_TYPE }, agent: { type: STRING_OPTION_TYPE },
+    provider: { type: STRING_OPTION_TYPE }, model: { type: STRING_OPTION_TYPE }, variant: { type: STRING_OPTION_TYPE },
+    'adapter-config-file': { type: STRING_OPTION_TYPE }, 'poll-ms': { type: STRING_OPTION_TYPE },
+    'timeout-ms': { type: STRING_OPTION_TYPE }, 'grace-ms': { type: STRING_OPTION_TYPE },
+    [MAX_DURATION_MS_FLAG]: { type: STRING_OPTION_TYPE },
+    tool: { type: STRING_OPTION_TYPE, multiple: true },
   } });
   const profile: ExecutionProfileInput = {
     id: required(parsed.values.id, 'id'),
@@ -86,6 +89,8 @@ function writeProfile(args: string[], io: Io, operation: typeof EXECUTION_PROFIL
     enabled: true,
   };
   if (parsed.values.variant !== undefined) profile.variant = parsed.values.variant;
+  const maxDurationMs = parsed.values[MAX_DURATION_MS_FLAG];
+  if (maxDurationMs !== undefined) profile.maxRunDurationMs = positiveInteger(maxDurationMs, MAX_DURATION_MS_FLAG);
   const store = openStore(commonRoot(getCwd()));
   try {
     if (operation === EXECUTION_PROFILE_SUBCOMMAND.ADD) addExecutionProfile(store, profile);
@@ -99,9 +104,9 @@ function writeProfile(args: string[], io: Io, operation: typeof EXECUTION_PROFIL
 
 function cloneProfile(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: false, options: {
-    from: { type: 'string' }, id: { type: 'string' }, role: { type: 'string' }, agent: { type: 'string' },
-    provider: { type: 'string' }, model: { type: 'string' }, variant: { type: 'string' },
-    tool: { type: 'string', multiple: true },
+    from: { type: STRING_OPTION_TYPE }, id: { type: STRING_OPTION_TYPE }, role: { type: STRING_OPTION_TYPE }, agent: { type: STRING_OPTION_TYPE },
+    provider: { type: STRING_OPTION_TYPE }, model: { type: STRING_OPTION_TYPE }, variant: { type: STRING_OPTION_TYPE },
+    tool: { type: STRING_OPTION_TYPE, multiple: true },
   } });
   const store = openStore(commonRoot(getCwd()));
   try {

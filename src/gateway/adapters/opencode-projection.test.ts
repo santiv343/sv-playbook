@@ -1,51 +1,51 @@
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ExecutionProfile } from '../gateway.types.js';
 import { createOpenCodeRoleProjectionAdapter } from './opencode-projection.js';
-import { OPENCODE_ADAPTER_ID } from './opencode.constants.js';
 
-function object(value: unknown): Record<string, unknown> {
-  assert.equal(typeof value, 'object');
-  assert.notEqual(value, null);
-  assert.equal(Array.isArray(value), false);
-  return Object.fromEntries(Object.entries(value ?? {}));
-}
+const OPENCODE_ADAPTER_ID = 'opencode-shared-bootstrap-v1';
 
-function profile(): ExecutionProfile {
+function profile(adapterConfig: Readonly<Record<string, unknown>>): ExecutionProfile {
   return {
-    id: 'profile', roleId: 'planner', adapterId: OPENCODE_ADAPTER_ID, agentId: 'planner',
-    providerId: 'provider', modelId: 'model', adapterConfig: {}, observationIntervalMs: 1,
-    noProgressTimeoutMs: 1, cancellationGraceMs: 1, tools: { bash: false, read: true }, enabled: true,
+    id: 'fake-reviewer',
+    roleId: 'reviewer',
+    adapterId: OPENCODE_ADAPTER_ID,
+    agentId: 'reviewer',
+    providerId: 'test-provider',
+    modelId: 'test-model',
+    adapterConfig,
+    observationIntervalMs: 500,
+    noProgressTimeoutMs: 600000,
+    cancellationGraceMs: 10000,
+    tools: { read: true },
+    enabled: true,
   };
 }
 
-test('OpenCode projection replaces unmanaged agents and emits exact default-deny permissions', async () => {
+const VALID_CONFIG = {
+  baseUrl: 'http://127.0.0.1:1',
+  allowedVersions: ['1.17.18'],
+  outputMode: 'validated-text',
+} as const;
+
+test('the effective projection surfaces profile config violations before any fetch', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-opencode-projection-'));
-  await writeFile(join(root, 'opencode.json'), JSON.stringify({ agent: {
-    'founder-interface': { model: 'legacy/model', permission: { '*': 'allow' } },
-  } }), 'utf8');
+  const adapter = createOpenCodeRoleProjectionAdapter();
 
-  const candidate = createOpenCodeRoleProjectionAdapter().compile(root, [profile()]);
-  const parsed: unknown = JSON.parse(candidate.artifacts[0]?.content ?? '{}');
-  const config = object(parsed);
-  const agents = object(config.agent);
-  const planner = object(agents.planner);
-  assert.deepEqual(Object.keys(agents), ['planner']);
-  assert.deepEqual(planner.permission, { '*': 'deny', bash: 'deny', read: 'allow' });
-  assert.deepEqual(candidate.violations, []);
-});
+  const missing = await adapter.inspectEffective(root, [profile({ baseUrl: 'http://127.0.0.1:1', allowedVersions: ['1.17.18'] })]);
+  assert.deepEqual(missing.agentIds, []);
+  const missingViolations = missing.violations ?? [];
+  assert.equal(missingViolations.length, 1);
+  assert.match(missingViolations[0] ?? '', /outputMode/);
 
-test('OpenCode projection inspection reports model and permission drift', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'svp-opencode-projection-drift-'));
-  await writeFile(join(root, 'opencode.json'), JSON.stringify({ agent: {
-    planner: { model: 'wrong/model', permission: { '*': 'allow', bash: 'allow', read: 'allow' } },
-  } }), 'utf8');
+  const unsupported = await adapter.inspectEffective(root, [profile({ ...VALID_CONFIG, outputMode: 'stream' })]);
+  assert.match(unsupported.violations?.[0] ?? '', /outputMode/);
 
-  const inspected = createOpenCodeRoleProjectionAdapter().inspect(root, [profile()]);
-  assert.ok((inspected.violations ?? []).some((violation) => violation.includes('model projection mismatch')));
-  assert.ok((inspected.violations ?? []).some((violation) => violation.includes('not default-deny')));
-  assert.ok((inspected.violations ?? []).some((violation) => violation.includes('permission mismatch for bash')));
+  const unreachable = await adapter.inspectEffective(root, [profile(VALID_CONFIG)]);
+  const unreachableViolations = unreachable.violations ?? [];
+  assert.equal(unreachableViolations.some((violation) => violation.includes('outputMode')), false);
+  assert.equal(unreachableViolations.length, 1);
 });

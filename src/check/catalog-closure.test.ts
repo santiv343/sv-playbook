@@ -4,7 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from '../context/context.constants.js';
-import { addContextItem } from '../context/repository.js';
+import { addContextItem, replaceContextPrecedence } from '../context/repository.js';
 import { addArtifactContract } from '../contracts/artifacts.js';
 import { openStore } from '../db/store.js';
 import { addExecutionProfile } from '../gateway/profiles.js';
@@ -24,6 +24,7 @@ function addRole(store: ReturnType<typeof openStore>, roleId: string): void {
   addArtifactContract(store, { ref: inputContract, schema: CONTRACT_SCHEMA, status: 'active' });
   addArtifactContract(store, { ref: outputContract, schema: CONTRACT_SCHEMA, status: 'active' });
   addModelCapability(store, { id: capabilityId, description: `Capability for ${roleId}` });
+  replaceContextPrecedence(store, ['role']);
   addContextItem(store, {
     id: contextId, version: 1, kind: 'role', status: CONTEXT_ITEM_STATUS.ACTIVE,
     strength: CONTEXT_ITEM_STRENGTH.MANDATORY, semanticKey: `role.${roleId}`,

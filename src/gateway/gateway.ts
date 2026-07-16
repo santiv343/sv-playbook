@@ -12,7 +12,7 @@ import type {
 } from './gateway.types.js';
 import { ADAPTER_RUN_STATE } from './gateway.types.js';
 import { renderRunPrompt } from './prompt.js';
-import { GATEWAY_LIFECYCLE_ERROR, GATEWAY_OPERATION, GATEWAY_RUN_STATUS } from './gateway.constants.js';
+import { GATEWAY_LIFECYCLE_ERROR, GATEWAY_OPERATION, GATEWAY_RUN_STATUS, GATEWAY_STATE_ERROR } from './gateway.constants.js';
 import { observeTurnToCompletion } from './gateway-lifecycle.js';
 import { loadRunSpec } from './run-spec.loader.js';
 import {
@@ -20,6 +20,7 @@ import {
   acceptTurn,
   blockIntent,
   commitIntent,
+  isRunObserving,
   loadLatestTurn,
   loadRunSnapshot,
   loadSession,
@@ -115,7 +116,7 @@ function durableCompletion(store: Store, runSpec: RunSpec, turn: StoredTurn): Ga
     );
   }
   if (snapshot.output === undefined || snapshot.outputDigest === null) {
-    throw new ContextError('INVALID_GATEWAY_STATE', 'completed gateway run has no durable output');
+    throw new ContextError(GATEWAY_STATE_ERROR.INVALID, 'completed gateway run has no durable output');
   }
   return {
     output: snapshot.output,
@@ -133,6 +134,25 @@ function durableCompletion(store: Store, runSpec: RunSpec, turn: StoredTurn): Ga
   };
 }
 
+function terminalDispatchReceipt(
+  store: Store,
+  runSpec: RunSpec,
+  adapter: AgentAdapter,
+): GatewayDispatchReceipt {
+  // A terminal run is decided from durable state alone: no profile verification,
+  // no session resume, no turn submission — the adapter is never contacted.
+  const session = loadSession(store, runSpec.id, adapter);
+  const turn = loadLatestTurn(store, runSpec.id, adapter);
+  if (session === undefined || turn === undefined) {
+    throw new ContextError(GATEWAY_STATE_ERROR.INVALID, 'terminal gateway run is missing its durable session or turn');
+  }
+  const completion = durableCompletion(store, runSpec, turn);
+  if (completion === undefined) {
+    throw new ContextError(GATEWAY_STATE_ERROR.INVALID, 'terminal gateway run has no durable completion');
+  }
+  return { session, turn: turn.receipt, completion };
+}
+
 export async function dispatchRun(
   store: Store,
   runSpecId: string,
@@ -141,11 +161,19 @@ export async function dispatchRun(
   runtime?: GatewayRuntime,
 ): Promise<GatewayDispatchReceipt> {
   const runSpec = loadRunSpec(store, runSpecId);
+  const snapshot = loadRunSnapshot(store, runSpec.id);
+  if (snapshot !== undefined && !isRunObserving(snapshot)) {
+    const adapter = adapters.get(runSpec.executionProfile.adapterId);
+    if (adapter === undefined) {
+      throw new ContextError(GATEWAY_STATE_ERROR.ADAPTER_UNAVAILABLE, `adapter is not registered: ${runSpec.executionProfile.adapterId}`);
+    }
+    return terminalDispatchReceipt(store, runSpec, adapter);
+  }
   requireActiveRoleCatalog(store);
   requireExecutionProfileModelEvidence(store, runSpec.executionProfile);
   const adapter = adapters.get(runSpec.executionProfile.adapterId);
   if (adapter === undefined) {
-    throw new ContextError('ADAPTER_UNAVAILABLE', `adapter is not registered: ${runSpec.executionProfile.adapterId}`);
+    throw new ContextError(GATEWAY_STATE_ERROR.ADAPTER_UNAVAILABLE, `adapter is not registered: ${runSpec.executionProfile.adapterId}`);
   }
   const profile = await adapter.verifyProfile(runSpec, directory);
   assertAdapterReceipt(adapter, profile.adapterId);

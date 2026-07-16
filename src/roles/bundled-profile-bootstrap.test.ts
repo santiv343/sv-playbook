@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 import { openStore } from '../db/store.js';
 import { addArtifactContract } from '../contracts/artifacts.js';
 import { CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from '../context/context.constants.js';
-import { addContextItem, loadContextCatalog } from '../context/repository.js';
+import { addContextItem, loadContextCatalog, replaceContextPrecedence } from '../context/repository.js';
 import { contextPrecedence } from '../context/schema.constants.js';
 import {
   addModelCapability,
@@ -26,6 +26,7 @@ import { digest } from '../context/digest.js';
 import { REVIEW_CANDIDATE_CONTRACT_REF, REVIEW_CANDIDATE_SCHEMA } from '../review/review-candidate.constants.js';
 
 function seedLegacyCatalog(store: ReturnType<typeof openStore>): void {
+  replaceContextPrecedence(store, ['role']);
   const schema = {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     type: 'object',

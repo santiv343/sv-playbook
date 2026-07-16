@@ -6,6 +6,7 @@ import { createDefaultAgentAdapterRegistry } from '../../gateway/adapter-registr
 import { dispatchRun } from '../../gateway/gateway.js';
 import type { WorkRunSpecRequest } from '../../gateway/gateway.types.js';
 import { prepareRunSpec } from '../../gateway/run-spec.js';
+import { retryRunSpec } from '../../gateway/run-retry.js';
 import { getCwd } from '../../runtime/context.js';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
@@ -16,10 +17,11 @@ const USAGE = [
   'Usage:',
   '  sv-playbook dispatch prepare --role <role> --phase <phase> --task <id@version> [--profile <id>]',
   '  sv-playbook dispatch start --run <run-id>',
+  '  sv-playbook dispatch retry --run <run-id>',
 ].join('\n');
 
 class UsageError extends Error {}
-const DISPATCH_SUBCOMMAND = { PREPARE: 'prepare', START: 'start' } as const;
+const DISPATCH_SUBCOMMAND = { PREPARE: 'prepare', START: 'start', RETRY: 'retry' } as const;
 
 function required(value: string | undefined, name: string): string {
   if (value === undefined || value.trim().length === 0) throw new UsageError(`missing --${name}`);
@@ -61,9 +63,13 @@ function prepare(args: string[], io: Io): number {
   return EXIT.OK;
 }
 
-async function start(args: string[], io: Io): Promise<number> {
+function requiredRunId(args: string[]): string {
   const parsed = parseArgs({ args, allowPositionals: false, options: { run: { type: 'string' } } });
-  const runId = required(parsed.values.run, 'run');
+  return required(parsed.values.run, 'run');
+}
+
+async function start(args: string[], io: Io): Promise<number> {
+  const runId = requiredRunId(args);
   const receipt = await withStoreAsync(async (store, root) => {
     const adapters = createDefaultAgentAdapterRegistry();
     return dispatchRun(store, runId, adapters, root);
@@ -72,23 +78,42 @@ async function start(args: string[], io: Io): Promise<number> {
   return EXIT.OK;
 }
 
+function retry(args: string[], io: Io): number {
+  const result = withStore((store) => retryRunSpec(store, requiredRunId(args)));
+  io.out(JSON.stringify(result));
+  return EXIT.OK;
+}
+
+function dispatchSubcommand(args: string[], io: Io): number | Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (subcommand === DISPATCH_SUBCOMMAND.PREPARE) return prepare(rest, io);
+  if (subcommand === DISPATCH_SUBCOMMAND.START) return start(rest, io);
+  if (subcommand === DISPATCH_SUBCOMMAND.RETRY) return retry(rest, io);
+  throw new UsageError('missing or unknown dispatch subcommand');
+}
+
+function errorCodePrefix(error: unknown): string {
+  if (error instanceof ContextError || error instanceof WorkDefinitionError) return `${error.code} `;
+  return '';
+}
+
+function reportDispatchError(error: unknown, io: Io): number {
+  if (error instanceof UsageError || error instanceof ContextError || error instanceof WorkDefinitionError || error instanceof TypeError) {
+    io.err(USAGE);
+    io.err(`error: ${errorCodePrefix(error)}${error.message}`);
+    return EXIT.GATE_FAIL;
+  }
+  throw error;
+}
+
 export const command: Command = {
   name: 'dispatch',
   summary: 'Prepare immutable RunSpecs and dispatch only through registered adapters',
   async run(args, io): Promise<number> {
     try {
-      const [subcommand, ...rest] = args;
-      if (subcommand === DISPATCH_SUBCOMMAND.PREPARE) return prepare(rest, io);
-      if (subcommand === DISPATCH_SUBCOMMAND.START) return await start(rest, io);
-      throw new UsageError('missing or unknown dispatch subcommand');
+      return await dispatchSubcommand(args, io);
     } catch (error) {
-      if (error instanceof UsageError || error instanceof ContextError || error instanceof WorkDefinitionError || error instanceof TypeError) {
-        io.err(USAGE);
-        const code = error instanceof ContextError || error instanceof WorkDefinitionError ? `${error.code} ` : '';
-        io.err(`error: ${code}${error.message}`);
-        return EXIT.GATE_FAIL;
-      }
-      throw error;
+      return reportDispatchError(error, io);
     }
   },
 };

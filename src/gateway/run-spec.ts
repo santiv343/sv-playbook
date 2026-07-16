@@ -13,14 +13,15 @@ import { artifactContracts, roleContracts, workflowArtifacts } from '../orchestr
 import type { WorkflowEffect } from '../orchestration/service.types.js';
 import { EMPTY_SIZE, REFERENCE_KIND, REFERENCE_VERSION_SEPARATOR } from '../platform.constants.js';
 import { formatWorkDefinitionReference, resolveEligibleWorkDefinition } from '../tasks/work-definitions.js';
-import type { ResolvedWorkDefinitionReference } from '../tasks/work-definition.types.js';
 import { resolveManualInput } from '../review/review-candidate.js';
 import { MANUAL_DISPATCH_PREFIX, RUN_SPEC_ERROR, RUN_SPEC_ID_PREFIX } from './gateway.constants.js';
 import { executionProfileSnapshotJson, loadExecutionProfile, selectExecutionProfile } from './profiles.js';
 import { runDispatches, runSpecs } from './schema.constants.js';
 import { loadRunSpec, parseContextReference } from './run-spec.loader.js';
 import type {
+  ResolvedRunSpecRequest,
   RunSpec,
+  RunSpecContractSnapshot,
   WorkflowEffectReference,
   WorkRunSpecRequest,
 } from './gateway.types.js';
@@ -29,26 +30,6 @@ type RunSpecInput = Omit<RunSpec, 'id' | 'executionProfile' | 'specDigest'> & {
   executionProfileId: string;
   executionProfileDigest: string;
 };
-
-interface RunSpecContractSnapshot {
-  contextItemRef: string;
-  inputContractRef: string;
-  outputContractRef: string;
-}
-
-interface ResolvedRunSpecRequest {
-  roleId: string;
-  phase: string;
-  storageSubjectRef: string;
-  storageDispatchRef: string;
-  workDefinitionRef: ResolvedWorkDefinitionReference | null;
-  workflowEffectRef: WorkflowEffectReference | null;
-  inputArtifactId: string | null;
-  contextTags: readonly string[];
-  contextReferenceStrings: readonly string[];
-  requestedCapabilities: readonly string[];
-  executionProfileId?: string;
-}
 
 function validateProfile(request: ResolvedRunSpecRequest, profile: RunSpec['executionProfile']): void {
   if (!profile.enabled) {
@@ -94,7 +75,7 @@ function existingDispatch(
   return existing;
 }
 
-function roleContract(store: Store, roleId: string): RunSpecContractSnapshot {
+export function roleContract(store: Store, roleId: string): RunSpecContractSnapshot {
   const role = store.orm.select({
     contextItemId: roleContracts.contextItemId,
     contextItemVersion: roleContracts.contextItemVersion,
@@ -195,6 +176,8 @@ function compileRunSpecInput(
     outputContractRef: outputContract(store, request.roleId, contract),
     noProgressTimeoutMs: profile.noProgressTimeoutMs,
     cancellationGraceMs: profile.cancellationGraceMs,
+    ...(profile.maxRunDurationMs === undefined ? {} : { maxRunDurationMs: profile.maxRunDurationMs }),
+    retryOfRunSpecId: request.retryOfRunSpecId,
   };
   return { input, executionProfile: profile };
 }
@@ -227,8 +210,10 @@ function insertRunSpecRows(
       outputContractRef: input.outputContractRef,
       noProgressTimeoutMs: input.noProgressTimeoutMs,
       cancellationGraceMs: input.cancellationGraceMs,
+      maxRunDurationMs: input.maxRunDurationMs ?? null,
       specDigest: identity.specDigest,
       createdAt: identity.createdAt,
+      retryOfRunSpecId: input.retryOfRunSpecId,
     }).run();
     transaction.insert(runDispatches).values({
       dispatchRef: request.storageDispatchRef,
@@ -269,11 +254,13 @@ function persistRunSpec(
     outputContractRef: input.outputContractRef,
     noProgressTimeoutMs: input.noProgressTimeoutMs,
     cancellationGraceMs: input.cancellationGraceMs,
+    ...(input.maxRunDurationMs === undefined ? {} : { maxRunDurationMs: input.maxRunDurationMs }),
+    retryOfRunSpecId: input.retryOfRunSpecId,
     specDigest,
   };
 }
 
-function prepareResolved(
+export function prepareResolved(
   store: Store,
   request: ResolvedRunSpecRequest,
   snapshot?: RunSpecContractSnapshot,
@@ -302,6 +289,7 @@ export function prepareRunSpec(store: Store, request: WorkRunSpecRequest): RunSp
     contextTags: definition.value.tags,
     contextReferenceStrings: [],
     requestedCapabilities: [],
+    retryOfRunSpecId: null,
   };
   if (request.executionProfileId !== undefined) resolved.executionProfileId = request.executionProfileId;
   return prepareResolved(store, resolved, {
@@ -330,6 +318,7 @@ export function prepareWorkflowRunSpec(store: Store, effect: WorkflowEffect): Ru
     contextTags: effect.contextTags,
     contextReferenceStrings: effect.contextReferences,
     requestedCapabilities: effect.requestedCapabilities,
+    retryOfRunSpecId: null,
   }, {
     contextItemRef: role.contextItemRef,
     inputContractRef: effect.inputContractRef,

@@ -1,7 +1,8 @@
 import type { Store } from '../db/store.types.js';
 import { numberColumn, stringColumn } from '../db/rows.js';
-import { canonicalJson } from '../context/digest.js';
+import { canonicalJson, digest } from '../context/digest.js';
 import { ContextError } from '../context/context.errors.js';
+import { resolvedArtifactSchema } from '../contracts/artifacts.js';
 import type { RunSpec } from './gateway.types.js';
 import { RUN_PROMPT_INSTRUCTION, RUN_PROMPT_PROTOCOL, RUN_SPEC_ERROR } from './gateway.constants.js';
 import { resolveWorkDefinition } from '../tasks/work-definitions.js';
@@ -36,6 +37,7 @@ export function renderRunPrompt(store: Store, runSpec: RunSpec): string {
     }
     return { reference: stored.reference, value: stored.value };
   })();
+  const outputContractSchema = resolvedArtifactSchema(store, runSpec.outputContractRef);
   return canonicalJson({
     protocol: RUN_PROMPT_PROTOCOL,
     runSpec: {
@@ -49,6 +51,11 @@ export function renderRunPrompt(store: Store, runSpec: RunSpec): string {
       specDigest: runSpec.specDigest,
     },
     instruction: RUN_PROMPT_INSTRUCTION,
+    outputContract: {
+      ref: runSpec.outputContractRef,
+      schemaDigest: digest(outputContractSchema),
+      schema: outputContractSchema,
+    },
     inputArtifact,
     workDefinition,
     items,
