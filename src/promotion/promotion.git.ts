@@ -7,9 +7,7 @@ import type { GitPromotionPort } from './promotion.types.js';
 
 const GIT_COMMAND = {
   CHECK_REF_FORMAT: 'check-ref-format',
-  IS_ANCESTOR: '--is-ancestor',
   UPDATE_REF: 'update-ref',
-  VERIFY: '--verify',
 } as const;
 
 function output(repoRoot: string, args: readonly string[]): string {
@@ -22,7 +20,7 @@ function output(repoRoot: string, args: readonly string[]): string {
 
 function branchRef(repoRoot: string, targetRef: string): string {
   try {
-    execFileSync(GIT_EXECUTABLE, [GIT_COMMAND.CHECK_REF_FORMAT, '--branch', targetRef], {
+    execFileSync(GIT_EXECUTABLE, [GIT_COMMAND.CHECK_REF_FORMAT, GIT_ARGUMENT.BRANCH, targetRef], {
       cwd: repoRoot,
       encoding: TEXT_ENCODING.UTF8,
       stdio: PROCESS_STDIO.PIPE,
@@ -41,12 +39,12 @@ const LOCAL_PORT: GitPromotionPort = {
   headSha: (worktree) => output(worktree, [GIT_ARGUMENT.REV_PARSE, GIT_ARGUMENT.HEAD]),
   refSha: (repoRoot, targetRef) => output(repoRoot, [
     GIT_ARGUMENT.REV_PARSE,
-    GIT_COMMAND.VERIFY,
+    GIT_ARGUMENT.VERIFY,
     branchRef(repoRoot, targetRef),
   ]),
   isAncestor: (repoRoot, ancestorSha, descendantSha) => {
     try {
-      execFileSync(GIT_EXECUTABLE, [GIT_ARGUMENT.MERGE_BASE, GIT_COMMAND.IS_ANCESTOR, ancestorSha, descendantSha], {
+      execFileSync(GIT_EXECUTABLE, [GIT_ARGUMENT.MERGE_BASE, GIT_ARGUMENT.IS_ANCESTOR, ancestorSha, descendantSha], {
         cwd: repoRoot,
         encoding: TEXT_ENCODING.UTF8,
         stdio: PROCESS_STDIO.PIPE,

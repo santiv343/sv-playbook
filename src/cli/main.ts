@@ -1,12 +1,12 @@
 import { commonRoot } from '../db/store.js';
 import { commands } from './registry.js';
 import { EXIT } from './command.constants.js';
+import { extractConfirmDestructive } from './command.js';
 import { setContext, getCwd } from '../runtime/context.js';
 import type { Command, Io } from './command.types.js';
 import type { ExecutionContext } from '../runtime/context.types.js';
 import { checkDestructiveGate, queryDestructiveCounts } from './destructive-gate.js';
 
-const CONFIRM_FLAG = '--confirm-destructive';
 const HELP_FLAG = { LONG: '--help', SHORT: '-h' } as const;
 
 const defaultIo: Io = {
@@ -23,8 +23,7 @@ function usage(io: Io): void {
 
 function gateCheckedArgs(command: Command, args: string[], io: Io): string[] | number {
   if (!command.destructive) return args;
-  const hasConfirm = args.includes(CONFIRM_FLAG);
-  const runArgs = hasConfirm ? args.filter((a) => a !== CONFIRM_FLAG) : args;
+  const { args: runArgs, hasConfirm } = extractConfirmDestructive(args);
   const repoRoot = commonRoot(getCwd());
   const gateResult = checkDestructiveGate(io, command.name, repoRoot, hasConfirm, queryDestructiveCounts(repoRoot));
   if (gateResult !== undefined) return gateResult;

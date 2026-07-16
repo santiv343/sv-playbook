@@ -49,7 +49,7 @@ Why: packets have two projections. The SQLite state under `.svp/` coordinates
 sessions and leases and is never committed. The markdown projection under
 `docs/packets/*.md` is the durable review artifact and is always committed.
 Leases become stale when their heartbeat is more than 30 minutes old
-(`LEASE_TTL_MS`).
+(configurable as `tasks.leaseTtlMs` in `playbook.config.json`).
 
 Argument shapes:
 

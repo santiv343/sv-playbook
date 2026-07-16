@@ -13,7 +13,7 @@ import { pendingMigrationIds } from './store.migration-manifest.js';
 import type { StoreMigrationId } from './store.migration-manifest.types.js';
 import { STORE_MIGRATION_ID } from './store.migration-manifest.constants.js';
 import type { MigrateStoreOptions, OpenStoreOptions } from './store.types.js';
-import { LEASE_TTL_MS } from '../tasks/service.constants.js';
+import { loadConfig } from '../config.js';
 import { ORCHESTRATION_STORE_SCHEMA } from './orchestration.schema.constants.js';
 import { migrateTableColumn } from './store.migration-helpers.js';
 import { RUN_SPECS_TABLE } from './context.schema.constants.js';
@@ -301,7 +301,7 @@ function assertMigrationBranch(repoRoot: string, migrateLive: boolean | undefine
     console.error(`bypassing branch guard: migrating live from "${branch}"`);
     return;
   }
-  throw new StoreVersionError(`migration refused: on branch "${branch}" which is not the default branch - switch to main or pass --migrate-live to migrate the live store from this branch`);
+  throw new StoreVersionError(`migration refused: on branch "${branch}" which is not the default branch - switch to main, or migrate from library code via openStore(root, { migrateLive: true }) (audited bypass; IDEA-071 tracks exposing a CLI flag)`);
 }
 
 function performMigration(db: Database.Database, repoRoot: string, currentVersion: number, options?: OpenStoreOptions): void {
@@ -341,14 +341,14 @@ export function checkVersionAndMigrate(
   throw new StoreVersionError(tooNewText(currentVersion));
 }
 
-function assertNoForeignLeases(dbPath: string, currentSessionId?: string): void {
+function assertNoForeignLeases(dbPath: string, leaseTtlMs: number, currentSessionId?: string): void {
   const liveDb = new Database(dbPath);
   const leaseRows = liveDb.prepare('SELECT session_id, heartbeat_at FROM leases').all();
   liveDb.close();
   const foreignCount = leaseRows.filter((row) => {
     const sessionId = stringColumn(row, 'session_id');
     const belongsToCaller = currentSessionId !== undefined && sessionId === currentSessionId;
-    const fresh = Date.now() - Date.parse(stringColumn(row, 'heartbeat_at')) <= LEASE_TTL_MS;
+    const fresh = Date.now() - Date.parse(stringColumn(row, 'heartbeat_at')) <= leaseTtlMs;
     return !belongsToCaller && fresh;
   }).length;
   if (foreignCount > 0) {
@@ -360,7 +360,7 @@ export function migrateStore(repoRoot: string, options?: MigrateStoreOptions): v
   assertMigrationBranch(repoRoot, options?.migrateLive);
   const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
   createVerifiedBackup(repoRoot, BACKUP_REASON.MANUAL);
-  assertNoForeignLeases(dbPath, options?.currentSessionId);
+  assertNoForeignLeases(dbPath, loadConfig(repoRoot).tasks.leaseTtlMs, options?.currentSessionId);
   const db = new Database(dbPath);
   try {
     applyExclusiveStorePragmas(db);

@@ -21,6 +21,9 @@ test('loadConfig returns defaults when the file is absent', () => {
       preparationCommand: '',
       noOutputTimeoutMs: 600_000,
     },
+    tasks: {
+      leaseTtlMs: 30 * 60 * 1_000,
+    },
     backup: {
       enabled: true,
       retention: 20,
@@ -77,6 +80,9 @@ test('loadConfig reads a valid config file', () => {
       baseReference: 'release/stable',
       preparationCommand: 'npm ci',
       noOutputTimeoutMs: 1_234,
+    },
+    tasks: {
+      leaseTtlMs: 30 * 60 * 1_000,
     },
     backup: {
       enabled: false,
@@ -243,4 +249,23 @@ test('source debt baselines are validated as non-negative counts and SHA-256 dig
     baseline: { ormApplicationSql: { count: 0, digest: 'not-a-digest' } },
   }));
   assert.throws(() => loadConfig(invalidDigestDir), { name: 'ConfigError', message: /SHA-256/ });
+});
+
+test('tasks.leaseTtlMs defaults to 30 minutes and accepts a custom positive value', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  assert.equal(loadConfig(dir).tasks.leaseTtlMs, 30 * 60 * 1_000);
+
+  const customDir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(customDir, 'playbook.config.json'), JSON.stringify({
+    tasks: { leaseTtlMs: 5_000 },
+  }));
+  assert.equal(loadConfig(customDir).tasks.leaseTtlMs, 5_000);
+});
+
+test('tasks.leaseTtlMs rejects a non-positive value', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(dir, 'playbook.config.json'), JSON.stringify({
+    tasks: { leaseTtlMs: 0 },
+  }));
+  assert.throws(() => loadConfig(dir), { name: 'ConfigError', message: /leaseTtlMs/ });
 });

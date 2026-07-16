@@ -218,9 +218,9 @@ openStore
 
 La migración corrió en vivo sobre el sandbox (con backup) y el retry funcionó sobre las tablas nuevas. Cero pérdida de datos, cero pasos manuales.
 
-### El hallazgo honesto: IDEA-071 (pendiente)
+### El hallazgo honesto: IDEA-071 (mensaje corregido 2026-07-16)
 
-El mensaje del guard dice *"switch to main or pass `--migrate-live`"*… **y ningún comando del CLI acepta ese flag**. La única vía es la API de librería. Registrado como IDEA-071: exponer el flag o corregir el mensaje. Lo documentamos porque un sistema auditable empieza por auditar sus propios mensajes de error.
+El mensaje del guard decía *"switch to main or pass migrate-live"*… **y ningún comando del CLI aceptaba ese flag**. La única vía es la API de librería. El mensaje ya fue corregido (apunta a `openStore(root, { migrateLive: true })`); lo que queda abierto en IDEA-071 es si exponer un flag de CLI. Lo documentamos porque un sistema auditable empieza por auditar sus propios mensajes de error.
 
 ---
 
@@ -265,7 +265,7 @@ Cambios con criterio de diseño, no parches:
 
 1. ~~Que el reviewer real termine la re-review de BUG-002~~ — **cerrado**: el intento 3 completó con verdict `APPROVED` válido por el camino terminal (ver §10).
 2. ~~Graduar IDEA-067..070 en `docs/backlog.md`~~ — hecho.
-3. Decidir IDEA-071: exponer `--migrate-live` en el CLI o corregir el mensaje.
+3. ~~Decidir IDEA-071~~ — el mensaje quedó corregido (apunta a la opción de librería `migrateLive`); exponer un flag de CLI queda como feature aparte.
 
 ---
 

@@ -14,6 +14,10 @@ export const REVIEW_PREFLIGHT_DEFAULTS = {
   noOutputTimeoutMs: 10 * 60 * 1_000,
 } as const;
 
+export const TASKS_DEFAULTS = {
+  leaseTtlMs: 30 * 60 * 1_000,
+} as const;
+
 export const DEFAULTS: PlaybookConfig = {
   productName: 'unnamed',
   chatLanguage: 'en',
@@ -23,6 +27,7 @@ export const DEFAULTS: PlaybookConfig = {
   maxConcurrentWorkers: 3,
   reviewCandidateMaxBytes: REVIEW_CANDIDATE_MAX_BYTES_DEFAULT,
   reviewPreflight: { ...REVIEW_PREFLIGHT_DEFAULTS },
+  tasks: { ...TASKS_DEFAULTS },
   backup: {
     enabled: true,
     retention: BACKUP_RETENTION_DEFAULT,

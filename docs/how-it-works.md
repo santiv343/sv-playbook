@@ -377,12 +377,12 @@ flowchart LR
 
 A worker that hits an unrecoverable error moves the packet to `blocked` (keeping its lease) and halts **with evidence** — it never improvises destructively. The orchestrator then fixes the *rail* (a new gate, a clarified charter) and moves the packet `blocked → ready` to retry, or `blocked → dropped` if it's superseded.
 
-### 12.7 New project / existing project — `PLANNED`
+### 12.7 New project / existing project
 
 - **`init`** (`PLANNED`): a new project runs a wizard (interview + research) that produces the foundation doc, tier, config, and first packets.
-- **`adopt`** (`PLANNED`): an existing project gets an inventory + gap analysis + remediation packets with a baseline. (Aurora is the intended first `adopt` client.)
+- **`adopt`**: an existing project gets an inventory + gap analysis + remediation packets with a baseline. (Aurora is the intended first `adopt` client.)
 
-Until these ship, packets are authored directly with `task create` (which is exactly how sv-playbook builds itself — it dogfoods its own flow).
+Until `init` ships, packets are authored directly with `task create` (which is exactly how sv-playbook builds itself — it dogfoods its own flow).
 
 ---
 
@@ -390,25 +390,43 @@ Until these ship, packets are authored directly with `task create` (which is exa
 
 Full guide: `sv-playbook docs cli`. Implemented today:
 
+<!-- GENERATED:command-reference — do not edit below; regenerate: npx tsx src/cli/generate-command-reference.ts -->
 | Command | Purpose |
 |---|---|
-| `docs [topic]` | Print a process document (principles, cli, review, roles/*, dispatch/*) |
-| `task create` | Author + validate a packet, write canonical markdown |
-| `task list` / `status` | Inspect the queue / stable board read model (`--json` for `serve`) |
-| `task start` | Claim a `ready` packet (lease + `active`) |
-| `task move <id> <status>` | Legal lifecycle transition (captures evidence on `review`) |
-| `task show` / `task recover` | Packet detail / read-only lease inspection |
-| `task takeover [--force]` | Claim a stale lease, or replace a live one intentionally |
-| `task release` | Release a lease held by this session |
-| `task note` / `task brief` | Progress breadcrumb / assemble the deterministic worker prompt |
-| `describe` | Machine-readable JSON catalog of all commands (feeds the MCP wrapper) |
-| `doctor` | Non-destructive environment/store health readout |
-| `backup state` / `restore state` | Snapshot / verified restore of the operational DB |
+| `adopt` | Analyze a repo and scaffold playbook artifacts (inventory+gap only by default; --force to scaffold) |
+| `backup` | Create local SQLite state snapshots |
+| `check` | Validate authored artifacts (structure, instructions drift) |
+| `constitution` | Manage the instance constitution (vision, product definition, principles) |
+| `context` | Manage and compile durable role-scoped context |
+| `contract` | Manage authoritative JSON Schema contracts for typed role handoffs |
+| `daemon` | Start the sv-playbook daemon (single blessed writer for the store) |
+| `decision` | Ask, answer, list, and inspect architectural decisions |
+| `describe` | Print a machine-readable JSON catalog of all commands |
+| `dispatch` | Prepare immutable RunSpecs and dispatch only through registered adapters |
+| `docs` | Print a playbook process document (list topics when no argument) |
+| `doctor` | Diagnose Node, git, store, packet, and lease health |
+| `execution-profile` | Manage provider-neutral execution profiles and adapter-specific projections |
+| `handoff` | Generate a deterministic continuation prompt from live state |
+| `import` | Import packet definitions from docs/packets/*.md into the DB |
+| `instructions` | Generate cold-start agent instructions from a single source |
+| `promotion` | Verify, integrate, and close one immutable candidate through the runtime controller |
+| `rebuild` | Reconstruct operational DB from git packet exports |
+| `reconcile` | Compute and apply convergence actions between the board and the world |
+| `restore` | Restore local SQLite state from a snapshot |
+| `review` | Review preflight: mechanical checks for packets before reviewer dispatch |
+| `role` | Manage structured role authority, contracts, handoffs, and escalations |
+| `serve` | Start the local workflow runtime and real-time operations console |
+| `sprint` | Manage sprints: planning unit between milestone and task |
+| `status` | Print board, lease, event, and backup status |
+| `task` | Create, list, start, move, inspect, and recover execution packets |
+| `workflow-policy` | Configure deterministic workflow failure retry classification |
+| `workspace` | Classify dirty paths against task write sets and lifecycle state |
+<!-- /GENERATED:command-reference -->
 
 **Exit codes:** `0` OK · `1` gate failure (cites the rule ID) · `2` usage error (fix the invocation) · `3` system error (report it, don't work around it).
 
-`PLANNED` commands (later plans): `init`, `adopt`, `check`, `agent`, `upgrade`, `serve`, plus the auto-generated MCP wrapper.
+`PLANNED` commands (later plans): `init`, `agent`, `upgrade`, plus the auto-generated MCP wrapper (`describe` already emits the catalog it will consume).
 
 ---
 
-*This document is generated by hand today; when the packet flow gains a docs-structure gate it will be validated like any other authored document. Keep it in sync with `content/` — those charters remain the single source; this page is the map, not a second copy.*
+*This document is written by hand, except §13, which is generated from the CLI registry (drift fails the `command-reference` test). Keep it in sync with `content/` — those charters remain the single source; this page is the map, not a second copy.*

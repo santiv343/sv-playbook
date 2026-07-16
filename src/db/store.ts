@@ -3,7 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { stringColumn } from './rows.js';
-import { DB_FILE, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
+import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
+import { GIT_ARGUMENT } from '../git.constants.js';
 import { OS_PLATFORM } from '../platform.constants.js';
 import { getCwd } from '../runtime/context.js';
 import { StoreVersionError } from './store.errors.js';
@@ -17,8 +18,8 @@ import { STORE_PRAGMA } from './store.pragmas.constants.js';
 
 export { migrateStore } from './store.migrations.js';
 
-const GIT_COMMON_DIR_ARGS = ['rev-parse', '--git-common-dir'];
-const GIT_TOPLEVEL_ARGS = ['rev-parse', '--show-toplevel'];
+const GIT_COMMON_DIR_ARGS = [GIT_ARGUMENT.REV_PARSE, GIT_ARGUMENT.GIT_COMMON_DIR];
+const GIT_TOPLEVEL_ARGS = [GIT_ARGUMENT.REV_PARSE, GIT_ARGUMENT.SHOW_TOPLEVEL];
 
 export function commonRoot(startDir: string): string {
   const out = execFileSync('git', GIT_COMMON_DIR_ARGS, { cwd: startDir, encoding: 'utf8' }).trim();
@@ -176,7 +177,7 @@ function tryAutoForward(): void {
   } catch { /* proceed with direct mode */ }
 }
 
-if (!process.env.NODE_TEST_CONTEXT) {
+if (!process.env[NODE_TEST_CONTEXT_ENV]) {
   tryAutoForward();
 }
 
@@ -185,7 +186,7 @@ function assertStoreNotHeldByDaemon(repoRoot: string): void {
   if (isDaemonRunning(repoRoot)) {
     throw new StoreVersionError(`store is held by the daemon — run commands from the blessed root or start the daemon with \`sv-playbook daemon\``);
   }
-  if (!process.env.NODE_TEST_CONTEXT && isWorktree(getCwd())) {
+  if (!process.env[NODE_TEST_CONTEXT_ENV] && isWorktree(getCwd())) {
     const br = blessedRoot(getCwd());
     if (br !== null && !isDaemonRunning(br)) {
       throw new StoreVersionError(WORKTREE_DAEMON_REQUIRED_TEXT);

@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import { TEXT_ENCODING } from '../../platform.constants.js';
 import { CLI_FORCE_FLAG, EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
+import { extractConfirmDestructive } from '../command.js';
 import { commonRoot, worktreeRoot } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
 import { createStateBackup, latestStateBackupAgeHours } from '../../db/backup.js';
@@ -233,13 +234,11 @@ function handleShow(args: string[], io: Io): number {
 }
 
 function handleTakeover(args: string[], io: Io): number {
-  const CONFIRM_FLAG = '--confirm-destructive';
-  const hasConfirm = args.includes(CONFIRM_FLAG);
-  if (hasConfirm) args = args.filter((a) => a !== CONFIRM_FLAG);
+  const { args: runArgs, hasConfirm } = extractConfirmDestructive(args);
 
-  const hasForce = args.includes(CLI_FORCE_FLAG);
+  const hasForce = runArgs.includes(CLI_FORCE_FLAG);
 
-  const parsed = parseArgs({ args, allowPositionals: true, options: { force: { type: 'boolean' } } });
+  const parsed = parseArgs({ args: runArgs, allowPositionals: true, options: { force: { type: 'boolean' } } });
   const [packetId] = parsed.positionals;
   if (packetId === undefined || parsed.positionals.length !== 1) throw new UsageError('takeover requires <ID>');
 

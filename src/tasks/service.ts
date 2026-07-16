@@ -23,7 +23,6 @@ import {
   INSERT_EVENT_SQL,
   INSERT_LEASE_SQL,
   INSERT_PACKET_SQL,
-  LEASE_TTL_MS,
   PACKET_IMPORT_RESULT,
   type PacketImportResult,
   PACKETS_DIR, PACKETS_DOCS_DIR,
@@ -149,9 +148,10 @@ export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
   const row = store.db.prepare('SELECT session_id, worktree, acquired_at, heartbeat_at FROM leases WHERE packet_id = ?').get(packetId);
   if (row === undefined) return undefined;
   const heartbeatAt = stringColumn(row, 'heartbeat_at');
+  const leaseTtlMs = loadConfig(dirname(store.dir)).tasks.leaseTtlMs;
   return { sessionId: stringColumn(row, 'session_id'), worktree: stringColumn(row, 'worktree'),
     acquiredAt: stringColumn(row, 'acquired_at'), heartbeatAt,
-    stale: Date.now() - Date.parse(heartbeatAt) > LEASE_TTL_MS };
+    stale: Date.now() - Date.parse(heartbeatAt) > leaseTtlMs };
 }
 export function refreshHeartbeat(store: Store, sessionId: string): void {
   store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE session_id = ?').run(now(), sessionId);

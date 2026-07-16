@@ -58,7 +58,7 @@ const NO_COMMAND: Pick<PreflightPhaseReceipt, 'command' | 'exitCode' | 'signal' 
 async function createCleanWorktree(sourceWorktree: string, candidateSha: string): Promise<CleanWorktree> {
   const path = await mkdtemp(join(tmpdir(), 'svp-preflight-'));
   try {
-    execFileSync(GIT_EXECUTABLE, ['worktree', 'add', '--detach', path, candidateSha], {
+    execFileSync(GIT_EXECUTABLE, ['worktree', 'add', GIT_ARGUMENT.DETACH, path, candidateSha], {
       cwd: sourceWorktree,
       stdio: PROCESS_STDIO.PIPE,
     });

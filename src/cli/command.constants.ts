@@ -9,6 +9,7 @@ export const SESSION_ROLE_FILE = '.svp-session-role';
 export const DESTRUCTIVE_LOG_FILE = '.svp-destructive-events.log';
 export const CLI_ASSIGNMENT_SEPARATOR = '=';
 export const CLI_FORCE_FLAG = '--force';
+export const CONFIRM_DESTRUCTIVE_FLAG = '--confirm-destructive';
 export const CLI_OPTION_TYPE = {
   BOOLEAN: 'boolean',
 } as const;

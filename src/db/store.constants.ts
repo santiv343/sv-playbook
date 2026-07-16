@@ -19,6 +19,7 @@ export const SQLITE_INTEGRITY_OK = 'ok';
 export const DIGEST_ALGORITHM = { SHA256: 'sha256' } as const;
 export const DEFAULT_GIT_BRANCH = { MAIN: 'main', LEGACY: 'master' } as const;
 export const STORE_PROCESS_KIND = { DAEMON: 'daemon' } as const;
+export const NODE_TEST_CONTEXT_ENV = 'NODE_TEST_CONTEXT';
 export const DB_FILE = 'playbook.sqlite';
 export const STORE_TABLE = {
   CONSTITUTION_SECTIONS: 'constitution_sections',

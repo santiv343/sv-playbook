@@ -12,7 +12,8 @@ import { getCwd } from '../../runtime/context.js';
 import { parsePacketDocument } from '../../packets/document.js';
 import type { PacketDefinition } from '../../packets/document.types.js';
 import { FILE_EXTENSION } from '../../platform.constants.js';
-import { EVENT_TRANSITION, EXISTS_SQL, INSERT_EVENT_SQL, INSERT_PACKET_SQL, LEASE_TTL_MS, PACKETS_DOCS_DIR, PACKETS_DIR, STATUS, TASK_ID_SEPARATOR, TASK_TYPE_PREFIX } from '../../tasks/service.constants.js';
+import { EVENT_TRANSITION, EXISTS_SQL, INSERT_EVENT_SQL, INSERT_PACKET_SQL, PACKETS_DOCS_DIR, PACKETS_DIR, STATUS, TASK_ID_SEPARATOR, TASK_TYPE_PREFIX } from '../../tasks/service.constants.js';
+import { loadConfig } from '../../config.js';
 import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
 
@@ -35,7 +36,7 @@ function freshLeases(repoRoot: string): number {
     const rows = store.db.prepare('SELECT heartbeat_at FROM leases').all();
     let count = 0;
     for (const row of rows) {
-      if (Date.now() - Date.parse(stringColumn(row, 'heartbeat_at')) <= LEASE_TTL_MS) count++;
+      if (Date.now() - Date.parse(stringColumn(row, 'heartbeat_at')) <= loadConfig(repoRoot).tasks.leaseTtlMs) count++;
     }
     return count;
   } catch {

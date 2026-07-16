@@ -268,7 +268,7 @@ Detalles que importan:
 - **Takeover ≠ start.** `takeover` reclama deliberadamente un lease stale (crash recovery) o uno vivo con `--force` (reemplazo intencional). `task recover` es inspección read-only para diagnosticar antes de decidir.
 - **`blocked` nunca va directo a `done`.** Un packet bloqueado vuelve por `ready → active → review` o se dropea. Sin atajos alrededor del pipeline.
 - **Los errores de provider son muerte del worker**, no del trabajo: se salva lo commiteado (checkpoint rule), se rota de harness y se redespacha.
-- **Migraciones con red de seguridad:** detectan schema vieja → backup primero → aplican el manifiesto en orden → y si estás en una feature branch, se niegan (el bypass `migrateLive` existe solo como opción de librería y deja evento de auditoría; el mensaje de error menciona un flag `--migrate-live` que el CLI aún no expone — hallazgo registrado: IDEA-071).
+- **Migraciones con red de seguridad:** detectan schema vieja → backup primero → aplican el manifiesto en orden → y si estás en una feature branch, se niegan (el bypass `migrateLive` existe solo como opción de librería y deja evento de auditoría; no hay flag de CLI que lo exponga — IDEA-071).
 
 ---
 
@@ -336,7 +336,7 @@ El north star: **toques humanos por unidad de trabajo → 0** (medido por escala
 - **Corriendo en vivo:** consola en `:3131`, daemon con lock exclusivo en `:4141`, dispatches reales contra OpenCode (y recetas probadas para 5 harnesses).
 - **Exit codes con contrato:** `0` ok · `1` gate failure (cita la regla) · `2` usage · `3` sistema.
 - **Se construye a sí mismo:** cada feature de esta página pasó por el pipeline que describe (dogfooding TIER-2).
-- **Hallazgos abiertos** (registro vivo en `docs/backlog.md`): `--migrate-live` no expuesto en el CLI (IDEA-071), aprobación independiente mecanizada (bot/CODEOWNERS), `init` greenfield, durabilidad remota v2.
+- **Hallazgos abiertos** (registro vivo en `docs/backlog.md`): exponer un flag de migración en vivo en el CLI (IDEA-071 graduó el mensaje; el flag es feature aparte), aprobación independiente mecanizada (bot/CODEOWNERS), `init` greenfield, durabilidad remota v2.
 
 ---
 

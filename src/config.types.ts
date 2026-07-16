@@ -7,5 +7,6 @@ export type {
   OrmApplicationSqlBaseline,
   PlaybookConfig,
   ReviewPreflightConfig,
+  TasksConfig,
   Tier,
 } from './schema/config.types.js';

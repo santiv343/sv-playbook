@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { loadConfig } from '../config.js';
 import { PLAYBOOK_CONFIG_FILE_NAME } from '../config.constants.js';
 import type { Store } from '../db/store.types.js';
+import { GH_ARGUMENT, GH_EXECUTABLE } from '../gh.constants.js';
 import { GIT_ARGUMENT, GIT_EXECUTABLE, PROCESS_STDIO } from '../git.constants.js';
 import { changedFilesForBase, resolveGitMergeBase } from '../git.js';
 import { EMPTY_SIZE, TEXT_ENCODING } from '../platform.constants.js';
@@ -84,7 +85,7 @@ const PR_SHA_TIMEOUT = 15_000;
 function fetchPrHeadSha(worktree: string, pr: string | undefined): string | undefined {
   if (pr === undefined) return undefined;
   try {
-    return execFileSync('gh', ['pr', 'view', pr, '--json', 'headRefOid', '--jq', '.headRefOid'], {
+    return execFileSync(GH_EXECUTABLE, ['pr', 'view', pr, '--json', 'headRefOid', GH_ARGUMENT.JQ, '.headRefOid'], {
       cwd: worktree, encoding: 'utf8', timeout: PR_SHA_TIMEOUT, stdio: 'pipe',
     }).trim();
   } catch {

@@ -40,7 +40,6 @@ export const PACKETS_DOCS_DIR = 'docs';
 export const PACKETS_DIR = 'packets';
 export const TASK_ID_SEPARATOR = '-';
 export const DEFAULT_EVIDENCE: readonly string[] = ['final-sha'];
-export const LEASE_TTL_MS = 30 * 60 * 1000;
 export const INSERT_EVENT_SQL = 'INSERT INTO events (session_id, packet_id, command, detail, at) VALUES (?,?,?,?,?)';
 export const INSERT_LEASE_SQL = 'INSERT INTO leases (packet_id, session_id, worktree, acquired_at, heartbeat_at) VALUES (?,?,?,?,?)';
 export const DELETE_LEASE_SQL = 'DELETE FROM leases WHERE packet_id = ?';

@@ -1,6 +1,6 @@
 import { appendFileSync, closeSync, existsSync, openSync, readSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DESTRUCTIVE_LOG_FILE, DONE_COUNT_SQL, EVENT_COUNT_SQL, EXIT, SESSION_ROLE_FILE } from './command.constants.js';
+import { CONFIRM_DESTRUCTIVE_FLAG, DESTRUCTIVE_LOG_FILE, DONE_COUNT_SQL, EVENT_COUNT_SQL, EXIT, SESSION_ROLE_FILE } from './command.constants.js';
 import { DB_FILE, SQLITE_FILE_HEADER, SVP_DIR } from '../db/store.constants.js';
 import { openStore } from '../db/store.js';
 import type { DestructiveCounts, Io } from './command.types.js';
@@ -71,7 +71,7 @@ export function checkDestructiveGate(
 
   if (!hasConfirmFlag) {
     io.err(`destructive action: ${counts.done} done packet(s), ${counts.events} event(s) would be affected`);
-    io.err('pass --confirm-destructive to proceed');
+    io.err(`pass ${CONFIRM_DESTRUCTIVE_FLAG} to proceed`);
     recordDestructiveEvent(repoRoot, `destructive-gate: ${commandLabel} refused — missing confirm`);
     return EXIT.GATE_FAIL;
   }

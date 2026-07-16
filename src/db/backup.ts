@@ -6,7 +6,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { DB_FILE, SCHEMA_VERSION, SQLITE_FILE_HEADER, SQLITE_INTEGRITY_OK, SVP_DIR } from './store.constants.js';
 import { BACKUP_MANIFEST_FIELD, BACKUP_PREFIX, BACKUP_REFUSED_PREFIX, BACKUPS_DIR, BACKUP_REASON, BACKUP_RETENTION_DEFAULT, BACKUP_RETENTION_FLOOR_DEFAULT } from './backup.constants.js';
 import type { BackupOptions, BackupReport, BackupStatus, BackupStatusOptions, RestoreReport } from './backup.types.js';
-import { LEASE_TTL_MS } from '../tasks/service.constants.js';
 import { stringColumn, numberColumn } from './rows.js';
 import { RestoreError } from './backup.errors.js';
 import { loadConfig } from '../config.js';
@@ -40,14 +39,14 @@ function gitValue(repoRoot: string, args: string[]): string {
   try { return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).trim(); } catch { return 'unknown'; }
 }
 
-function freshLeaseCountDirect(dbPath: string): number {
+function freshLeaseCountDirect(dbPath: string, leaseTtlMs: number): number {
   let db: DatabaseSync;
   try { db = new DatabaseSync(dbPath); } catch { return 0; }
   try {
     const rows = db.prepare('SELECT heartbeat_at FROM leases').all();
     let count = 0;
     for (const row of rows) {
-      if (Date.now() - Date.parse(stringColumn(row, 'heartbeat_at')) <= LEASE_TTL_MS) count++;
+      if (Date.now() - Date.parse(stringColumn(row, 'heartbeat_at')) <= leaseTtlMs) count++;
     }
     return count;
   } catch { return 0; } finally { db.close(); }
@@ -261,7 +260,7 @@ function rawPreRestoreBackup(repoRoot: string, retention?: number, resolvedDir?:
 }
 
 export function createStateBackup(repoRoot: string, options: BackupOptions, resolvedDir?: string): BackupReport {
-  const freshLeases = freshLeaseCountDirect(dbPath(repoRoot));
+  const freshLeases = freshLeaseCountDirect(dbPath(repoRoot), loadConfig(repoRoot).tasks.leaseTtlMs);
   if (freshLeases > 0 && options.allowFreshLeases !== true) {
     throw new Error(`backup refused: ${freshLeases} live lease(s)`);
   }
@@ -370,7 +369,7 @@ export function restoreStateBackup(repoRoot: string, backupPath: string, force: 
   if (!existsSync(backupPath)) throw new Error(`backup file not found: ${backupPath}`);
 
   const liveDbPath = dbPath(repoRoot);
-  const freshLeases = freshLeaseCountDirect(liveDbPath);
+  const freshLeases = freshLeaseCountDirect(liveDbPath, loadConfig(repoRoot).tasks.leaseTtlMs);
   if (freshLeases > 0 && !force) {
     throw new Error(`backup refused: ${freshLeases} live lease(s)`);
   }

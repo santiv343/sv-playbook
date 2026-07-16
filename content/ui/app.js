@@ -126,7 +126,7 @@ function notifyActions() {
   for (const action of state.dashboard.workflow.humanActions) {
     if (state.notified.has(action.effectId)) continue;
     state.notified.add(action.effectId);
-    new Notification('sv-playbook requiere una decisión', { body: `${action.subjectRef} · ${action.stepKey}` });
+    new Notification('sv-playbook: decisión requerida', { body: `${action.subjectRef} · ${action.stepKey}` });
   }
 }
 

@@ -2,9 +2,11 @@ import { fileURLToPath } from 'node:url';
 import { EXIT } from '../cli/command.constants.js';
 import { loadConfig } from '../config.js';
 import { canonicalJson } from '../context/digest.js';
+import { EMPTY_SIZE } from '../platform.constants.js';
 import { evaluateDuplicateStringBaseline, inspectDuplicateStringTree } from './duplicate-string.js';
 import { evaluateLiteralComparisonBaseline, inspectLiteralComparisonTree } from './literal-comparison.js';
 import { evaluateOrmBoundaryBaseline, inspectOrmBoundaryTree } from './orm-boundary.js';
+import { inspectSuggestedCommandTree } from './suggested-command.js';
 import { SOURCE_BASELINE_STATUS } from './source-baseline.constants.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -21,9 +23,11 @@ const duplicateStrings = evaluateDuplicateStringBaseline(
   duplicateStringInventory,
   config.baseline?.duplicateStrings,
 );
+const suggestedCommands = inspectSuggestedCommandTree(REPO_ROOT);
 const valid = orm.status === SOURCE_BASELINE_STATUS.MATCH
   && literalComparisons.status === SOURCE_BASELINE_STATUS.MATCH
-  && duplicateStrings.status === SOURCE_BASELINE_STATUS.MATCH;
+  && duplicateStrings.status === SOURCE_BASELINE_STATUS.MATCH
+  && suggestedCommands.count === EMPTY_SIZE;
 
 process.stdout.write(`${canonicalJson({
   valid,
@@ -37,6 +41,11 @@ process.stdout.write(`${canonicalJson({
     ...duplicateStrings,
     count: duplicateStringInventory.count,
     digest: duplicateStringInventory.digest,
+  },
+  suggestedCommands: {
+    valid: suggestedCommands.count === EMPTY_SIZE,
+    count: suggestedCommands.count,
+    violations: suggestedCommands.violations,
   },
 })}\n`);
 if (!valid) process.exitCode = EXIT.GATE_FAIL;

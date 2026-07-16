@@ -6,7 +6,7 @@ import { getBackupStatus } from '../../db/backup.js';
 import { numberColumn, stringColumn } from '../../db/rows.js';
 import { commonRoot, openStoreReadOnly } from '../../db/store.js';
 import type { Store } from '../../db/store.types.js';
-import { LEASE_TTL_MS, PACKETS_DIR, PACKETS_DOCS_DIR, STATUS } from '../../tasks/service.constants.js';
+import { PACKETS_DIR, PACKETS_DOCS_DIR, STATUS } from '../../tasks/service.constants.js';
 import { EXIT } from '../command.constants.js';
 import { getCwd } from '../../runtime/context.js';
 import { FILE_EXTENSION } from '../../platform.constants.js';
@@ -61,12 +61,12 @@ function packetsCheck(repoRoot: string): CheckResult {
   return { label: DOCTOR_LABEL.PACKETS, status: DOCTOR_STATUS.WARN, detail: `missing ${PACKETS_DOCS_DIR}/${PACKETS_DIR}` };
 }
 
-function leaseSummary(rows: unknown[]): string {
+function leaseSummary(rows: unknown[], leaseTtlMs: number): string {
   let fresh = 0;
   let stale = 0;
   for (const row of rows) {
     const heartbeatAt = stringColumn(row, 'heartbeat_at');
-    if (Date.now() - Date.parse(heartbeatAt) > LEASE_TTL_MS) stale++;
+    if (Date.now() - Date.parse(heartbeatAt) > leaseTtlMs) stale++;
     else fresh++;
   }
   return `${fresh} fresh, ${stale} stale`;
@@ -77,7 +77,7 @@ function leasesCheck(repoRoot: string): CheckResult {
     const store = openStoreReadOnly(repoRoot);
     try {
       const rows = store.db.prepare('SELECT heartbeat_at FROM leases').all();
-      return { label: DOCTOR_LABEL.LEASES, status: DOCTOR_STATUS.OK, detail: leaseSummary(rows) };
+      return { label: DOCTOR_LABEL.LEASES, status: DOCTOR_STATUS.OK, detail: leaseSummary(rows, loadConfig(repoRoot).tasks.leaseTtlMs) };
     } finally {
       store.close();
     }
