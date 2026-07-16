@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { stringColumn } from './rows.js';
 import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
@@ -41,10 +41,18 @@ function execGitTopLevel(s: string): string {
 }
 
 // git prints forward-slash paths while node:path resolves to backslashes on
-// win32 — normalize both sides (separators and drive-letter case) before
-// comparing, or every repo root is misclassified as a worktree on Windows.
+// win32 — normalize both sides (separators, drive-letter case, and any 8.3
+// short-name aliases) before comparing, or repo roots are misclassified on
+// Windows when os.tmpdir() returns a short-name path while git returns the
+// canonical long-name path.
 function normalizePathForCompare(p: string): string {
-  return process.platform === OS_PLATFORM.WINDOWS ? resolve(p).toLowerCase() : resolve(p);
+  try {
+    const canonical = realpathSync(p);
+    return process.platform === OS_PLATFORM.WINDOWS ? canonical.toLowerCase() : canonical;
+  } catch {
+    const resolved = resolve(p);
+    return process.platform === OS_PLATFORM.WINDOWS ? resolved.toLowerCase() : resolved;
+  }
 }
 
 export function isWorktree(s: string): boolean {
