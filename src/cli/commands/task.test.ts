@@ -97,7 +97,7 @@ test('release frees an own lease and reports no lease on retry', async () => {
   });
 });
 
-test('release refuses a lease held by another session with takeover hint', async () => {
+test('release is allowed from a subdirectory of the same worktree', async () => {
   await inTempRepo(async () => {
     await writeFile('body.md', 'Do it.\n');
     const io = fakeIo();
@@ -107,9 +107,27 @@ test('release refuses a lease held by another session with takeover hint', async
 
     await mkdir('other');
     process.chdir('other');
-    assert.equal(await taskCommand.run(['release', 'REL-002'], io), 1);
-    assert.ok(io.errLines.some((line) => line.includes('lease held by another session')));
-    assert.ok(io.errLines.some((line) => line.includes('use takeover')));
+    assert.equal(await taskCommand.run(['release', 'REL-002'], io), 0);
+    assert.ok(io.outLines.includes('released REL-002'));
+  });
+});
+
+test('release refuses a lease held by another worktree with takeover hint', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'Do it.\n');
+    const io = fakeIo();
+    await taskCommand.run(['create', '--id', 'REL-003', '--title', 'X', '--write', 'src/**', '--body-file', 'body.md'], io);
+    await taskCommand.run(['move', 'REL-003', 'ready'], io);
+    await taskCommand.run(['start', 'REL-003'], io);
+
+    const { execFileSync } = await import('node:child_process');
+    const otherRoot = join(process.cwd(), 'other-wt');
+    execFileSync('git', ['worktree', 'add', '-b', 'other', otherRoot], { stdio: 'pipe' });
+    process.chdir(otherRoot);
+    const io2 = fakeIo();
+    assert.equal(await taskCommand.run(['release', 'REL-003'], io2), 1);
+    assert.ok(io2.errLines.some((line) => line.includes('lease held by another session')));
+    assert.ok(io2.errLines.some((line) => line.includes('use takeover')));
   });
 });
 

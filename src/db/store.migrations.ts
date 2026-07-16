@@ -277,6 +277,7 @@ const migrations = {
   [STORE_MIGRATION_ID.RUN_RETRY_LINKAGE]: addRunRetryLinkage,
   [STORE_MIGRATION_ID.RUN_DURATION_CEILING]: addRunDurationCeiling,
   [STORE_MIGRATION_ID.PROMOTION_RECEIPT_INTEGRATION]: addPromotionReceiptIntegration,
+  [STORE_MIGRATION_ID.WORKSPACE_BINDINGS]: noVersionSpecificMigration,
 } satisfies Readonly<Record<StoreMigrationId, StoreMigration>>;
 
 function runVersionMigration(db: Database.Database, repoRoot: string, fromVersion: number): void {
@@ -325,8 +326,7 @@ function performMigration(db: Database.Database, repoRoot: string, currentVersio
   }
 }
 
-const tooNewText = (currentVersion: number): string =>
-  `store unusable (schema v${currentVersion} does not match v${SCHEMA_VERSION}): a migration PR is likely open or just merged - git pull and retry. Restore a verified backup with 'restore state --file <snap>' (primary), or 'rebuild' from git (last resort) - never delete .svp`;
+const tooNewText = (currentVersion: number): string => `store unusable (schema v${currentVersion} does not match v${SCHEMA_VERSION}): a migration PR is likely open or just merged - git pull and retry. Restore a verified backup with 'restore state --file <snap>' (primary), or 'rebuild' from git (last resort) - never delete .svp`;
 
 export function checkVersionAndMigrate(
   db: Database.Database,

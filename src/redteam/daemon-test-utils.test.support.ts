@@ -9,6 +9,7 @@ import { DAEMON_ROUTE, DAEMON_TOKEN_FILE } from '../daemon/daemon.constants.js';
 import { SVP_DIR } from '../db/store.constants.js';
 import { HTTP_METHOD, HTTP_STATUS, OS_PLATFORM, PROCESS_EVENT, TEXT_ENCODING, WINDOWS_PROCESS_TREE_ARGUMENT, WINDOWS_PROCESS_TREE_COMMAND } from '../platform.constants.js';
 import { initTestRepo } from '../testkit.js';
+import type { CollectedProcess, JsonResponse } from './daemon-test-utils.types.js';
 
 const HTTP_HOST = '127.0.0.1';
 const CONTENT_TYPE_HEADER = 'Content-Type';
@@ -19,17 +20,6 @@ const CONN_REFUSED_TEXT = 'connection refused';
 const EXIT_POLL_MS = 5000;
 const HEALTH_ATTEMPTS = 30;
 const HEALTH_DELAY_MS = 500;
-
-export interface JsonResponse {
-  statusCode: number | undefined;
-  body: string;
-}
-
-export interface CollectedProcess {
-  status: number | null;
-  stdout: string;
-  stderr: string;
-}
 
 export function freePort(): Promise<number> {
   return new Promise((resolve) => {

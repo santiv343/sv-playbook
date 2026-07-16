@@ -183,7 +183,7 @@ function handleStart(args: string[], io: Io): number {
   const [packetId] = args;
   if (args.length !== 1 || packetId === undefined) throw new UsageError('start requires <ID>');
   return withStore((store) => {
-    const sessionId = ensureSession(store, getCwd());
+    const sessionId = ensureSession(store, worktreeRoot(getCwd()));
     const existing = leaseOf(store, packetId);
     startPacket(store, sessionId, getCwd(), packetId);
     io.out(existing !== undefined && existing.sessionId === sessionId
@@ -199,7 +199,7 @@ async function handleMove(args: string[], io: Io): Promise<number> {
   if (!isPacketStatus(status)) throw new UsageError(`unknown status: ${status}`);
   if (status === STATUS.DONE) throw new UsageError('use `sv-playbook promotion run --candidate <ID> --review-run <RUN-ID>` to set a task as done');
   return withStoreAsync(async (store) => {
-    const sessionId = ensureSession(store, getCwd());
+    const sessionId = ensureSession(store, worktreeRoot(getCwd()));
     if (status !== STATUS.REVIEW) {
       const from = movePacket(store, sessionId, packetId, status);
       io.out(`moved ${packetId}: ${from} -> ${status}`);
@@ -253,7 +253,7 @@ function handleTakeover(args: string[], io: Io): number {
   }
 
   return withStore((store, repoRoot) => {
-    const sessionId = ensureSession(store, getCwd());
+    const sessionId = ensureSession(store, worktreeRoot(getCwd()));
     const report = takeoverPacket(store, sessionId, getCwd(), packetId, parsed.values.force === true);
     if (parsed.values.force === true) backupForEvent(repoRoot, BACKUP_EVENT.FORCE_TAKEOVER, BACKUP_REASON.FORCE_TAKEOVER, true);
     io.out(`takeover ${packetId}: lease transferred`);
@@ -266,7 +266,7 @@ function handleRelease(args: string[], io: Io): number {
   const [packetId] = args;
   if (args.length !== 1 || packetId === undefined) throw new UsageError('release requires <ID>');
   return withStore((store) => {
-    releaseLease(store, ensureSession(store, getCwd()), packetId);
+    releaseLease(store, ensureSession(store, worktreeRoot(getCwd())), packetId);
     io.out(`released ${packetId}`);
     io.out(`warning: ${packetId} stays active without a lease; the next owner must run task takeover ${packetId}`);
     return EXIT.OK;
@@ -277,7 +277,7 @@ function handleNote(args: string[], io: Io): number {
   const [packetId, ...parts] = args;
   if (packetId === undefined || parts.length === 0) throw new UsageError('note requires <ID> <text...>');
   return withStore((store) => {
-    notePacket(store, ensureSession(store, getCwd()), packetId, parts.join(' '));
+    notePacket(store, ensureSession(store, worktreeRoot(getCwd())), packetId, parts.join(' '));
     io.out(`noted ${packetId}`);
     return EXIT.OK;
   });

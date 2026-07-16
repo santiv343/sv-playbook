@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 import { execFileSync } from 'node:child_process';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
-import { commonRoot, openStore } from '../../db/store.js';
+import { commonRoot, openStore, worktreeRoot } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
 import { ensureSession, movePacket } from '../../tasks/service.js';
 import { EVENT_NOTE, STATUS } from '../../tasks/service.constants.js';
@@ -115,7 +115,7 @@ function createExecutor(repoRoot: string, io: Io): ReconcilerExecutor {
     taskClose(packetId: string, pr: string) {
       const store = openStore(repoRoot);
       try {
-        const sessionId = ensureSession(store, getCwd());
+        const sessionId = ensureSession(store, worktreeRoot(getCwd()));
         store.db.prepare('UPDATE packets SET pr = ? WHERE id = ?').run(pr, packetId);
         movePacket(store, sessionId, packetId, STATUS.DONE);
         io.out(`reconciler: closed ${packetId} -> done (PR #${pr})`);

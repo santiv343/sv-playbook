@@ -1,14 +1,14 @@
 import Database from 'better-sqlite3';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { stringColumn } from './rows.js';
 import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
 import { GIT_ARGUMENT } from '../git.constants.js';
 import { OS_PLATFORM } from '../platform.constants.js';
 import { getCwd } from '../runtime/context.js';
 import { StoreVersionError } from './store.errors.js';
-import { DAEMON_DEFAULT_PORT, DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE } from '../daemon/daemon.constants.js';
+import { DAEMON_DEFAULT_PORT, DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE, GIT_DIR_NAME } from '../daemon/daemon.constants.js';
 import { forwardToDaemonSync } from '../daemon/client.js';
 import type { OpenStoreOptions, Store } from './store.types.js';
 import { checkVersionAndMigrate, migratePacketColumn } from './store.migrations.js';
@@ -73,7 +73,7 @@ export function readDaemonToken(repoRoot: string): string | null {
 export function blessedRoot(s: string): string | null {
   try {
     const commonDir = resolve(s, execGitCommonDir(s));
-    const localDotGit = resolve(s, '.git');
+    const localDotGit = resolve(s, GIT_DIR_NAME);
     if (normalizePathForCompare(commonDir) === normalizePathForCompare(localDotGit)) return null;
     return dirname(commonDir);
   } catch { return null; }
@@ -90,24 +90,29 @@ export function readDaemonPort(repoRoot: string): number {
   return DAEMON_DEFAULT_PORT;
 }
 
-export function canonicalWorkspace(cwd: string): string {
+// ── Workspace bindings (workspace → session, persisted) ──
+// The binding key is the canonical worktree root: linked worktrees get their
+// own binding, while subdirectories and other aliases of the same worktree
+// collapse onto one. Paths outside git fall back to the resolved cwd.
+function bindingWorkspace(cwd: string): string {
   try {
-    const topLevel = execGitTopLevel(cwd);
-    const commonDirPath = dirname(resolve(cwd, execGitCommonDir(cwd)));
-    if (normalizePathForCompare(commonDirPath) !== normalizePathForCompare(topLevel)) {
-      return normalizePathForCompare(commonDirPath);
-    }
-    return normalizePathForCompare(topLevel);
+    return normalizePathForCompare(execGitTopLevel(cwd));
   } catch {
     return normalizePathForCompare(cwd);
   }
 }
 
-function resolveAlias(workspace: string): string {
+// A workspace belongs to the daemon's repository when it sits inside the
+// blessed root or when its git common dir resolves back to it (linked
+// worktrees may live anywhere on disk).
+export function workspaceWithinRepo(repoRoot: string, cwd: string): boolean {
+  const workspace = bindingWorkspace(cwd);
+  const root = normalizePathForCompare(repoRoot);
+  if (workspace === root || workspace.startsWith(`${root}${sep}`)) return true;
   try {
-    return resolve(workspace);
+    return normalizePathForCompare(commonRoot(workspace)) === root;
   } catch {
-    return workspace;
+    return false;
   }
 }
 
@@ -116,28 +121,38 @@ function boundSession(store: Store, workspace: string): string | undefined {
   return row === undefined ? undefined : stringColumn(row, 'session_id');
 }
 
-function assertMatchingBinding(workspace: string, actual: string, expected: string, detail?: string): void {
+function assertMatchingBinding(workspace: string, actual: string, expected: string): void {
   if (actual === expected) return;
-  const resolved = detail === undefined ? '' : ` ${detail}`;
-  throw new StoreVersionError(`workspace binding mismatch: ${workspace}${resolved} is bound to session ${actual}, received ${expected}`);
+  throw new StoreVersionError(`workspace binding mismatch: ${workspace} is bound to session ${actual}, received ${expected}`);
+}
+
+// A claimed session that is already persisted for a different workspace is a
+// cross-bind attempt: reject it instead of creating a second identity link.
+function assertClaimMatchesSession(store: Store, workspace: string, sessionId: string): void {
+  const row = store.db.prepare('SELECT worktree FROM sessions WHERE id = ?').get(sessionId);
+  if (row === undefined) return;
+  const worktree = stringColumn(row, 'worktree');
+  if (normalizePathForCompare(worktree) !== workspace) {
+    throw new StoreVersionError(`session ${sessionId} belongs to workspace ${worktree}, not ${workspace}`);
+  }
 }
 
 export function resolveAndBindWorkspace(store: Store, sessionId: string | null, cwd: string): { workspace: string; sessionId: string } {
-  const canonical = canonicalWorkspace(cwd);
-  const canonicalBinding = boundSession(store, canonical);
-  if (sessionId === null) return { workspace: canonical, sessionId: canonicalBinding ?? '' };
-  if (canonicalBinding !== undefined) {
-    assertMatchingBinding(resolveAlias(cwd), canonicalBinding, sessionId);
-    return { workspace: canonical, sessionId };
+  const workspace = bindingWorkspace(cwd);
+  const existing = boundSession(store, workspace);
+  if (existing !== undefined) {
+    if (sessionId === null) throw new StoreVersionError(`workspace ${workspace} is already bound: a session claim is required`);
+    assertMatchingBinding(workspace, existing, sessionId);
+    return { workspace, sessionId };
   }
-  const alias = resolveAlias(cwd);
-  const aliasBinding = alias === canonical ? undefined : boundSession(store, alias);
-  if (aliasBinding !== undefined) assertMatchingBinding(alias, aliasBinding, sessionId, `resolves to ${canonical}`);
-  return { workspace: canonical, sessionId };
+  if (sessionId === null) return { workspace, sessionId: '' };
+  assertClaimMatchesSession(store, workspace, sessionId);
+  bindWorkspace(store, sessionId, workspace);
+  return { workspace, sessionId };
 }
 
 export function bindWorkspace(store: Store, sessionId: string, workspace: string): void {
-  const canonical = canonicalWorkspace(workspace);
+  const canonical = bindingWorkspace(workspace);
   const existing = boundSession(store, canonical);
 
   if (existing !== undefined) {
@@ -158,9 +173,13 @@ function tryAutoForward(): void {
     const args = process.argv.slice(2);
     if (args[0] === STORE_PROCESS_KIND.DAEMON) return;
 
-    const br = blessedRoot(cwd);
+    // Classify at the worktree root: from a subdirectory the local .git entry
+    // differs from the common dir, which would misclassify plain
+    // subdirectories of the primary checkout as linked worktrees.
+    const worktree = worktreeRoot(cwd);
+    const br = blessedRoot(worktree);
     // br is non-null in worktrees, null at root (where .git IS the common dir)
-    const repoRoot = br ?? worktreeRoot(cwd);
+    const repoRoot = br ?? worktree;
 
     if (!isDaemonRunning(repoRoot)) {
       // Worktree without daemon: error with guidance
