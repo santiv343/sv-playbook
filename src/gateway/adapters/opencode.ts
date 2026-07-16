@@ -251,11 +251,17 @@ function messageFinish(info: Record<string, unknown>): string {
   return typeof info.finish === 'string' ? info.finish : '';
 }
 
+function observationState(busy: boolean, lastInfo: Record<string, unknown> | undefined): AdapterRunObservation['state'] {
+  if (busy) return ADAPTER_RUN_STATE.RUNNING;
+  if (lastInfo === undefined) return ADAPTER_RUN_STATE.UNKNOWN;
+  return finalState(lastInfo);
+}
+
 function finalState(info: Record<string, unknown>): AdapterRunObservation['state'] {
   if (info.error !== undefined) return ADAPTER_RUN_STATE.FAILED;
   const finish = messageFinish(info);
   if (finish === OPENCODE_FINISH.ABORT || finish === OPENCODE_FINISH.CANCELLED) return ADAPTER_RUN_STATE.CANCELLED;
-  return finish.length > 0 ? ADAPTER_RUN_STATE.COMPLETED : ADAPTER_RUN_STATE.RUNNING;
+  return finish.length > 0 ? ADAPTER_RUN_STATE.COMPLETED : ADAPTER_RUN_STATE.UNKNOWN;
 }
 
 function providerFailure(info: Record<string, unknown> | undefined): AdapterRunFailure | undefined {
@@ -329,9 +335,10 @@ function toObservation(
   const relevant = messagesAfterParent(rawMessages, request.messageId);
   const busy = isBusy(rawStatuses, request.sessionId);
   if (relevant === undefined) {
+    const state: AdapterRunObservation['state'] = busy ? ADAPTER_RUN_STATE.RUNNING : ADAPTER_RUN_STATE.UNKNOWN;
     return {
       adapterId: OPENCODE_ADAPTER_ID, sessionId: request.sessionId, messageId: request.messageId,
-      state: 'running', progressToken: digest({ delivery: 'pending', busy }), observedToolIds: [],
+      state, progressToken: digest({ delivery: 'pending', busy }), observedToolIds: [],
       evidence: { providerState: busy ? 'busy' : 'idle', deliveryState: 'pending' },
     };
   }
@@ -341,7 +348,7 @@ function toObservation(
   const lastAssistant = assistants.at(-1);
   const lastInfo = lastAssistant === undefined ? undefined : messageInfo(lastAssistant);
   const failure = providerFailure(lastInfo);
-  const state = busy || lastInfo === undefined ? 'running' : finalState(lastInfo);
+  const state = observationState(busy, lastInfo);
   const evidence = progressEvidence(relevant);
   const output = terminalOutput(lastAssistant, state);
   const candidate = candidateOutput(assistants, state);
