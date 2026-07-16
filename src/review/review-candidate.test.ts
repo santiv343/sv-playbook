@@ -15,7 +15,7 @@ import { REFERENCE_KIND } from '../platform.constants.js';
 import { requireActiveRoleCatalog } from '../roles/catalog-activation.js';
 import { bootstrapBundledRoleCatalog } from '../roles/bundled-profile-bootstrap.js';
 import { BUNDLED_ROLE_ID } from '../roles/bundled-profile.constants.js';
-import { createPacket, ensureSession, movePacket, startPacket } from '../tasks/service.js';
+import { createPacket, ensureSession, movePacket, notePacket, startPacket } from '../tasks/service.js';
 import { movePacketToReview } from '../tasks/review-transition.js';
 import { loadWorkDefinition } from '../tasks/work-definitions.js';
 import { validateArtifact } from '../contracts/artifacts.js';
@@ -234,6 +234,80 @@ test('review candidate is assembled for already-integrated work (empty diff)', a
   assert.equal(value.candidate.integration, REVIEW_CANDIDATE_INTEGRATION.INTEGRATED);
   assert.deepEqual(value.candidate.changedFiles, []);
   assert.equal(value.candidate.baseSha, candidate.candidateSha);
+  store.close();
+});
+
+test('review candidate evidence includes packet notes attached before candidacy', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-review-candidate-notes-'));
+  git(root, ['init', '-b', 'main']);
+  git(root, ['config', 'user.email', 'test@example.com']);
+  git(root, ['config', 'user.name', 'Test']);
+  await writeFile(join(root, 'README.md'), 'base\n', 'utf8');
+  await writeFile(join(root, '.gitignore'), '.svp/\n.svp-session\n.worktrees/\n.verify-*\n', 'utf8');
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({
+    verifyCommand: 'node .verify-runner.cjs',
+    reviewPreflight: {
+      preparationCommand: "node -e \"require('node:fs').writeFileSync('.verify-dependency','available')\"",
+      noOutputTimeoutMs: 5_000,
+    },
+  }), 'utf8');
+  await writeFile(join(root, '.verify-runner.cjs'),
+    "if (!require('node:fs').existsSync('.verify-dependency')) process.exit(2);\n", 'utf8');
+  git(root, ['add', 'README.md', '.gitignore', 'playbook.config.json']);
+  git(root, ['add', '-f', '.verify-runner.cjs']);
+  git(root, ['commit', '-m', 'base']);
+
+  const store = openStore(root);
+  bootstrapBundledRoleCatalog(store);
+  const catalog = requireActiveRoleCatalog(store);
+  const createdAt = new Date().toISOString();
+  store.orm.insert(roleProjectionReceipts).values({
+    id: 'RPR-NOTES',
+    adapterId: 'test-projection',
+    catalogVersion: catalog.version,
+    catalogDigest: catalog.catalogDigest,
+    profileDigest: 'sha256:test-profile',
+    artifactDigest: 'sha256:test-artifact',
+    createdAt,
+  }).run();
+  store.orm.insert(roleProjectionActivation).values({
+    adapterId: 'test-projection',
+    receiptId: 'RPR-NOTES',
+    activatedAt: createdAt,
+  }).run();
+  createPacket(store, root, {
+    id: 'REVIEW-NOTES-001',
+    title: 'Notes evidence fixture',
+    dependsOn: [],
+    writeSet: ['src/**'],
+    requirements: ['Carry durable notes to the reviewer.'],
+    evidenceRequired: [],
+    tags: ['backend'],
+  }, 'Notes reach the reviewer.');
+  git(root, ['add', 'docs/packets/REVIEW-NOTES-001.md']);
+  git(root, ['commit', '-m', 'task definition']);
+  const definition = loadWorkDefinition(store, 'REVIEW-NOTES-001');
+  movePacket(store, undefined, definition.packetId, 'ready');
+  const sessionId = ensureSession(store, root);
+  startPacket(store, sessionId, root, definition.packetId);
+  notePacket(store, sessionId, definition.packetId, 'first closing receipt');
+  notePacket(store, sessionId, definition.packetId, 'second closing receipt');
+
+  await movePacketToReview(store, sessionId, definition.packetId);
+  const candidate = store.orm.select().from(reviewCandidates).get();
+  assert.ok(candidate);
+  const artifactRow = store.orm.select({ valueJson: workflowArtifacts.valueJson }).from(workflowArtifacts)
+    .where(eq(workflowArtifacts.id, candidate.artifactId)).get();
+  assert.ok(artifactRow);
+  const value = s.json(s.object({
+    evidence: s.object({
+      notes: s.array(s.object({ at: s.nonEmptyString(), detail: s.nonEmptyString() })),
+    }),
+  })).parse(artifactRow.valueJson);
+  const notes = value.evidence.notes;
+  assert.deepEqual(notes.map((note) => note.detail), ['first closing receipt', 'second closing receipt']);
+  const timestamps = notes.map((note) => note.at);
+  assert.deepEqual(timestamps, [...timestamps].sort());
   store.close();
 });
 

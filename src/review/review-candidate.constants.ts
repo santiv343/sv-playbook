@@ -1,13 +1,16 @@
 const REVIEW_CANDIDATE_NAME = 'review-candidate';
-// v1 is frozen: immutable artifacts in live stores reference review-candidate-v1,
-// and ensureManagedArtifactContract refuses in-place schema drift once artifacts exist.
+// v1 and v2 are frozen: immutable artifacts in live stores reference them, and
+// ensureManagedArtifactContract refuses in-place schema drift once artifacts exist.
 export const REVIEW_CANDIDATE_CONTRACT_REF = `${REVIEW_CANDIDATE_NAME}-v1`;
 export const REVIEW_CANDIDATE_CONTRACT_REF_V2 = `${REVIEW_CANDIDATE_NAME}-v2`;
+export const REVIEW_CANDIDATE_CONTRACT_REF_V3 = `${REVIEW_CANDIDATE_NAME}-v3`;
 export const REVIEW_CANDIDATE_KIND = REVIEW_CANDIDATE_NAME;
 export const REVIEW_CANDIDATE_SOURCE_KIND = REVIEW_CANDIDATE_NAME;
 export const REVIEW_CANDIDATE_ID_PREFIX = 'RC-';
 export const REVIEW_CANDIDATE_ARTIFACT_ID_PREFIX = 'ART-RC-';
 export const REQUIRED_INPUT_POLICY_COUNT = 1;
+// evidence.notes carries at most the packet's most recent durable notes.
+export const REVIEW_CANDIDATE_NOTES_LIMIT = 20;
 
 export const REVIEW_CANDIDATE_INTEGRATION = {
   PENDING: 'pending-integration',
@@ -27,6 +30,7 @@ export const REVIEW_CANDIDATE_ERROR = {
 
 const stringValueSchema = () => ({ type: JSON_SCHEMA_TYPE.STRING, minLength: 1 } as const);
 const versionSchema = () => ({ type: JSON_SCHEMA_TYPE.INTEGER, minimum: 1 } as const);
+const dateTimeSchema = () => ({ type: JSON_SCHEMA_TYPE.STRING, format: 'date-time' } as const);
 const closedObject = <T extends Readonly<Record<string, unknown>>>(properties: T) => ({
   type: JSON_SCHEMA_TYPE.OBJECT,
   required: Object.keys(properties),
@@ -67,7 +71,7 @@ const REVIEW_CANDIDATE_PROPERTIES = {
   candidate: closedObject(CANDIDATE_PROPERTIES),
   producer: closedObject({ sessionId: stringValueSchema() }),
   evidence: closedObject(EVIDENCE_PROPERTIES),
-  createdAt: { type: JSON_SCHEMA_TYPE.STRING, format: 'date-time' },
+  createdAt: dateTimeSchema(),
 } as const;
 
 export const REVIEW_CANDIDATE_SCHEMA = {
@@ -100,5 +104,31 @@ const REVIEW_CANDIDATE_PROPERTIES_V2 = {
 export const REVIEW_CANDIDATE_SCHEMA_V2 = {
   $schema: JSON_SCHEMA_DRAFT_2020_12,
   ...closedObject(REVIEW_CANDIDATE_PROPERTIES_V2),
+} as const;
+
+// v3: the reviewer needs the packet's durable notes as evidence (ENG-ENTRY-004:
+// no claim without literal output). `evidence.notes` is an OPTIONAL array of
+// closed note objects so v2-shaped values (no field) still validate — v2
+// artifacts are immutable and stay validated against the frozen v2 schema.
+const REVIEW_CANDIDATE_NOTES_FIELD = 'notes';
+const NOTE_PROPERTIES = {
+  at: dateTimeSchema(),
+  detail: stringValueSchema(),
+} as const;
+const EVIDENCE_PROPERTIES_V3 = {
+  ...EVIDENCE_PROPERTIES,
+  notes: { type: JSON_SCHEMA_TYPE.ARRAY, items: closedObject(NOTE_PROPERTIES) },
+} as const;
+const evidenceSchemaV3 = () => {
+  const base = closedObject(EVIDENCE_PROPERTIES_V3);
+  return { ...base, required: base.required.filter((key) => key !== REVIEW_CANDIDATE_NOTES_FIELD) };
+};
+const REVIEW_CANDIDATE_PROPERTIES_V3 = {
+  ...REVIEW_CANDIDATE_PROPERTIES_V2,
+  evidence: evidenceSchemaV3(),
+} as const;
+export const REVIEW_CANDIDATE_SCHEMA_V3 = {
+  $schema: JSON_SCHEMA_DRAFT_2020_12,
+  ...closedObject(REVIEW_CANDIDATE_PROPERTIES_V3),
 } as const;
 import { JSON_SCHEMA_DRAFT_2020_12, JSON_SCHEMA_TYPE } from '../schema/json-schema.constants.js';

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { eq } from 'drizzle-orm';
 import { REVIEW_CANDIDATE_INTEGRATION } from '../review/review-candidate.constants.js';
+import { s } from '../schema/index.js';
 import { packets } from '../tasks/schema.constants.js';
 import { STATUS } from '../tasks/service.constants.js';
 import { movePacket } from '../tasks/service.js';
@@ -10,6 +11,7 @@ import { PROMOTION_ERROR, PROMOTION_STATUS, PROMOTION_VERDICT } from './promotio
 import { PromotionError } from './promotion.errors.js';
 import { candidateStatus } from './promotion.repository.js';
 import { readPromotionDashboard } from './promotion.receipts.js';
+import { promotionReviewVerdicts } from './promotion.schema.constants.js';
 import { gitSha, promotionFixture } from './promotion.test.support.js';
 
 function request(fixture: Awaited<ReturnType<typeof promotionFixture>>) {
@@ -64,6 +66,22 @@ test('reviewer rejection cannot produce done', async () => {
   );
   assert.equal(gitSha(fixture.root, 'main'), fixture.baseSha);
   assert.equal(fixture.store.orm.select({ status: packets.status }).from(packets).get()?.status, STATUS.REVIEW);
+  fixture.store.close();
+});
+
+test('a request-changes verdict persists its rationale', async () => {
+  const rationale = 'Candidate carries no machine-readable evidence.';
+  const fixture = await promotionFixture({ verdict: PROMOTION_VERDICT.REQUEST_CHANGES, rationale });
+  await assert.rejects(
+    new PromotionController(fixture.store, fixture.root).promote(request(fixture)),
+    (error: unknown) => error instanceof PromotionError && error.code === PROMOTION_ERROR.REVIEW_REJECTED,
+  );
+  const verdict = fixture.store.orm.select({ payloadJson: promotionReviewVerdicts.payloadJson })
+    .from(promotionReviewVerdicts).get();
+  assert.ok(verdict);
+  const persisted = s.json(s.object({ payload: s.object({ rationale: s.nonEmptyString() }) }))
+    .parse(verdict.payloadJson);
+  assert.equal(persisted.payload.rationale, rationale);
   fixture.store.close();
 });
 

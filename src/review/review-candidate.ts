@@ -17,17 +17,18 @@ import { roleCatalogActivation, roleResponsibilities } from '../roles/schema.con
 import type { StoredWorkDefinition } from '../tasks/work-definition.types.js';
 import { packets } from '../tasks/schema.constants.js';
 import { taskEvents } from '../tasks/schema.constants.js';
-import { EVENT_EVIDENCE } from '../tasks/service.constants.js';
+import { EVENT_EVIDENCE, EVENT_NOTE } from '../tasks/service.constants.js';
 import type { LeaseInfo } from '../tasks/service.types.js';
 import { runPreflight } from './preflight.js';
 import { PREFLIGHT_EVENT_PREFIX, PREFLIGHT_STATUS, type PreflightReport } from './preflight.types.js';
 import {
   REVIEW_CANDIDATE_ARTIFACT_ID_PREFIX,
-  REVIEW_CANDIDATE_CONTRACT_REF_V2,
+  REVIEW_CANDIDATE_CONTRACT_REF_V3,
   REVIEW_CANDIDATE_ERROR,
   REVIEW_CANDIDATE_ID_PREFIX,
   REVIEW_CANDIDATE_INTEGRATION,
   REVIEW_CANDIDATE_KIND,
+  REVIEW_CANDIDATE_NOTES_LIMIT,
   REVIEW_CANDIDATE_SOURCE_KIND,
   REQUIRED_INPUT_POLICY_COUNT,
 } from './review-candidate.constants.js';
@@ -35,6 +36,7 @@ import { responsibilityInputPolicies, reviewCandidates } from './schema.constant
 import type {
   ManualInputBinding,
   PendingReviewCandidate,
+  ReviewCandidateNote,
   ReviewCandidateValue,
   ReviewProjectionEvidence,
 } from './review-candidate.types.js';
@@ -81,6 +83,19 @@ function assertPreflight(report: PreflightReport): void {
     const detail = unacceptable.map((check) => `${check.name}:${check.status}`).join(', ');
     throw new ContextError(REVIEW_CANDIDATE_ERROR.EVIDENCE_FAILED, detail || 'candidate SHA is unavailable');
   }
+}
+
+// The packet's durable notes are the reviewer's evidence rail: most recent first
+// via seq, bounded, then reversed back into chronological order.
+function evidenceNotes(store: Store, packetId: string): ReviewCandidateNote[] {
+  const rows = store.orm.select({ at: taskEvents.at, detail: taskEvents.detail })
+    .from(taskEvents)
+    .where(and(eq(taskEvents.packetId, packetId), eq(taskEvents.command, EVENT_NOTE)))
+    .orderBy(desc(taskEvents.seq))
+    .limit(REVIEW_CANDIDATE_NOTES_LIMIT)
+    .all();
+  return rows.reverse().flatMap((row) =>
+    row.detail === null || row.detail === '' ? [] : [{ at: row.at, detail: row.detail }]);
 }
 
 function candidateGitOutput(worktree: string, args: readonly string[], maxBuffer: number): string {
@@ -171,10 +186,15 @@ export async function assembleReviewCandidate(
     },
     candidate: { sha: report.headSha, branch, ...content },
     producer: { sessionId: lease.sessionId },
-    evidence: { preflight: report, catalog, projections: activeProjections(store, catalog) },
+    evidence: {
+      preflight: report,
+      catalog,
+      projections: activeProjections(store, catalog),
+      notes: evidenceNotes(store, definition.packetId),
+    },
     createdAt,
   };
-  validateArtifact(store, REVIEW_CANDIDATE_CONTRACT_REF_V2, value);
+  validateArtifact(store, REVIEW_CANDIDATE_CONTRACT_REF_V3, value);
   const valueJson = canonicalJson(value);
   return {
     id: `${REVIEW_CANDIDATE_ID_PREFIX}${uuidv7()}`,
@@ -208,7 +228,7 @@ export function persistReviewCandidate(
   }
   store.orm.insert(workflowArtifacts).values({
     id: pending.artifactId,
-    contractRef: REVIEW_CANDIDATE_CONTRACT_REF_V2,
+    contractRef: REVIEW_CANDIDATE_CONTRACT_REF_V3,
     valueJson: pending.valueJson,
     valueDigest: pending.valueDigest,
     producerKind: WORKFLOW_EXECUTOR.RUNTIME,
