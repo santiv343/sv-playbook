@@ -10,8 +10,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Exclude repo from Windows Defender scanning
+        if: runner.os == 'Windows'
+        run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
+        shell: powershell
       - uses: actions/setup-node@v4
         with:
           node-version: '22.13'
