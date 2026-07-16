@@ -57,3 +57,11 @@ Everything that is a project's or a person's opinion — the workflow/state mach
 ## PRINCIPLE-014 — Quality is the operating mode
 
 Agents must prefer the best durable design they can justify over the quickest local patch. A repeated correction from the founder is not a reminder; it is a missing rail, schema, gate, config, rubric entry, or task. If the CLI/process lacks a first-class path for required work, the answer is to add that path, not to normalize manual workaround habits. Reviews fail changes that solve only the observed symptom while leaving the same class of failure open. Speed and cost matter, but never by making ambiguity, hidden state, hand-authored generated artifacts, or unverifiable claims acceptable.
+
+## PRINCIPLE-015 — Subtraction has the same machinery as addition
+
+Every mechanism the system gains must be removable by the same pipeline that added it: removal work is a first-class packet type with its own evidence form (metrics delta + telemetry of non-use + verify green). The complexity budget (PRINCIPLE-005) is measured, not declared: the periodic report tracks LOC, table count, concept count, and mechanism count against the tier, and a growing gap is a finding. Rationale: at agent velocity the incident→rail loop runs 50-100x faster than at human velocity; without a subtraction force of equal mechanical strength, accumulation outruns judgment in days, not years (this repo: 25 subsystems in 9 days, 3.5% of commits net-negative).
+
+## Vocabulary — gate vs rail (NAME-1, decided 2026-07-16)
+
+A **gate** is a mechanical checkpoint that REFUSES a specific transition or operation when its condition fails (verify on move→review, write_set on candidate, depends_on on start). A gate has a refusal moment and a typed rejection. A **rail** is any durable constraint that keeps work on the intended path — gates are one kind of rail, alongside schemas, write_sets, lifecycles, adapter boundaries, and generated artifacts. A rail makes the wrong thing inexpressible or immediately visible, whether or not it has a single refusal point. When adding constraint machinery, name which of the two it is.

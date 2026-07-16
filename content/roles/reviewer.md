@@ -31,6 +31,7 @@ asked twice).
 | 7 | JUDGMENT | Walk `docs review` item by item against the diff; record a verdict per item, none skipped | Verdict per item | Findings → REQUEST CHANGES with file:line + exact fix instruction. |
 | 8 | JUDGMENT | Taste pass: diff vs every entry in the three taste ledgers (`content/taste/product.md`, `content/taste/engineering.md`, `content/taste/decisions.md`). A finding NOT covered by any entry is an escalation — resolving it appends a new entry to the appropriate ledger (learning loop). Corrections you request become proposed taste additions. | — | Same as 7. |
 | 9 | JUDGMENT | Per new/changed test: name the plausible regression it would catch; no answer = vacuous | Every test has an answer | Finding "vacuous test <name>" + the missing scenario. |
+| 10 | EXEC | Mechanism-necessity scan: diff introduces a new table / receipt kind / gate / command / module / config surface? | The packet body contains the ENTRY-013 justification (existing mechanism named + why it cannot carry the case) | REQUEST_CHANGES citing ENTRY-013. |
 
 ## Merge procedure (when merge-on-approved is delegated, D25)
 
