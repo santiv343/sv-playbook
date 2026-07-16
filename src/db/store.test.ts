@@ -112,17 +112,21 @@ test('the store runs in WAL mode with EXCLUSIVE locking (single-writer enforceme
   assert.equal(stringColumn(lockRow, 'locking_mode'), 'exclusive');
 
   // EXCLUSIVE mode holds the write lock after the first write; a second
-  // connection attempting to write receives SQLITE_BUSY.
+  // process attempting to write receives SQLITE_BUSY. The probe must be a
+  // child process: POSIX fcntl locks are per-process, so an in-process second
+  // connection would always acquire the lock.
   store.db.exec(`INSERT INTO sessions (id, worktree, started_at) VALUES ('${randomUUID()}', '/tmp/wt1', datetime('now'))`);
 
   const dbPath = join(root, '.svp', 'playbook.sqlite');
-  const db2 = new DatabaseSync(dbPath);
-  assert.throws(
-    () => { db2.exec(`INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('pk1', 'T1', '/tmp', 'draft', '[]', datetime('now'), datetime('now'))`); },
-    /database is locked/,
-  );
+  const result = spawnSync(process.execPath, ['-e', `
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(${JSON.stringify(dbPath)});
+    db.exec('BEGIN IMMEDIATE');
+  `], { encoding: 'utf8', timeout: 5000 });
+  assert.notEqual(result.status, 0, `second writer must fail with SQLITE_BUSY, got exit ${result.status}: ${result.stderr}`);
+  const msg = result.stderr + result.stdout;
+  assert.ok(/locked/i.test(msg) || /busy/i.test(msg), `stderr must mention locked/busy: ${result.stderr}`);
 
-  db2.close();
   store.close();
 });
 
