@@ -179,10 +179,12 @@ test('OpenCode adapter submits once and reports actual terminal tools and output
     const observationRequest: AdapterObservationRequest = { ...turnRequest, messageId: receipt.messageId };
     const delivered = submitted;
     delete state.submitted;
+    state.busy = true;
     const pending = await adapter.observeRun(observationRequest);
     assert.equal(pending.state, 'running');
     assert.equal(pending.evidence.deliveryState, 'pending');
     state.submitted = delivered;
+    state.busy = false;
     const observation = await adapter.observeRun(observationRequest);
     assert.equal(observation.state, 'completed');
     assert.equal(observation.output, '{"ok":true}');

@@ -131,6 +131,7 @@ export const ADAPTER_RUN_STATE = {
   COMPLETED: 'completed',
   FAILED: 'failed',
   CANCELLED: 'cancelled',
+  UNKNOWN: 'unknown',
 } as const;
 
 export type AdapterRunState = typeof ADAPTER_RUN_STATE[keyof typeof ADAPTER_RUN_STATE];

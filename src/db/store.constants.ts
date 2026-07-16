@@ -1,4 +1,4 @@
-import { EVENT_EVIDENCE, EVENT_IMPORTED, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES, STATUS } from '../tasks/service.constants.js';
+import { EVENT_AMEND_ACTIVE, EVENT_EVIDENCE, EVENT_IMPORTED, EVENT_NOTE, EVENT_TAKEOVER, EVENT_TRANSITION, PACKET_STATUSES, STATUS } from '../tasks/service.constants.js';
 import { CONTEXT_STORE_SCHEMA } from './context.schema.constants.js';
 import { ORCHESTRATION_STORE_SCHEMA } from './orchestration.schema.constants.js';
 import { ROLE_CATALOG_STORE_SCHEMA } from './role-catalog.schema.constants.js';
@@ -35,7 +35,7 @@ export const sqlInList = (values: readonly string[]): string => values.map(sqlSt
 const TRANSITION_STATUSES = ['none', ...PACKET_STATUSES];
 export const EVENT_SCHEMA_MIGRATED = 'schema-migrated';
 export const WORKTREE_DAEMON_REQUIRED_TEXT = 'This is a git worktree. Start `sv-playbook daemon` at the repo root first.';
-export const EVENT_COMMANDS = [EVENT_TRANSITION, EVENT_NOTE, EVENT_TAKEOVER, EVENT_EVIDENCE, EVENT_IMPORTED, EVENT_SCHEMA_MIGRATED];
+export const EVENT_COMMANDS = [EVENT_TRANSITION, EVENT_NOTE, EVENT_TAKEOVER, EVENT_EVIDENCE, EVENT_IMPORTED, EVENT_SCHEMA_MIGRATED, EVENT_AMEND_ACTIVE];
 
 export const WORKSPACE_BINDINGS_STORE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS workspace_bindings (
