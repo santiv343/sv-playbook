@@ -334,7 +334,7 @@ test('sequential creates of the same type increment the generated id past existi
   store.db.prepare("INSERT INTO packets (id,title,path,status,created_at,updated_at) VALUES ('STORE-MIGRATION-MAIN-001','m','/t','draft',datetime('now'),datetime('now'))").run(); assert.equal(generateIdFromType(store, 'store'), 'STORE-043');
 });
 
-test('move to done is blocked; use promotion close instead', async () => {
+test('move to done is blocked; use promotion run instead', async () => {
   const { root, store } = await setup();
   createPacket(store, root, { ...def('EV-GATE-001'), evidenceRequired: ['final-sha', 'verify-root'] }, 'a');
   const s1 = ensureSession(store, root);

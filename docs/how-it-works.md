@@ -113,7 +113,7 @@ flowchart LR
     end
 ```
 
-- **`write_set`** is the blast radius: the worker may only touch files matching these globs. The CLI checks conflicts against other in-flight packets at planning time (`FLOW-CONFLICT`), which is what makes safe **parallel** work possible.
+- **`write_set`** is the blast radius: the worker may only touch files matching these globs. The CLI checks conflicts against other in-flight packets at planning time (rejects with `LifecycleError: write_set conflict with <id>`), which is what makes safe **parallel** work possible.
 - **`depends_on`** serializes packets that would otherwise collide.
 - **RED test** is mandatory: the worker writes the failing test first and captures its literal output. The expected failure cause is pinned to a closed list (the compiler's missing-symbol message, or the test name) so a dumb model can't fabricate it.
 

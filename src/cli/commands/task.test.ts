@@ -140,7 +140,7 @@ test('note then show surfaces the breadcrumb', async () => {
   });
 });
 
-test('moving to done is blocked from task move; use promotion close instead', async () => {
+test('moving to done is blocked from task move; use promotion run instead', async () => {
   await inTempRepo(async () => {
     await writeFile('body.md', 'x');
     const io = fakeIo();

@@ -196,7 +196,7 @@ async function handleMove(args: string[], io: Io): Promise<number> {
   const [packetId, status] = args;
   if (packetId === undefined || status === undefined || args.length !== 2) throw new UsageError('move requires <ID> <status>');
   if (!isPacketStatus(status)) throw new UsageError(`unknown status: ${status}`);
-  if (status === STATUS.DONE) throw new UsageError('use `sv-playbook promotion close` to set a task as done');
+  if (status === STATUS.DONE) throw new UsageError('use `sv-playbook promotion run --candidate <ID> --review-run <RUN-ID>` to set a task as done');
   return withStoreAsync(async (store) => {
     const sessionId = ensureSession(store, getCwd());
     const from = status === STATUS.REVIEW
