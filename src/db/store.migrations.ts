@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -7,7 +6,7 @@ import { createStateBackup } from './backup.js';
 import { BACKUP_REASON } from './backup.constants.js';
 import type { BackupReason } from './backup.types.js';
 import { numberColumn, stringColumn } from './rows.js';
-import { DEFAULT_GIT_BRANCH, DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SQLITE_INTEGRITY_OK, STORE_TABLE, SVP_DIR, sqlInList } from './store.constants.js';
+import { DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SQLITE_INTEGRITY_OK, STORE_TABLE, SVP_DIR, sqlInList } from './store.constants.js';
 import { StoreVersionError } from './store.errors.js';
 import { pendingMigrationIds } from './store.migration-manifest.js';
 import type { StoreMigrationId } from './store.migration-manifest.types.js';
@@ -24,29 +23,11 @@ import { addRunRetryLinkage } from './run-retry.migrations.js';
 import { addRunDurationCeiling } from './run-duration.migrations.js';
 import { applyExclusiveStorePragmas, readStoreSchemaVersion } from './store.pragmas.js';
 import { STORE_PRAGMA } from './store.pragmas.constants.js';
+import { assertMigrationBranch } from './store.migration-branch.js';
 
 const TABLES_SQL = "SELECT name FROM sqlite_master WHERE type='table'";
 const beginImmediateSql = 'BEGIN IMMEDIATE';
 const insertSchemaMigratedSql = 'INSERT INTO events (command, at) VALUES (?, ?)';
-
-function getCurrentBranch(repoRoot: string): string {
-  try {
-    return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
-  } catch {
-    return '';
-  }
-}
-
-function isOnDefaultBranch(repoRoot: string): boolean {
-  const branch = getCurrentBranch(repoRoot);
-  if (branch === '' || branch === DEFAULT_GIT_BRANCH.MAIN || branch === DEFAULT_GIT_BRANCH.LEGACY) return true;
-  try {
-    const remoteRef = execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
-    return branch === remoteRef.replace('refs/remotes/origin/', '');
-  } catch {
-    return false;
-  }
-}
 
 export function migratePacketColumn(
   db: Database.Database,
@@ -296,15 +277,6 @@ function createVerifiedBackup(repoRoot: string, reason: BackupReason): void {
   const integrityCheck = stringColumn(backupDb.prepare('PRAGMA integrity_check').get(), 'integrity_check');
   backupDb.close();
   if (integrityCheck !== SQLITE_INTEGRITY_OK) throw new Error('pre-migration backup verification failed (integrity check)');
-}
-
-function assertMigrationBranch(repoRoot: string, migrateLive: boolean | undefined): void {
-  if (isOnDefaultBranch(repoRoot)) return;
-  const branch = getCurrentBranch(repoRoot);
-  if (migrateLive) {
-    console.error(`bypassing branch guard: migrating live from "${branch}"`);
-    return;
-  }
 }
 
 function performMigration(db: Database.Database, repoRoot: string, currentVersion: number, options?: OpenStoreOptions): void {
