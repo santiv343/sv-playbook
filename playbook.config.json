@@ -14,7 +14,9 @@
     "enabled": true,
     "retention": 3,
     "maxAgeHours": 24,
-    "onEvents": ["done"]
+    "onEvents": [
+      "done"
+    ]
   },
   "modelEvaluation": {
     "evidenceValidityDays": 30
@@ -41,6 +43,7 @@
     },
     "fingerprints": [
       "docs/packets/ADOPT-AURORA-001.md",
+      "docs/packets/ADOPT-INVENTORY-FIX-001.md",
       "docs/packets/CLI-QUIET-001.md",
       "docs/packets/CONSTITUTION-CLEANUP-001.md",
       "docs/packets/DOCS-CLI-STORE-001.md",
