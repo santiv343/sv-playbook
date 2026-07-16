@@ -49,7 +49,10 @@ Why: packets have two projections. The SQLite state under `.svp/` coordinates
 sessions and leases and is never committed. The markdown projection under
 `docs/packets/*.md` is the durable review artifact and is always committed.
 Leases become stale when their heartbeat is more than 30 minutes old
-(configurable as `tasks.leaseTtlMs` in `playbook.config.json`).
+(configurable as `tasks.leaseTtlMs` in `playbook.config.json`). There is no
+separate heartbeat command: liveness is refreshed as a side effect of the
+lifecycle operations (`task start`, `task move`, `task release`, `task note`),
+so `task note` doubles as a progress breadcrumb and a keepalive for the lease.
 
 Argument shapes:
 
@@ -305,6 +308,16 @@ The backup directory is configurable and can live outside `.svp/` for durability
 
 Why: shared clients never mutate an incompatible store in place. Recovery is
 always explicit and auditable.
+
+Destructive operations (`rebuild`, `restore state`, `task takeover --force`)
+pass through a local gate: sessions with a `.svp-session-role` file at the
+repo root (agent sessions) are refused outright, and other sessions must pass
+`--confirm-destructive` after seeing the counts that would be affected. The
+trust model is explicit: the role file is self-attested identity — the gate
+protects against the honest agent that declares itself, not against one that
+omits the declaration. Any process with shell access could write or delete
+that file, so treat it as a courtesy rail for well-behaved actors, not as a
+security boundary.
 
 #### Persistence boundary
 
