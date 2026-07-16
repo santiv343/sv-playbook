@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync as fsRealpathSync, unlinkSync } from 'node:fs';
-import { dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { stringColumn } from './rows.js';
 import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
 import { GIT_ARGUMENT } from '../git.constants.js';
@@ -45,14 +45,30 @@ function execGitTopLevel(s: string): string {
 // short-name aliases) before comparing, or repo roots are misclassified on
 // Windows when os.tmpdir() returns a short-name path while git returns the
 // canonical long-name path.
+function tryNativeRealpath(p: string): string | null {
+  try { return fsRealpathSync.native(p); } catch { return null; }
+}
+
+function tryRealpath(p: string): string | null {
+  try { return fsRealpathSync(p); } catch { return null; }
+}
+
+function tryCanonicalPath(p: string): string | null {
+  const direct = process.platform === OS_PLATFORM.WINDOWS ? tryNativeRealpath(p) : tryRealpath(p);
+  if (direct !== null) return direct;
+  // The path itself may not exist yet (e.g. a test constructs a subdirectory
+  // path before creating it). Canonicalize the parent and append the final
+  // name so a short-name parent does not leak into the comparison.
+  const parent = dirname(p);
+  const base = basename(p);
+  const canonicalParent = process.platform === OS_PLATFORM.WINDOWS ? tryNativeRealpath(parent) : tryRealpath(parent);
+  return canonicalParent !== null ? join(canonicalParent, base) : null;
+}
+
 function normalizePathForCompare(p: string): string {
-  try {
-    const canonical = process.platform === OS_PLATFORM.WINDOWS ? fsRealpathSync.native(p) : fsRealpathSync(p);
-    return process.platform === OS_PLATFORM.WINDOWS ? canonical.toLowerCase() : canonical;
-  } catch {
-    const resolved = resolve(p);
-    return process.platform === OS_PLATFORM.WINDOWS ? resolved.toLowerCase() : resolved;
-  }
+  const canonical = tryCanonicalPath(p);
+  const resolved = canonical ?? resolve(p);
+  return process.platform === OS_PLATFORM.WINDOWS ? resolved.toLowerCase() : resolved;
 }
 
 export function isWorktree(s: string): boolean {
