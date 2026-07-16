@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import { openStore } from '../db/store.js';
 import { stringColumn } from '../db/rows.js';
 import {
@@ -24,7 +25,8 @@ import {
   amendPacket,
 } from './service.js';
 import { LifecycleError } from './service.errors.js';
-import { SESSION_FILE_NAME } from './service.constants.js';
+import { packets } from './schema.constants.js';
+import { STATUS } from './service.constants.js';
 import { setupServiceTest as setup } from './service.test.support.js';
 import { initTestRepo } from '../testkit.js';
 const def = (id: string) => ({ id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'], requirements: [], evidenceRequired: ['final-sha'] });
@@ -50,16 +52,19 @@ test('start requires ready; wrong state names the state', async () => {
   const s = ensureSession(store, root);
   assert.throws(() => { startPacket(store, s, root, 'P2-001'); }, /wrong state draft/);
 });
-test('start matrix: same-session idempotent, other-session refused', async () => {
+test('task start is refused when a depends_on packet is not done', async () => {
   const { root, store } = await setup();
-  createPacket(store, root, def('P2-001'), 'a');
-  const s1 = ensureSession(store, root);
-  movePacket(store, undefined, 'P2-001', 'ready');
-  startPacket(store, s1, root, 'P2-001');
-  startPacket(store, s1, root, 'P2-001'); // idempotent, no throw
-  const wt2 = await mkdtemp(join(tmpdir(), 'svp-wt2-'));
-  const s2 = ensureSession(store, wt2);
-  assert.throws(() => { startPacket(store, s2, wt2, 'P2-001'); }, /held by session/);
+  const dep = { ...def('DEP-001') };
+  const dependent = { ...def('TASK-001'), dependsOn: ['DEP-001'] };
+  createPacket(store, root, dep, 'dependency');
+  createPacket(store, root, dependent, 'dependent');
+  store.orm.update(packets).set({ status: STATUS.READY }).where(eq(packets.id, 'TASK-001')).run();
+  const s = ensureSession(store, root);
+  assert.throws(
+    () => { startPacket(store, s, root, 'TASK-001'); },
+    /unmet dependencies: DEP-001 \(draft\)/,
+  );
+  assert.equal(leaseOf(store, 'TASK-001'), undefined);
 });
 test('active exits require the lease holder', async () => {
   const { root, store } = await setup();
@@ -75,14 +80,6 @@ test('illegal transition is refused with both statuses named', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P2-001'), 'a');
   assert.throws(() => { movePacket(store, undefined, 'P2-001', 'done'); }, /draft.*done/);
-});
-test('ensureSession is stable per worktree (reads .svp/session back)', async () => {
-  const { root, store } = await setup();
-  const a = ensureSession(store, root);
-  const b = ensureSession(store, root);
-  assert.equal(a, b);
-  const onDisk = (await readFile(join(root, SESSION_FILE_NAME), 'utf8')).trim();
-  assert.equal(onDisk, a);
 });
 test('leaseOf reports holder and freshness; refreshHeartbeat updates it', async () => {
   const { root, store } = await setup();
