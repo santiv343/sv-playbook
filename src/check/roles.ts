@@ -1,5 +1,11 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
+import { FILE_EXTENSION } from '../platform.constants.js';
+import { ROLE_TABLE_DELIMITER, ROLE_TABLE_STATE } from './roles.constants.js';
+
+const ROLE_STEP_TYPE = { EXEC: 'EXEC', JUDGMENT: 'JUDGMENT' } as const;
+const MISSING_HANDOFF_MARKER = { EM_DASH: '\u2014', HYPHEN: '-' } as const;
+const ROLE_FORMAT_FILE = 'format.md';
 
 interface RoleViolation {
   file: string;
@@ -29,7 +35,7 @@ function isSeparatorRow(t: string): boolean {
 }
 
 function pushTableStep(t: string, steps: StepData[]): void {
-  const cells = t.split('|').map(c => c.trim()).filter(c => c !== '');
+  const cells = t.split(ROLE_TABLE_DELIMITER).map(c => c.trim()).filter(c => c !== '');
   steps.push({
     type: cells[1] ?? '',
     onMismatch: cells[4] ?? '',
@@ -39,15 +45,15 @@ function pushTableStep(t: string, steps: StepData[]): void {
 function findTables(content: string): StepData[] {
   const steps: StepData[] = [];
   const lines = content.split('\n');
-  let state: 'out' | 'head' | 'body' = 'out';
+  let state: typeof ROLE_TABLE_STATE[keyof typeof ROLE_TABLE_STATE] = ROLE_TABLE_STATE.OUT;
 
   for (const line of lines) {
     const t = line.trim();
-    if (!t.startsWith('|')) { state = 'out'; continue; }
+    if (!t.startsWith(ROLE_TABLE_DELIMITER)) { state = ROLE_TABLE_STATE.OUT; continue; }
     switch (state) {
-      case 'out': state = 'head'; break;
-      case 'head': if (isSeparatorRow(t)) state = 'body'; break;
-      case 'body': pushTableStep(t, steps); break;
+      case ROLE_TABLE_STATE.OUT: state = ROLE_TABLE_STATE.HEAD; break;
+      case ROLE_TABLE_STATE.HEAD: if (isSeparatorRow(t)) state = ROLE_TABLE_STATE.BODY; break;
+      case ROLE_TABLE_STATE.BODY: pushTableStep(t, steps); break;
     }
   }
   return steps;
@@ -95,10 +101,11 @@ function checkStepTypes(steps: StepData[], file: string, out: RoleViolation[]): 
     if (!s) continue;
     const t = s.type.toUpperCase();
     const loc = `Table row ${i + 1} type="${s.type}"`;
-    if (t !== 'EXEC' && t !== 'JUDGMENT') {
+    if (t !== ROLE_STEP_TYPE.EXEC && t !== ROLE_STEP_TYPE.JUDGMENT) {
       out.push({ file, message: `${loc}: not EXEC or JUDGMENT` });
     }
-    if (t === 'JUDGMENT' && (s.onMismatch === '\u2014' || s.onMismatch === '-' || s.onMismatch.trim() === '')) {
+    if (t === ROLE_STEP_TYPE.JUDGMENT
+      && (s.onMismatch === MISSING_HANDOFF_MARKER.EM_DASH || s.onMismatch === MISSING_HANDOFF_MARKER.HYPHEN || s.onMismatch.trim() === '')) {
       out.push({ file, message: `${loc}: JUDGMENT without escalation path` });
     }
   }
@@ -177,8 +184,8 @@ export async function checkRoles(rolesDir: string): Promise<RoleViolation[]> {
     return all;
   }
 
-  const roleFiles = entries.filter(e => e.endsWith('.md') && e !== 'format.md');
-  const known = new Set(roleFiles.map(f => basename(f, '.md').toLowerCase()));
+  const roleFiles = entries.filter(e => e.endsWith(FILE_EXTENSION.MARKDOWN) && e !== ROLE_FORMAT_FILE);
+  const known = new Set(roleFiles.map(f => basename(f, FILE_EXTENSION.MARKDOWN).toLowerCase()));
   const respMap = new Map<string, string[]>();
 
   for (const file of roleFiles) {

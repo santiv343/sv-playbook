@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
+import { getCwd } from '../../runtime/context.js';
 import type { Store } from '../../db/store.types.js';
 import {
   setSection,
@@ -29,7 +30,7 @@ function stringValue(value: string | boolean | string[] | undefined, name: strin
 }
 
 function withStore<T>(fn: (store: Store, repoRoot: string) => T): T {
-  const repoRoot = commonRoot(process.cwd());
+  const repoRoot = commonRoot(getCwd());
   const store = openStore(repoRoot);
   try {
     return fn(store, repoRoot);

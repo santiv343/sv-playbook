@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { InventoryReport } from './inventory.types.js';
 import type { GapReport } from './gap.types.js';
+import { GAP_STATUS } from './gap.types.js';
 import type { Store } from '../db/store.types.js';
 import { createPacket } from '../tasks/service.js';
 import { DEFAULTS } from '../config.constants.js';
@@ -135,7 +136,7 @@ export function scaffold(
 
   let index = 1;
   for (const check of gaps.checks) {
-    if (check.status === 'present') continue;
+    if (check.status === GAP_STATUS.PRESENT) continue;
     writeRemediationPacket(store, repoRoot, productName, index, check.requirement, check.status, check.reason);
     index++;
   }

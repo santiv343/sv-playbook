@@ -18,13 +18,14 @@ import {
   recordTaskCost,
   showSprint,
 } from './service.js';
+import { initTestRepo } from '../testkit.js';
 
 const def = (id: string, ws: string): { id: string; title: string; dependsOn: string[]; writeSet: string[]; requirements: string[]; evidenceRequired: string[] } =>
   ({ id, title: `Packet ${id}`, dependsOn: [], writeSet: [ws], requirements: [], evidenceRequired: ['final-sha'] });
 
 async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'svp-sprint-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   return { root, store: openStore(root) };
 }

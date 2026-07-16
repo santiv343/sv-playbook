@@ -11,6 +11,7 @@ import { stringColumn } from '../../db/rows.js';
 import { openStore } from '../../db/store.js';
 import { createPacket } from '../../tasks/service.js';
 import { STATUS } from '../../tasks/service.constants.js';
+import { initTestRepo } from '../../testkit.js';
 
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = [];
@@ -20,7 +21,7 @@ function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
 
 async function inTempRepo<T>(fn: (root: string) => Promise<T>): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), 'svp-rebuild-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
   const previous = process.cwd();
   process.chdir(root);

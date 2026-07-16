@@ -3,11 +3,13 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadConfig } from '../../config.js';
 import { getBackupStatus } from '../../db/backup.js';
-import { stringColumn } from '../../db/rows.js';
-import { commonRoot, openStore } from '../../db/store.js';
+import { numberColumn, stringColumn } from '../../db/rows.js';
+import { commonRoot, openStoreReadOnly } from '../../db/store.js';
 import type { Store } from '../../db/store.types.js';
-import { LEASE_TTL_MS, PACKETS_DIR, PACKETS_DOCS_DIR, STATUS } from '../../tasks/service.constants.js';
+import { PACKETS_DIR, PACKETS_DOCS_DIR, STATUS } from '../../tasks/service.constants.js';
 import { EXIT } from '../command.constants.js';
+import { getCwd } from '../../runtime/context.js';
+import { FILE_EXTENSION } from '../../platform.constants.js';
 import type { Command, Io } from '../command.types.js';
 import {
   DOCTOR_DETAIL,
@@ -45,7 +47,7 @@ function gitCheck(repoRoot: string): CheckResult {
 
 function storeCheck(repoRoot: string): CheckResult {
   try {
-    const store = openStore(repoRoot);
+    const store = openStoreReadOnly(repoRoot);
     store.close();
     return { label: DOCTOR_LABEL.STORE, status: DOCTOR_STATUS.OK, detail: DOCTOR_DETAIL.SCHEMA_CURRENT };
   } catch (error) {
@@ -59,12 +61,12 @@ function packetsCheck(repoRoot: string): CheckResult {
   return { label: DOCTOR_LABEL.PACKETS, status: DOCTOR_STATUS.WARN, detail: `missing ${PACKETS_DOCS_DIR}/${PACKETS_DIR}` };
 }
 
-function leaseSummary(rows: unknown[]): string {
+function leaseSummary(rows: unknown[], leaseTtlMs: number): string {
   let fresh = 0;
   let stale = 0;
   for (const row of rows) {
     const heartbeatAt = stringColumn(row, 'heartbeat_at');
-    if (Date.now() - Date.parse(heartbeatAt) > LEASE_TTL_MS) stale++;
+    if (Date.now() - Date.parse(heartbeatAt) > leaseTtlMs) stale++;
     else fresh++;
   }
   return `${fresh} fresh, ${stale} stale`;
@@ -72,10 +74,10 @@ function leaseSummary(rows: unknown[]): string {
 
 function leasesCheck(repoRoot: string): CheckResult {
   try {
-    const store = openStore(repoRoot);
+    const store = openStoreReadOnly(repoRoot);
     try {
       const rows = store.db.prepare('SELECT heartbeat_at FROM leases').all();
-      return { label: DOCTOR_LABEL.LEASES, status: DOCTOR_STATUS.OK, detail: leaseSummary(rows) };
+      return { label: DOCTOR_LABEL.LEASES, status: DOCTOR_STATUS.OK, detail: leaseSummary(rows, loadConfig(repoRoot).tasks.leaseTtlMs) };
     } finally {
       store.close();
     }
@@ -84,13 +86,12 @@ function leasesCheck(repoRoot: string): CheckResult {
   }
 }
 
-export function backupCheck(repoRoot: string): CheckResult {
+function evaluateBackupStatus(repoRoot: string, backupStatus: ReturnType<typeof getBackupStatus>): CheckResult {
   const config = loadConfig(repoRoot);
   if (!config.backup.enabled) {
     return { label: DOCTOR_LABEL.BACKUP, status: DOCTOR_STATUS.OK, detail: DOCTOR_DETAIL.BACKUP_DISABLED };
   }
 
-  const backupStatus = getBackupStatus(repoRoot);
   const age = backupStatus.ageHours;
   if (age === undefined) {
     return { label: DOCTOR_LABEL.BACKUP, status: DOCTOR_STATUS.WARN, detail: DOCTOR_DETAIL.NO_BACKUP };
@@ -110,6 +111,18 @@ export function backupCheck(repoRoot: string): CheckResult {
   return { label: DOCTOR_LABEL.BACKUP, status, detail: `${age.toFixed(1)} hours old` };
 }
 
+export function backupCheck(repoRoot: string): CheckResult {
+  return evaluateBackupStatus(repoRoot, getBackupStatus(repoRoot));
+}
+
+export function backupCheckFromStore(store: Store, repoRoot: string): CheckResult {
+  const row = store.db.prepare('SELECT COUNT(*) AS n FROM packets WHERE status IN (?, ?)')
+    .get(STATUS.DONE, STATUS.DROPPED);
+  return evaluateBackupStatus(repoRoot, getBackupStatus(repoRoot, {
+    liveTerminalPacketCount: numberColumn(row, 'n'),
+  }));
+}
+
 export function reviewMergedCheckFromStore(store: Store): CheckResult {
   const rows = store.db.prepare(
     'SELECT id, pr FROM packets WHERE status = ? AND pr IS NOT NULL',
@@ -124,7 +137,7 @@ export function reviewMergedCheckFromStore(store: Store): CheckResult {
 
 function reviewMergedCheck(repoRoot: string): CheckResult {
   try {
-    const store = openStore(repoRoot);
+    const store = openStoreReadOnly(repoRoot);
     try {
       return reviewMergedCheckFromStore(store);
     } finally {
@@ -137,7 +150,7 @@ function reviewMergedCheck(repoRoot: string): CheckResult {
 
 function activeWithoutLeaseCheck(repoRoot: string): CheckResult {
   try {
-    const store = openStore(repoRoot);
+    const store = openStoreReadOnly(repoRoot);
     try {
       const rows = store.db.prepare(
         'SELECT p.id FROM packets p LEFT JOIN leases l ON p.id = l.packet_id WHERE p.status = ? AND l.packet_id IS NULL',
@@ -165,7 +178,7 @@ function driftResult(store: Store, repoRoot: string): CheckResult {
   }
   const drifted: string[] = [];
   for (const entry of readdirSync(packetsDir)) {
-    if (!entry.endsWith('.md')) continue;
+    if (!entry.endsWith(FILE_EXTENSION.MARKDOWN)) continue;
     const id = entry.replace(/\.md$/, '');
     if (!dbIds.has(id)) drifted.push(id);
   }
@@ -180,7 +193,7 @@ function driftResult(store: Store, repoRoot: string): CheckResult {
 
 function packetsDriftCheck(repoRoot: string): CheckResult {
   try {
-    const store = openStore(repoRoot);
+    const store = openStoreReadOnly(repoRoot);
     try { return driftResult(store, repoRoot); } finally { store.close(); }
   } catch (error) {
     return { label: DOCTOR_LABEL.PACKET_DRIFT, status: DOCTOR_STATUS.FAIL, detail: errorMessage(error) };
@@ -190,7 +203,7 @@ function packetsDriftCheck(repoRoot: string): CheckResult {
 function collectChecks(): CheckResult[] {
   const checks = [nodeCheck()];
   try {
-    const repoRoot = commonRoot(process.cwd());
+    const repoRoot = commonRoot(getCwd());
     checks.push(
       gitCheck(repoRoot),
       storeCheck(repoRoot),

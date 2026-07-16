@@ -1,0 +1,3 @@
+export const ROLE_CATALOG_ACTIVATION_KEY = 'active';
+export const ROLE_CATALOG_INITIAL_VERSION = 1;
+export const ROLE_CATALOG_VERSION_INCREMENT = 1;

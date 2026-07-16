@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { command as taskCommand } from './task.js';
 import { command as sprintCommand } from './sprint.js';
 import type { Io } from '../command.types.js';
+import { initTestRepo } from '../../testkit.js';
 
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = []; const errLines: string[] = [];
@@ -15,7 +16,7 @@ function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
 
 async function inTempRepo<T>(fn: () => Promise<T>): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), 'svp-cli-sprint-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   const prev = process.cwd();
   process.chdir(root);

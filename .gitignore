@@ -1,9 +1,12 @@
 node_modules/
+pnpm-lock.yaml
 dist/
 .svp/
-.svp-session
 .svp-session-role
-.svp-destructive-events.log
 .worktrees/
-scripts/
+.tmp/
+.tmp-*
+scripts/*
+!scripts/clean-dist.mjs
+!scripts/copy-serve-assets.mjs
 *.tgz

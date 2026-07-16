@@ -24,13 +24,10 @@ import {
   amendPacket,
 } from './service.js';
 import { LifecycleError } from './service.errors.js';
-
+import { SESSION_FILE_NAME } from './service.constants.js';
+import { setupServiceTest as setup } from './service.test.support.js';
+import { initTestRepo } from '../testkit.js';
 const def = (id: string) => ({ id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'], requirements: [], evidenceRequired: ['final-sha'] });
-
-async function setup() {
-  const root = await mkdtemp(join(tmpdir(), 'svp-life-'));
-  return { root, store: openStore(root) };
-}
 
 test('createPacket writes markdown projection and DB row in draft', async () => {
   const { root, store } = await setup();
@@ -64,7 +61,7 @@ test('start matrix: same-session idempotent, other-session refused', async () =>
   const s2 = ensureSession(store, wt2);
   assert.throws(() => { startPacket(store, s2, wt2, 'P2-001'); }, /held by session/);
 });
-test('active exits require the lease holder; done clears the lease', async () => {
+test('active exits require the lease holder', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P2-001'), 'a');
   const s1 = ensureSession(store, root);
@@ -72,20 +69,19 @@ test('active exits require the lease holder; done clears the lease', async () =>
   startPacket(store, s1, root, 'P2-001');
   assert.throws(() => { movePacket(store, undefined, 'P2-001', 'review'); }, /lease/);
   movePacket(store, s1, 'P2-001', 'review');
-  movePacket(store, s1, 'P2-001', 'done');
-  assert.equal(listPackets(store)[0]?.status, 'done');
+  assert.throws(() => { movePacket(store, s1, 'P2-001', 'done'); }, /illegal transition/);
 });
 test('illegal transition is refused with both statuses named', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P2-001'), 'a');
   assert.throws(() => { movePacket(store, undefined, 'P2-001', 'done'); }, /draft.*done/);
 });
-test('ensureSession is stable per worktree (reads .svp-session back)', async () => {
+test('ensureSession is stable per worktree (reads .svp/session back)', async () => {
   const { root, store } = await setup();
   const a = ensureSession(store, root);
   const b = ensureSession(store, root);
   assert.equal(a, b);
-  const onDisk = (await readFile(join(root, '.svp-session'), 'utf8')).trim();
+  const onDisk = (await readFile(join(root, SESSION_FILE_NAME), 'utf8')).trim();
   assert.equal(onDisk, a);
 });
 test('leaseOf reports holder and freshness; refreshHeartbeat updates it', async () => {
@@ -204,7 +200,7 @@ test('moving to ready is refused when the write_set conflicts with an in-flight 
 test('moving to review captures head evidence as events', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-ev-'));
   const { execFileSync } = await import('node:child_process');
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   const store = openStore(root);
   createPacket(store, root, def('E-001'), 'a');
@@ -279,13 +275,10 @@ test('moving a packet never modifies its generated markdown export', async () =>
   movePacket(store, undefined, 'MD-001', 'ready');
   startPacket(store, s1, root, 'MD-001');
   movePacket(store, s1, 'MD-001', 'review');
-  movePacket(store, s1, 'MD-001', 'done');
   const finalBytes = await readFile(path);
+  const finalText = finalBytes.toString('utf8');
   assert.deepEqual(finalBytes, initialBytes, 'md file bytes should not change after moves');
-  const text = finalBytes.toString('utf8');
-  assert.ok(text.includes('<!-- GENERATED FROM THE BOARD'), 'missing GENERATED banner');
-  assert.ok(!text.includes('\nclosed:'), 'md must not contain closed: stamp');
-  assert.ok(!text.includes('\nstate:'), 'md must not contain status line');
+  assert.ok(finalText.includes('<!-- GENERATED FROM THE BOARD'), 'missing GENERATED banner');
 });
 
 test('importPackets returns zeros for a missing packets directory', async () => {
@@ -302,7 +295,7 @@ test("task brief prepends the universal acceptance rubric to every worker prompt
 test('move to review is refused when the branch changed a file outside the write_set', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-ws-'));
   const { execFileSync } = await import('node:child_process');
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/test'], { cwd: root });
   await mkdir(join(root, 'src', 'b'), { recursive: true });
@@ -343,20 +336,19 @@ test('sequential creates of the same type increment the generated id past existi
   store.db.prepare("INSERT INTO packets (id,title,path,status,created_at,updated_at) VALUES ('STORE-MIGRATION-MAIN-001','m','/t','draft',datetime('now'),datetime('now'))").run(); assert.equal(generateIdFromType(store, 'store'), 'STORE-043');
 });
 
-test('move to done is refused when a required evidence item is missing', async () => {
+test('move to done is blocked; use promotion run instead', async () => {
   const { root, store } = await setup();
   createPacket(store, root, { ...def('EV-GATE-001'), evidenceRequired: ['final-sha', 'verify-root'] }, 'a');
   const s1 = ensureSession(store, root);
   movePacket(store, undefined, 'EV-GATE-001', 'ready'); startPacket(store, s1, root, 'EV-GATE-001');
   movePacket(store, s1, 'EV-GATE-001', 'review');
-  store.db.prepare('DELETE FROM events WHERE packet_id = ? AND command = ?').run('EV-GATE-001', 'evidence');
-  assert.throws(() => movePacket(store, s1, 'EV-GATE-001', 'done'), /missing required evidence/);
+  assert.throws(() => movePacket(store, s1, 'EV-GATE-001', 'done'), /illegal transition/);
 });
 
 test('move to review is refused when the project verify command fails', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-verify-'));
   const { execFileSync } = await import('node:child_process');
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'x'], { cwd: root });
   execFileSync('git', ['checkout', '-b', 'feature/verify-test'], { cwd: root });
   await mkdir(join(root, 'src', 'a'), { recursive: true });

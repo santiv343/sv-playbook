@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { inventoryRepo } from './inventory.js';
+import { initTestRepo } from '../testkit.js';
 
 test('inventory detects the verify command and monorepo packages', () => {
   const dir = mkdtempSync(join(tmpdir(), 'svp-inventory-'));
@@ -48,7 +49,7 @@ test('inventory detects AGENTS.md, git info, and pnpm workspace packages', () =>
   mkdirSync(join(dir, '.github', 'workflows'), { recursive: true });
   writeFileSync(join(dir, '.github', 'workflows', 'ci.yml'), '');
 
-  execSync('git init', { cwd: dir });
+  initTestRepo(dir);
   execSync('git remote add origin git@github.com:test/repo.git', { cwd: dir });
 
   const report = inventoryRepo(dir);

@@ -12,6 +12,7 @@ import { STATUS } from '../tasks/service.constants.js';
 import { DESTRUCTIVE_LOG_FILE, EXIT, SESSION_ROLE_FILE } from '../cli/command.constants.js';
 import type { Command } from '../cli/command.types.js';
 import { checkDestructiveGate, queryDestructiveCounts } from '../cli/destructive-gate.js';
+import { initTestRepo } from '../testkit.js';
 
 function fakeIo(): { outLines: string[]; errLines: string[]; out: (l: string) => void; err: (l: string) => void } {
   const outLines: string[] = [];
@@ -21,7 +22,7 @@ function fakeIo(): { outLines: string[]; errLines: string[]; out: (l: string) =>
 
 async function inTempRepo<T>(fn: (root: string) => Promise<T>): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), 'svp-gate-'));
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
   const previous = process.cwd();
   process.chdir(root);
@@ -54,7 +55,7 @@ function destructiveLogLines(root: string): string[] {
   return readFileSync(p, 'utf8').trim().split('\n').filter(Boolean);
 }
 
-test('a non-founder role invoking a destructive command is refused with the decision-request path', async () => {
+test('an agent role invoking a destructive command is refused with the decision-request path', async () => {
   await inTempRepo(async (root) => {
     await writeFixturePacket(root, 'FIXTURE-001');
     setRole(root, 'delivery-orchestrator');
@@ -68,7 +69,7 @@ test('a non-founder role invoking a destructive command is refused with the deci
   });
 });
 
-test('a non-founder session without role file is treated as founder (no gate failure on role)', async () => {
+test('an unbound human session without confirmation reaches the confirmation gate', async () => {
   await inTempRepo(async (root) => {
     await writeFixturePacket(root, 'FIXTURE-002');
 
@@ -81,7 +82,7 @@ test('a non-founder session without role file is treated as founder (no gate fai
   });
 });
 
-test('a founder session without --confirm-destructive prints counts', async () => {
+test('a human session without --confirm-destructive prints counts', async () => {
   await inTempRepo(async (root) => {
     await writeFixturePacket(root, 'FIXTURE-003');
 
@@ -94,16 +95,15 @@ test('a founder session without --confirm-destructive prints counts', async () =
   });
 });
 
-test('founder role with --confirm-destructive proceeds past the gate', async () => {
+test('an agent session cannot self-authorize by claiming a founder role', async () => {
   await inTempRepo(async (root) => {
     await writeFixturePacket(root, 'FIXTURE-004');
     setRole(root, 'founder');
 
     const io = fakeIo();
     const code = await main(['rebuild', '--force', '--confirm-destructive'], io);
-    const out = io.outLines.join('\n');
-    assert.equal(code, 0);
-    assert.match(out, /reconstructed/);
+    assert.equal(code, EXIT.GATE_FAIL);
+    assert.match(io.errLines.join('\n'), /agent sessions cannot execute/);
   });
 });
 
@@ -149,10 +149,10 @@ test('task takeover --force without --confirm-destructive is refused for no-role
   });
 });
 
-test('dispatcher path: destructive=true on a command descriptor triggers the gate even without explicit gate call in run (non-founder)', () => {
+test('dispatcher path: destructive=true on a command descriptor triggers the gate for an agent session', () => {
   const root = join(tmpdir(), 'svp-gate-dispatch-blocked');
   mkdirSync(root, { recursive: true });
-  execFileSync('git', ['init'], { cwd: root });
+  initTestRepo(root);
   setRole(root, 'delivery-orchestrator');
 
   const cmd: Command = {
@@ -171,11 +171,9 @@ test('dispatcher path: destructive=true on a command descriptor triggers the gat
   assert.match(errs, /decision ask/);
 });
 
-test('dispatcher path: destructive=true on a command descriptor allows founder with confirm', () => {
-  const root = join(tmpdir(), 'svp-gate-dispatch-allowed');
-  mkdirSync(root, { recursive: true });
-  execFileSync('git', ['init'], { cwd: root });
-  setRole(root, 'founder');
+test('dispatcher path: destructive=true on a command descriptor allows an unbound human session with confirm', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-gate-dispatch-allowed-'));
+  initTestRepo(root);
 
   const cmd: Command = {
     name: '__test__',

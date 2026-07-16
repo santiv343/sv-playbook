@@ -1,0 +1,62 @@
+import type {
+  AdapterRunObservation,
+  ExecutionProfile,
+} from '../gateway/gateway.types.js';
+import type { StructuredOutputReceipt } from '../contracts/structured-output.types.js';
+
+export interface ModelCapabilityEvaluationScore {
+  readonly passed: boolean;
+  readonly violations: readonly string[];
+}
+
+export interface ModelCapabilityEvaluationOptions {
+  readonly now: Date;
+  readonly validityDays: number;
+}
+
+export interface ModelCapabilityEvaluationReceipt {
+  readonly id: string;
+  readonly suiteId: string;
+  readonly suiteDigest: string;
+  readonly capabilityId: string;
+  readonly profileId: string;
+  readonly adapterId: string;
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly variant: string | null;
+  readonly adapterProfileDigest: string;
+  readonly sessionId: string;
+  readonly messageId: string;
+  readonly adapterEvidence: Readonly<Record<string, unknown>>;
+  readonly sessionEvidence: Readonly<Record<string, unknown>>;
+  readonly submissionEvidence: Readonly<Record<string, unknown>>;
+  readonly observationEvidence: Readonly<Record<string, unknown>>;
+  readonly output: unknown;
+  readonly outputReceipt: StructuredOutputReceipt | null;
+  readonly observedToolIds: readonly string[];
+  readonly passed: boolean;
+  readonly violations: readonly string[];
+  readonly assessedAt: string;
+  readonly expiresAt: string;
+  readonly createdAt: string;
+  readonly receiptDigest: string;
+}
+
+export interface ModelCapabilityEvaluationSummary {
+  readonly id: string;
+  readonly suiteId: string;
+  readonly capabilityId: string;
+  readonly profileId: string;
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly variant: string | null;
+  readonly passed: boolean;
+  readonly assessedAt: string;
+  readonly expiresAt: string;
+  readonly receiptDigest: string;
+}
+
+export interface ModelCapabilityEvaluationRun {
+  readonly profile: ExecutionProfile;
+  readonly observation: AdapterRunObservation;
+}

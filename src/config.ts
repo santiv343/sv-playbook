@@ -1,14 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULTS } from './config.constants.js';
+import { DEFAULTS, PLAYBOOK_CONFIG_FILE_NAME } from './config.constants.js';
 import { parsePlaybookConfig } from './schema/config.constants.js';
 import type { PlaybookConfig } from './config.types.js';
+import { NODE_ERROR_CODE, TEXT_ENCODING } from './platform.constants.js';
+import { nodeErrorCode } from './platform.js';
 
 function readConfigFile(repoRoot: string): string | undefined {
   try {
-    return readFileSync(join(repoRoot, 'playbook.config.json'), 'utf8');
+    return readFileSync(join(repoRoot, PLAYBOOK_CONFIG_FILE_NAME), TEXT_ENCODING.UTF8);
   } catch (err) {
-    if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT') {
+    if (nodeErrorCode(err) === NODE_ERROR_CODE.FILE_NOT_FOUND) {
       return undefined;
     }
     throw err;

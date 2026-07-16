@@ -25,10 +25,18 @@ export const BackupConfigSchema = s.object({
   dir: s.optional(s.string()),
 });
 
+const SourceDebtBaselineSchema = s.object({
+  count: s.integer(),
+  digest: s.string(),
+});
+
 export const BaselineConfigSchema = s.object({
   commit: s.optional(s.string()),
   timestamp: s.optional(s.string()),
   fingerprints: s.optional(s.array(s.string())),
+  ormApplicationSql: s.optional(SourceDebtBaselineSchema),
+  literalComparisons: s.optional(SourceDebtBaselineSchema),
+  duplicateStrings: s.optional(SourceDebtBaselineSchema),
 });
 
 export const GatesConfigSchema = s.object({
@@ -39,6 +47,20 @@ export const GatesConfigSchema = s.object({
   layout: s.boolean(),
 });
 
+export const ModelEvaluationConfigSchema = s.object({
+  evidenceValidityDays: s.positiveInteger(),
+});
+
+export const ReviewPreflightConfigSchema = s.object({
+  baseReference: s.nonEmptyString(),
+  preparationCommand: s.string(),
+  noOutputTimeoutMs: s.positiveInteger(),
+});
+
+export const TasksConfigSchema = s.object({
+  leaseTtlMs: s.positiveInteger(),
+});
+
 export const PlaybookConfigSchema = s.object({
   productName: s.string(),
   chatLanguage: s.string(),
@@ -46,7 +68,11 @@ export const PlaybookConfigSchema = s.object({
   verifyCommand: s.string(),
   autonomy: AutonomySchema,
   maxConcurrentWorkers: s.positiveInteger(),
+  reviewCandidateMaxBytes: s.positiveInteger(),
+  reviewPreflight: ReviewPreflightConfigSchema,
+  tasks: TasksConfigSchema,
   backup: BackupConfigSchema,
+  modelEvaluation: ModelEvaluationConfigSchema,
   baseline: s.optional(BaselineConfigSchema),
   gates: GatesConfigSchema,
 });
@@ -70,13 +96,33 @@ function mergeDefaults(raw: Record<string, unknown>): Record<string, unknown> {
     verifyCommand: raw.verifyCommand ?? DEFAULTS.verifyCommand,
     autonomy: raw.autonomy ?? DEFAULTS.autonomy,
     maxConcurrentWorkers: raw.maxConcurrentWorkers ?? DEFAULTS.maxConcurrentWorkers,
+    reviewCandidateMaxBytes: raw.reviewCandidateMaxBytes ?? DEFAULTS.reviewCandidateMaxBytes,
+    reviewPreflight: mergeNested(raw.reviewPreflight, DEFAULTS.reviewPreflight),
+    tasks: mergeNested(raw.tasks, DEFAULTS.tasks),
     backup: mergeNested(raw.backup, DEFAULTS.backup),
+    modelEvaluation: mergeNested(raw.modelEvaluation, DEFAULTS.modelEvaluation),
     gates: mergeNested(raw.gates, DEFAULTS.gates),
   };
   if (raw.baseline !== undefined) {
     merged.baseline = isRecord(raw.baseline) ? raw.baseline : undefined;
   }
   return merged;
+}
+
+function validateSourceBaselines(parsed: ReturnType<typeof PlaybookConfigSchema.parse>): void {
+  const baselines = [
+    ['ormApplicationSql', parsed.baseline?.ormApplicationSql],
+    ['literalComparisons', parsed.baseline?.literalComparisons],
+    ['duplicateStrings', parsed.baseline?.duplicateStrings],
+  ] as const;
+  for (const [name, baseline] of baselines) {
+    if (baseline !== undefined && baseline.count < 0) {
+      throw new ConfigError(`baseline.${name}.count: expected a non-negative integer`);
+    }
+    if (baseline !== undefined && !/^[a-f0-9]{64}$/.test(baseline.digest)) {
+      throw new ConfigError(`baseline.${name}.digest: expected a SHA-256 hex digest`);
+    }
+  }
 }
 
 export function parsePlaybookConfig(text: string) {
@@ -94,7 +140,9 @@ export function parsePlaybookConfig(text: string) {
   const merged = mergeDefaults(raw);
 
   try {
-    return PlaybookConfigSchema.parse(merged);
+    const parsed = PlaybookConfigSchema.parse(merged);
+    validateSourceBaselines(parsed);
+    return parsed;
   } catch (err) {
     if (err instanceof SchemaError) {
       throw new ConfigError(err.message);

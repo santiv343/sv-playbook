@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
+import { getCwd } from '../../runtime/context.js';
 import { stringColumn } from '../../db/rows.js';
 
 function nullableStringColumn(row: unknown, key: string): string | null {
@@ -32,7 +33,7 @@ interface Subcommand {
 class UsageError extends Error {}
 
 function withStore<T>(fn: (store: { db: { prepare(sql: string): { run(...params: unknown[]): unknown; get(...params: unknown[]): unknown; all(...params: unknown[]): unknown[] }; exec(sql: string): void }; close(): void }, repoRoot: string) => T): T {
-  const repoRoot = commonRoot(process.cwd());
+  const repoRoot = commonRoot(getCwd());
   const store = openStore(repoRoot);
   try {
     return fn(store, repoRoot);

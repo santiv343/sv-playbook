@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
+import { getCwd } from '../../runtime/context.js';
 import { ensureSession, movePacket } from '../../tasks/service.js';
 import { EVENT_NOTE, STATUS } from '../../tasks/service.constants.js';
 import { createStateBackup } from '../../db/backup.js';
@@ -10,6 +11,8 @@ import { BACKUP_REASON } from '../../db/backup.constants.js';
 import { reconcile } from '../../reconcile/reconcile.js';
 import type { GhReader, PrInfo, ReconcilerExecutor, ReconcilerEvent, ReconcilerResult } from '../../reconcile/reconcile.types.js';
 import { RECONCILE_USAGE } from './reconcile.constants.js';
+import { GITHUB_FIELD, PR_MERGE_STATE, PR_STATE, RECONCILE_SAFETY } from '../../reconcile/reconcile.constants.js';
+import type { PrState } from '../../reconcile/reconcile.types.js';
 
 function strEntry(raw: object, key: string): string | undefined {
   for (const [k, v] of Object.entries(raw)) {
@@ -29,30 +32,30 @@ function boolEntry(raw: object, key: string): boolean | undefined {
 }
 
 function matchMergeStatus(v: unknown): PrInfo['mergeStateStatus'] {
-  if (v === 'BEHIND') return 'BEHIND';
-  if (v === 'CLEAN') return 'CLEAN';
-  if (v === 'DIRTY') return 'DIRTY';
-  if (v === 'BLOCKED') return 'BLOCKED';
-  if (v === 'UNKNOWN') return 'UNKNOWN';
+  if (v === PR_MERGE_STATE.BEHIND) return PR_MERGE_STATE.BEHIND;
+  if (v === PR_MERGE_STATE.CLEAN) return PR_MERGE_STATE.CLEAN;
+  if (v === PR_MERGE_STATE.DIRTY) return PR_MERGE_STATE.DIRTY;
+  if (v === PR_MERGE_STATE.BLOCKED) return PR_MERGE_STATE.BLOCKED;
+  if (v === PR_MERGE_STATE.UNKNOWN) return PR_MERGE_STATE.UNKNOWN;
   return null;
 }
 
 function mergeStatus(raw: object): PrInfo['mergeStateStatus'] {
   for (const [k, v] of Object.entries(raw)) {
-    if (k === 'mergeStateStatus') return matchMergeStatus(v);
+    if (k === GITHUB_FIELD.MERGE_STATE_STATUS) return matchMergeStatus(v);
   }
   return null;
 }
 
 function parsePrInfo(raw: unknown): PrInfo {
-  const result: PrInfo = { number: '', state: 'OPEN', mergeStateStatus: null, headRefName: '', baseRefName: '', isDraft: false };
+  const result: PrInfo = { number: '', state: PR_STATE.OPEN, mergeStateStatus: null, headRefName: '', baseRefName: '', isDraft: false };
   if (typeof raw !== 'object' || raw === null) return result;
 
   const num = strEntry(raw, 'number');
   if (num !== undefined) result.number = num;
 
   const st = strEntry(raw, 'state');
-  if (st === 'MERGED' || st === 'CLOSED') result.state = st;
+  if (st === PR_STATE.MERGED || st === PR_STATE.CLOSED) result.state = st;
 
   const ms = mergeStatus(raw);
   if (ms !== null) result.mergeStateStatus = ms;
@@ -69,18 +72,18 @@ function parsePrInfo(raw: unknown): PrInfo {
   return result;
 }
 
-function matchPrStateValue(v: unknown): 'OPEN' | 'MERGED' | 'CLOSED' {
-  if (v === 'MERGED') return 'MERGED';
-  if (v === 'CLOSED') return 'CLOSED';
-  return 'OPEN';
+function matchPrStateValue(v: unknown): PrState {
+  if (v === PR_STATE.MERGED) return PR_STATE.MERGED;
+  if (v === PR_STATE.CLOSED) return PR_STATE.CLOSED;
+  return PR_STATE.OPEN;
 }
 
-function parsePrState(raw: unknown): 'OPEN' | 'MERGED' | 'CLOSED' {
-  if (typeof raw !== 'object' || raw === null) return 'OPEN';
+function parsePrState(raw: unknown): PrState {
+  if (typeof raw !== 'object' || raw === null) return PR_STATE.OPEN;
   for (const [k, v] of Object.entries(raw)) {
-    if (k === 'state') return matchPrStateValue(v);
+    if (k === GITHUB_FIELD.STATE) return matchPrStateValue(v);
   }
-  return 'OPEN';
+  return PR_STATE.OPEN;
 }
 
 function defaultGhReader(): GhReader {
@@ -98,7 +101,7 @@ function defaultGhReader(): GhReader {
       try {
         const raw: unknown = JSON.parse(execFileSync('gh', ['pr', 'view', pr, '--json', 'state'], { encoding: 'utf8' }).trim());
         return parsePrState(raw);
-      } catch { return 'OPEN'; }
+      } catch { return PR_STATE.OPEN; }
     },
   };
 }
@@ -112,7 +115,7 @@ function createExecutor(repoRoot: string, io: Io): ReconcilerExecutor {
     taskClose(packetId: string, pr: string) {
       const store = openStore(repoRoot);
       try {
-        const sessionId = ensureSession(store, process.cwd());
+        const sessionId = ensureSession(store, getCwd());
         store.db.prepare('UPDATE packets SET pr = ? WHERE id = ?').run(pr, packetId);
         movePacket(store, sessionId, packetId, STATUS.DONE);
         io.out(`reconciler: closed ${packetId} -> done (PR #${pr})`);
@@ -133,7 +136,7 @@ function createExecutor(repoRoot: string, io: Io): ReconcilerExecutor {
 
 function rowTag(row: ReconcilerResult['rows'][number]): string {
   if (row.executed) return '[EXECUTED]';
-  if (row.safety === 'safe') return '[SAFE]';
+  if (row.safety === RECONCILE_SAFETY.SAFE) return '[SAFE]';
   return '[UNSAFE]';
 }
 
@@ -152,8 +155,8 @@ function renderResult(result: ReconcilerResult, io: Io): void {
     return;
   }
   renderRows(result.rows, io);
-  const safe = result.rows.filter((r) => r.safety === 'safe');
-  const unsafeRows = result.rows.filter((r) => r.safety === 'unsafe');
+  const safe = result.rows.filter((r) => r.safety === RECONCILE_SAFETY.SAFE);
+  const unsafeRows = result.rows.filter((r) => r.safety === RECONCILE_SAFETY.UNSAFE);
   const executed = result.rows.filter((r) => r.executed);
   io.out('---');
   io.out(`${result.rows.length} divergence(s): ${safe.length} safe, ${unsafeRows.length} unsafe, ${executed.length} executed`);
@@ -178,7 +181,7 @@ export const command: Command = {
         return Promise.resolve(EXIT.USAGE);
       }
 
-      const repoRoot = commonRoot(process.cwd());
+      const repoRoot = commonRoot(getCwd());
       const store = openStore(repoRoot);
       try {
         const gh = defaultGhReader();

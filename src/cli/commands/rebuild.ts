@@ -8,9 +8,12 @@ import { stringColumn } from '../../db/rows.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { DB_FILE, SVP_DIR } from '../../db/store.constants.js';
 import type { Store } from '../../db/store.types.js';
+import { getCwd } from '../../runtime/context.js';
 import { parsePacketDocument } from '../../packets/document.js';
 import type { PacketDefinition } from '../../packets/document.types.js';
-import { EVENT_TRANSITION, EXISTS_SQL, INSERT_EVENT_SQL, INSERT_PACKET_SQL, LEASE_TTL_MS, PACKETS_DOCS_DIR, PACKETS_DIR, STATUS, TASK_TYPE_PREFIX } from '../../tasks/service.constants.js';
+import { FILE_EXTENSION } from '../../platform.constants.js';
+import { EVENT_TRANSITION, EXISTS_SQL, INSERT_EVENT_SQL, INSERT_PACKET_SQL, PACKETS_DOCS_DIR, PACKETS_DIR, STATUS, TASK_ID_SEPARATOR, TASK_TYPE_PREFIX } from '../../tasks/service.constants.js';
+import { loadConfig } from '../../config.js';
 import { EXIT } from '../command.constants.js';
 import type { Command } from '../command.types.js';
 
@@ -33,7 +36,7 @@ function freshLeases(repoRoot: string): number {
     const rows = store.db.prepare('SELECT heartbeat_at FROM leases').all();
     let count = 0;
     for (const row of rows) {
-      if (Date.now() - Date.parse(stringColumn(row, 'heartbeat_at')) <= LEASE_TTL_MS) count++;
+      if (Date.now() - Date.parse(stringColumn(row, 'heartbeat_at')) <= loadConfig(repoRoot).tasks.leaseTtlMs) count++;
     }
     return count;
   } catch {
@@ -44,7 +47,7 @@ function freshLeases(repoRoot: string): number {
 }
 
 function typeFromId(id: string): string {
-  const prefix = id.slice(0, id.indexOf('-'));
+  const prefix = id.slice(0, id.indexOf(TASK_ID_SEPARATOR));
   for (const [type, p] of Object.entries(TASK_TYPE_PREFIX)) {
     if (p === prefix) return type;
   }
@@ -83,7 +86,7 @@ function importPacketsFromDocs(repoRoot: string, store: Store): RebuildCounts {
   const packetsDir = join(repoRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
   if (!existsSync(packetsDir)) return { total: 0, terminal: 0 };
 
-  const files = readdirSync(packetsDir).filter((f) => f.endsWith('.md'));
+  const files = readdirSync(packetsDir).filter((f) => f.endsWith(FILE_EXTENSION.MARKDOWN));
   const ts = now();
   const insertPkt = db.prepare(INSERT_PACKET_SQL);
   const insertTrans = db.prepare(
@@ -152,7 +155,7 @@ export const command: Command = {
   summary: 'Reconstruct operational DB from git packet exports',
   destructive: true,
   run(args, io): Promise<number> {
-    const repoRoot = commonRoot(process.cwd());
+    const repoRoot = commonRoot(getCwd());
     const parsed = parseArgs({ args, allowPositionals: true, options: { force: { type: 'boolean' } } });
     if (parsed.positionals.length > 0) {
       io.err('Usage: sv-playbook rebuild [--force]');

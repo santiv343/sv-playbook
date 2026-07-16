@@ -1,31 +1,56 @@
 <!-- GENERATED FROM THE BOARD — do not edit; use `task amend` -->
 ---
 id: SERVE-UI-MODERN-001
-title: serve modern UI: prebuilt SPA (Vite/React, devDeps only) + SSE real-time over node:http — zero runtime deps preserved
-depends_on: ["SERVE-001"]
-write_set: ["serve-ui/**","src/serve/**","package.json",".github/workflows/ci.yml","content/cli.md"]
-requirements: []
-evidence_required: ["red-test-output","verify-root","final-sha"]
+title: local human operations app foundation: shared contracts, Home/Digest, and human-interface
+depends_on: ["DOCS-002","SERVE-001"]
+write_set: ["serve-ui/**","src/serve/**","src/ui/**","src/status/**","package.json","package-lock.json",".github/workflows/ci.yml","content/cli.md"]
+requirements: ["local-offline","channel-agnostic-core","runtime-capabilities-only","accessible","reports-not-transcripts","research-before-build"]
+evidence_required: ["sourcing-assessment","packaged-offline-receipt","builder-action-parity","e2e-workflow-receipts","transport-parity","playwright-screenshots","accessibility-results","content-exclusion-proof","verify-root","final-sha","independent-review"]
 ---
 
+﻿## Problem
+
+The local server has a minimal read-only page and several page-specific follow-ups, but no application foundation that implements the authoritative UI contract, shares view models/capabilities with CLI, or supports the human-interface workflow. The old mockup and a preselected frontend stack must not become hidden product/architecture authority.
+
 ## Task
-The founder-approved serve UX (docs/design/serve-mockup.html) requires a modern, polished UI — beyond what hand-written self-contained HTML can sustain. Land the architecture that delivers it WITHOUT breaking the zero-runtime-deps invariant:
-1. Frontend: a SPA (Vite + React + Tailwind or equivalent mainstream stack) living under serve-ui/, COMPILED AT BUILD TIME; the static build output ships inside the npm package. The end user runs `sv-playbook serve` and gets the full UI — no build step, no install, no network. The entire toolchain stays in devDependencies; `verify` builds it in CI so a broken UI cannot land.
-2. Real-time: replace the poll with Server-Sent Events — `GET /api/events` streamed from node:http (native, zero deps). The SPA subscribes; board/feed/detail update within seconds. Keep the JSON endpoints as the initial-load + fallback path.
-3. The node:http server (SERVE-001) serves the static build + the API; it remains the ONLY runtime piece. No express/ws/etc. — CI must fail if package.json dependencies gains an entry (extend the existing zero-deps guard if present, add one if not).
-4. Visual + interaction source of truth: docs/design/serve-mockup.html (board, Plan, drawer tabs, provenance badges, human-first wording with allowed anglicisms). The SPA implements it; the mockup file stays as the approved reference.
-5. Supersedes the single-file page from SERVE-001 once landed (SERVE-001's minimal page remains the fallback when the build output is absent, e.g. running from a raw git clone — print how to build).
-This packet is the architecture + board view migration; ACTIVITY/PLAN/DETAIL packets build their views on top of it when sequenced after.
 
-## RED test (write first)
-In a serve-ui test add a test named exactly: "serve delivers the built SPA and streams board events over SSE". With a fixture build output present, GET / returns the SPA shell (its marker), and a client on /api/events receives an event when a packet transitions. Today serve has neither -> it FAILS (or the missing module is the first failure).
-Expected failure cause (literal string in the output): the compiler/module error for the missing serve-ui module, OR the test name "serve delivers the built SPA and streams board events over SSE".
+Build the local web application foundation and first complete Home/Digest + global human-interface workflow from DOCS-002.
 
-## Reuse
-SERVE-001's server + API contracts (extend, never fork); the events table as the SSE source (single source — the same events digest consumes); the CI verify pipeline for the UI build step.
+1. Perform and record a sourcing assessment before selecting the maintained frontend/build/accessibility/test stack. Prefer an existing proven stack; isolate framework/build tooling at the UI adapter boundary. Core view-model/action contracts remain framework-neutral.
+2. Ship prebuilt static assets with the package. End users start the local runtime and open the app without installing/building frontend dependencies or using a network. The bundled profile preserves zero runtime npm dependencies unless a separately approved product decision changes it.
+3. One local server adapter exposes canonical view models, registered capability requests, and normalized event/state updates. Initial load and real-time/fallback transports carry the same contracts; renderers own no policy or duplicate queries.
+4. Implement the actual application shell and navigation from DOCS-002, not a landing page. The first screen is Home/Digest with current project/sprint, progress, risks/blockers, decisions, review queue, notifications, budget, effective security level, and recommended human action.
+5. Provide a global human-interface surface that can start/open a project, clarify intent, ask status, and form typed change/decision/work-definition requests. It displays deterministic facts and synthesis provenance separately and never sends direct store/provider mutations.
+6. Every action is resolved from the runtime capability registry and shows pending/accepted/rejected receipt and impact. Unsupported or unauthorized actions are absent/disabled with machine-readable reason.
+7. Establish reusable accessible components/tokens/layout for dense operational work. Use the configured language/profile; no scattered Spanish/provider strings. Preserve stable dimensions and responsive behavior.
+8. Normal payloads/views exclude transcripts, reasoning, raw tool I/O, environment/secret content, and continuous logs. Protected diagnostics remain outside this packet until privacy policy allows them.
+9. Follow-up Board/Plan/Runs/Reviews/Decisions/Settings packets extend this shell and shared contracts; they must not create parallel stores, transports, navigation, or UI policy.
+
+## RED test
+
+Run the packaged app offline, request an unauthorized action, and feed identical state through real-time and fallback transports. The app must load without a build/network, refuse the action before effect, and converge to the same view state. Before the shared app foundation exists, at least one fixture cannot pass.
+
+## Acceptance
+
+- Sourcing assessment records adopt/adapt/build/defer evidence and why the chosen stack fits local packaging, accessibility, maintenance, testing, and exit cost.
+- Packaged install serves the built app offline with no frontend build step/network and no undeclared runtime dependency.
+- Home/Digest and human-interface cold-start/status/change flows work end-to-end against fixture runtime capabilities.
+- CLI and web fixture show equivalent deterministic state/action availability from one builder.
+- An unauthorized action is rejected before an effect and renders the same typed reason.
+- Deterministic fact vs human-interface synthesis provenance is visually and structurally distinguishable.
+- Desktop/mobile Playwright flows, screenshots, accessibility checks, and text-overflow checks pass; no blank, overlapping, clipped, or unreachable primary UI.
+- Real-time and fallback transports converge to identical view state and do not stream transcripts.
+- Content scan proves normal assets/payloads contain no reasoning/transcript/tool/secret fixture.
 
 ## Stop conditions
-Any runtime dependency added to package.json dependencies; a second data path for SSE vs the events table; shipping without the built output in the package (user must never build); redesigning against the approved mockup instead of implementing it; touching files outside the write_set.
 
-## Evidence required at close
-red-test-output, verify-root, final-sha.
+- No old mockup or chosen framework as product authority.
+- No marketing/hero first screen.
+- No second query/action/event model for web.
+- No direct store/provider write from UI/server route.
+- No external UI channel/provider assumption in core contracts.
+- No implementation of later views by duplicating their policy.
+
+## Evidence
+
+Provide sourcing assessment, packaged-offline receipt, shared-builder/action parity, end-to-end workflow receipts, real-time/fallback parity, Playwright desktop/mobile screenshots and accessibility results, content-exclusion proof, full verification, final SHA, and independent UX/architecture review.

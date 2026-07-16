@@ -18,6 +18,7 @@ requirements, architecture, risks). 4. The rulebook and taste files.
 | # | Type | Do | Expected | On mismatch |
 |---|------|----|----------|-------------|
 | 1 | JUDGMENT | Slice vertically: each packet = smallest unit worth a reviewer's gate, own test cycle, setup folded into the task needing it | — | — |
+| 1b | JUDGMENT | Complexity budget check: does this packet ADD a mechanism (table, receipt kind, gate, command, module, config surface)? If yes, the body must name the existing mechanism considered and why it cannot carry the case (ENTRY-013), and must show the second concrete consumer if it builds for variation (ENTRY-012). Speculative generality is descoped, with a seam noted. | — | — |
 | 2 | EXEC | Author via `sv-playbook task create` ONLY, with: write_set globs, depends_on, requirements traceability, evidence_required, body containing: exact task, the RED test to write, **the expected failure cause as a literal matchable string**, reuse pointers, stop conditions | Exit 0; every listed element present in the body | Fix before proceeding; hand-written packet files are a violation. |
 | 3 | EXEC | `grep -iE 'TBD|TODO|OPEN:|later|somehow' docs/packets/<id>.md` | Zero matches | Remove every occurrence; re-run. |
 | 4 | EXEC | Extract every embedded code/config snippet from the packet body and run the project's typecheck + lint against them together | Exit 0 | Fix the snippets. (P1 shipped three blockers because the planner skipped this.) |

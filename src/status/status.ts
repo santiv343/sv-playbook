@@ -1,7 +1,9 @@
+import { dirname } from 'node:path';
 import { getBackupStatus } from '../db/backup.js';
-import { stringColumn } from '../db/rows.js';
+import { loadConfig } from '../config.js';
+import { numberColumn, stringColumn } from '../db/rows.js';
 import type { Store } from '../db/store.types.js';
-import { LEASE_TTL_MS } from '../tasks/service.constants.js';
+import { STATUS } from '../tasks/service.constants.js';
 import {
   COL_ID,
   COL_LAST_EVENT,
@@ -26,7 +28,7 @@ function leaseRows(store: Store): Map<string, StatusLease> {
       sessionId: stringColumn(row, 'session_id'),
       worktree: stringColumn(row, 'worktree'),
       heartbeatAt,
-      stale: Date.now() - Date.parse(heartbeatAt) > LEASE_TTL_MS,
+      stale: Date.now() - Date.parse(heartbeatAt) > loadConfig(dirname(store.dir)).tasks.leaseTtlMs,
     });
   }
   return result;
@@ -160,6 +162,11 @@ export function readBoardStatus(store: Store, repoRoot: string): BoardStatus {
   return {
     counts: countsFor(packets),
     packets,
-    backup: getBackupStatus(repoRoot),
+    backup: getBackupStatus(repoRoot, {
+      liveTerminalPacketCount: numberColumn(
+        store.db.prepare('SELECT COUNT(*) AS n FROM packets WHERE status IN (?, ?)').get(STATUS.DONE, STATUS.DROPPED),
+        'n',
+      ),
+    }),
   };
 }

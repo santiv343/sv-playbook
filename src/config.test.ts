@@ -15,11 +15,23 @@ test('loadConfig returns defaults when the file is absent', () => {
     verifyCommand: 'npm run verify',
     autonomy: 'strict',
     maxConcurrentWorkers: 3,
+    reviewCandidateMaxBytes: 16 * 1024 * 1024,
+    reviewPreflight: {
+      baseReference: 'main',
+      preparationCommand: '',
+      noOutputTimeoutMs: 600_000,
+    },
+    tasks: {
+      leaseTtlMs: 30 * 60 * 1_000,
+    },
     backup: {
       enabled: true,
       retention: 20,
       maxAgeHours: 6,
       onEvents: ['done', 'force-takeover', 'restore', 'schema-mismatch'],
+    },
+    modelEvaluation: {
+      evidenceValidityDays: 30,
     },
     gates: {
       maxLines: 350,
@@ -39,11 +51,20 @@ test('loadConfig reads a valid config file', () => {
     tier: 'TIER-1',
     verifyCommand: 'npm run check',
     autonomy: 'high',
+    reviewCandidateMaxBytes: 8 * 1024 * 1024,
+    reviewPreflight: {
+      baseReference: 'release/stable',
+      preparationCommand: 'npm ci',
+      noOutputTimeoutMs: 1_234,
+    },
     backup: {
       enabled: false,
       retention: 3,
       maxAgeHours: 12,
       onEvents: ['done'],
+    },
+    modelEvaluation: {
+      evidenceValidityDays: 45,
     },
   }));
   const config = loadConfig(dir);
@@ -54,11 +75,23 @@ test('loadConfig reads a valid config file', () => {
     verifyCommand: 'npm run check',
     autonomy: 'high',
     maxConcurrentWorkers: 3,
+    reviewCandidateMaxBytes: 8 * 1024 * 1024,
+    reviewPreflight: {
+      baseReference: 'release/stable',
+      preparationCommand: 'npm ci',
+      noOutputTimeoutMs: 1_234,
+    },
+    tasks: {
+      leaseTtlMs: 30 * 60 * 1_000,
+    },
     backup: {
       enabled: false,
       retention: 3,
       maxAgeHours: 12,
       onEvents: ['done'],
+    },
+    modelEvaluation: {
+      evidenceValidityDays: 45,
     },
     gates: {
       maxLines: 350,
@@ -145,6 +178,22 @@ test('config rejects non-numeric maxConcurrentWorkers', () => {
   assert.throws(() => loadConfig(dir), { name: 'ConfigError' });
 });
 
+test('loadConfig rejects an empty review base reference', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(dir, 'playbook.config.json'), JSON.stringify({
+    reviewPreflight: { baseReference: '   ' },
+  }));
+  assert.throws(() => loadConfig(dir), { name: 'ConfigError', message: /reviewPreflight\.baseReference/ });
+});
+
+test('config rejects a non-positive reviewCandidateMaxBytes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(dir, 'playbook.config.json'), JSON.stringify({
+    reviewCandidateMaxBytes: 0,
+  }));
+  assert.throws(() => loadConfig(dir), { name: 'ConfigError', message: /reviewCandidateMaxBytes/ });
+});
+
 test('gate thresholds and the layout rule come from config, not hardcoded', () => {
   const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
   const config = loadConfig(dir);
@@ -165,4 +214,58 @@ test('gate thresholds and the layout rule come from config, not hardcoded', () =
   assert.equal(config2.gates.complexity, 10);
   assert.equal(config2.gates.cognitiveComplexity, 10);
   assert.equal(config2.gates.layout, false);
+});
+
+test('source debt baselines are validated as non-negative counts and SHA-256 digests', () => {
+  const validDir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(validDir, 'playbook.config.json'), JSON.stringify({
+    baseline: {
+      ormApplicationSql: { count: 0, digest: 'a'.repeat(64) },
+      literalComparisons: { count: 0, digest: 'b'.repeat(64) },
+      duplicateStrings: { count: 0, digest: 'c'.repeat(64) },
+    },
+  }));
+  assert.deepEqual(loadConfig(validDir).baseline?.ormApplicationSql, {
+    count: 0,
+    digest: 'a'.repeat(64),
+  });
+  assert.deepEqual(loadConfig(validDir).baseline?.literalComparisons, {
+    count: 0,
+    digest: 'b'.repeat(64),
+  });
+  assert.deepEqual(loadConfig(validDir).baseline?.duplicateStrings, {
+    count: 0,
+    digest: 'c'.repeat(64),
+  });
+
+  const invalidCountDir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(invalidCountDir, 'playbook.config.json'), JSON.stringify({
+    baseline: { ormApplicationSql: { count: -1, digest: 'a'.repeat(64) } },
+  }));
+  assert.throws(() => loadConfig(invalidCountDir), { name: 'ConfigError', message: /non-negative/ });
+
+  const invalidDigestDir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(invalidDigestDir, 'playbook.config.json'), JSON.stringify({
+    baseline: { ormApplicationSql: { count: 0, digest: 'not-a-digest' } },
+  }));
+  assert.throws(() => loadConfig(invalidDigestDir), { name: 'ConfigError', message: /SHA-256/ });
+});
+
+test('tasks.leaseTtlMs defaults to 30 minutes and accepts a custom positive value', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  assert.equal(loadConfig(dir).tasks.leaseTtlMs, 30 * 60 * 1_000);
+
+  const customDir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(customDir, 'playbook.config.json'), JSON.stringify({
+    tasks: { leaseTtlMs: 5_000 },
+  }));
+  assert.equal(loadConfig(customDir).tasks.leaseTtlMs, 5_000);
+});
+
+test('tasks.leaseTtlMs rejects a non-positive value', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-config-'));
+  writeFileSync(join(dir, 'playbook.config.json'), JSON.stringify({
+    tasks: { leaseTtlMs: 0 },
+  }));
+  assert.throws(() => loadConfig(dir), { name: 'ConfigError', message: /leaseTtlMs/ });
 });

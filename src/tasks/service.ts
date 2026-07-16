@@ -1,6 +1,5 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
-import { execFileSync, execSync } from 'node:child_process';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from '../db/store.types.js';
 import { numberColumn, stringColumn } from '../db/rows.js';
@@ -9,6 +8,8 @@ import type { PacketDefinition } from '../packets/document.types.js';
 import { LifecycleError } from './service.errors.js';
 import { contentDir } from '../content.js';
 import { loadConfig } from '../config.js';
+import { changedFilesForBase } from '../git.js';
+import { FILE_EXTENSION, PATH_TOKEN } from '../platform.constants.js';
 import { getActiveCount, sprintWipLimit, taskSprintId } from '../sprints/service.js';
 import {
   ALLOWED,
@@ -22,23 +23,31 @@ import {
   INSERT_EVENT_SQL,
   INSERT_LEASE_SQL,
   INSERT_PACKET_SQL,
-  LEASE_TTL_MS,
-  PACKETS_DIR,
-  PACKETS_DOCS_DIR,
+  PACKET_IMPORT_RESULT,
+  type PacketImportResult,
+  PACKETS_DIR, PACKETS_DOCS_DIR,
   SESSION_FILE_NAME,
   STATUS,
   TASK_TYPE_PREFIX,
+  TRANSITION_COLUMN,
 } from './service.constants.js';
-import type { LeaseInfo, PacketStatus, RecoveryReport, ImportResult } from './service.types.js';
-
+import { DATABASE_COLUMN } from '../db/schema-vocabulary.constants.js';
+import type { LeaseInfo, PacketStatus, PreparedReviewCandidate, RecoveryReport, ImportResult } from './service.types.js';
+import { transact } from './transaction.js';
+import { assertDependenciesTerminal, currentPacketStatus } from './dependencies.js';
+import { loadWorkDefinition, recordWorkDefinition, workDefinitionValue } from './work-definitions.js';
+import { eq } from 'drizzle-orm';
+import { packets } from './schema.constants.js';
+import { overlaps } from './write-set.js';
+import { captureLegacyReviewEvidence } from './legacy-review-evidence.js';
+import {
+  persistReviewCandidate,
+  reviewCandidateRequired,
+} from '../review/review-candidate.js';
+import { verifyLegacyReviewSync } from './legacy-review-verification.js';
+export { amendPacket } from './amend.js';
+export { overlaps } from './write-set.js';
 const now = (): string => new Date().toISOString();
-
-function transact(store: Store, fn: () => void): void {
-  const { db } = store;
-  try { db.exec('BEGIN IMMEDIATE'); fn(); db.exec('COMMIT'); }
-  catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
-}
-
 export function generateIdFromType(store: Store, type: string): string {
   const prefix = TASK_TYPE_PREFIX[type];
   if (prefix === undefined) throw new LifecycleError(`unknown task type: ${type}`);
@@ -54,12 +63,6 @@ function recordTransition(store: Store, packetId: string, from: string, to: stri
   store.db.prepare(INSERT_EVENT_SQL).run(sessionId ?? null, packetId, EVENT_TRANSITION, `${from}->${to}`, now());
 }
 
-export function overlaps(a: string, b: string): boolean {
-  const pa = a.replace(/\/\*\*$|\/\*$/, ''), pb = b.replace(/\/\*\*$|\/\*$/, '');
-  if (pa === pb || pa.startsWith(pb + '/') || pb.startsWith(pa + '/')) return true;
-  return new RegExp('^' + a.replace(/\./g, '\\.').replace(/\*/g, '[^/]*') + '$').test(b);
-}
-
 export function createPacket(store: Store, docRoot: string, def: PacketDefinition, body: string, type?: string): void {
   const exists = store.db.prepare(EXISTS_SQL).get(def.id);
   if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`, 'existing packet file? use task import <path>');
@@ -72,22 +75,27 @@ export function createPacket(store: Store, docRoot: string, def: PacketDefinitio
     for (const depId of def.dependsOn) {
       store.db.prepare('INSERT INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);
     }
+    recordWorkDefinition(store, workDefinitionValue(def, body, type));
     recordTransition(store, def.id, 'none', STATUS.DRAFT);
   });
 }
-function upsertPacketFile(store: Store, path: string): 'imported' | 'updated' {
+function upsertPacketFile(store: Store, path: string): PacketImportResult {
   const text = readFileSync(path, 'utf8');
   const { definition: def, body } = parsePacketDocument(text);
   const existing = store.db.prepare(EXISTS_SQL).get(def.id);
-  let result: 'imported' | 'updated' = 'imported';
+  let result: PacketImportResult = PACKET_IMPORT_RESULT.IMPORTED;
   transact(store, () => {
     if (existing !== undefined) {
+      const typeRow = store.orm.select({ type: packets.type }).from(packets).where(eq(packets.id, def.id)).get();
+      if (typeRow === undefined) throw new LifecycleError(`unknown packet: ${def.id}`);
       store.db.prepare('UPDATE packets SET body = ?, title = ?, write_set = ?, updated_at = ? WHERE id = ?')
         .run(body, def.title, JSON.stringify(def.writeSet), now(), def.id);
       deleteDeps(store, def.id); upsertDeps(store, def);
-      result = 'updated'; return;
+      recordWorkDefinition(store, workDefinitionValue(def, body, typeRow.type));
+      result = PACKET_IMPORT_RESULT.UPDATED; return;
     }
     store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now());
+    recordWorkDefinition(store, workDefinitionValue(def, body));
     recordTransition(store, def.id, 'none', STATUS.DRAFT);
     upsertDeps(store, def);
   });
@@ -101,13 +109,14 @@ export function importPackets(store: Store, docRoot: string): ImportResult {
   if (!existsSync(dir)) return { imported: 0, updated: 0 };
   let imported = 0; let updated = 0;
   for (const entry of readdirSync(dir)) {
-    if (!entry.endsWith('.md')) continue;
-    if (upsertPacketFile(store, join(dir, entry)) === 'imported') imported++; else updated++;
+    if (!entry.endsWith(FILE_EXTENSION.MARKDOWN)) continue;
+    if (upsertPacketFile(store, join(dir, entry)) === PACKET_IMPORT_RESULT.IMPORTED) imported++; else updated++;
   }
   return { imported, updated };
 }
 function resolveImportPath(docRoot: string, pathOrId: string): string {
-  return pathOrId.includes('/') || pathOrId.includes('\\') || pathOrId.endsWith('.md') ? pathOrId : join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR, `${pathOrId}.md`);
+  const isPath = pathOrId.includes(PATH_TOKEN.POSIX_SEPARATOR) || pathOrId.includes(PATH_TOKEN.WINDOWS_SEPARATOR) || pathOrId.endsWith(FILE_EXTENSION.MARKDOWN);
+  return isPath ? pathOrId : join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR, `${pathOrId}${FILE_EXTENSION.MARKDOWN}`);
 }
 
 export function importPacketFile(store: Store, docRoot: string, pathOrId: string): string {
@@ -120,7 +129,7 @@ export function importPacketFile(store: Store, docRoot: string, pathOrId: string
   if (store.db.prepare(EXISTS_SQL).get(def.id) !== undefined)
     throw new LifecycleError(`packet already exists in DB: ${def.id}`, 'use task amend to update');
 
-  transact(store, () => { store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, filePath, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now()); recordTransition(store, def.id, 'none', STATUS.DRAFT); upsertDeps(store, def); store.db.prepare(INSERT_EVENT_SQL).run(null, def.id, EVENT_IMPORTED, `imported from ${filePath}`, now()); });
+  transact(store, () => { store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, filePath, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now()); recordWorkDefinition(store, workDefinitionValue(def, body)); recordTransition(store, def.id, 'none', STATUS.DRAFT); upsertDeps(store, def); store.db.prepare(INSERT_EVENT_SQL).run(null, def.id, EVENT_IMPORTED, `imported from ${filePath}`, now()); });
 
   return def.id;
 }
@@ -132,21 +141,17 @@ export function ensureSession(store: Store, worktree: string): string {
   if (existsSync(file)) { const id = readFileSync(file, 'utf8').trim(); if (store.db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(id) !== undefined) return id; }
   const id = randomUUID();
   store.db.prepare('INSERT INTO sessions (id, worktree, started_at) VALUES (?,?,?)').run(id, worktree, now());
-  writeFileSync(file, `${id}\n`, 'utf8');
+  mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, `${id}\n`, 'utf8');
   return id;
-}
-function currentStatus(store: Store, packetId: string): string {
-  const row = store.db.prepare('SELECT status FROM packets WHERE id = ?').get(packetId);
-  if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
-  return stringColumn(row, 'status');
 }
 export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
   const row = store.db.prepare('SELECT session_id, worktree, acquired_at, heartbeat_at FROM leases WHERE packet_id = ?').get(packetId);
   if (row === undefined) return undefined;
   const heartbeatAt = stringColumn(row, 'heartbeat_at');
+  const leaseTtlMs = loadConfig(dirname(store.dir)).tasks.leaseTtlMs;
   return { sessionId: stringColumn(row, 'session_id'), worktree: stringColumn(row, 'worktree'),
     acquiredAt: stringColumn(row, 'acquired_at'), heartbeatAt,
-    stale: Date.now() - Date.parse(heartbeatAt) > LEASE_TTL_MS };
+    stale: Date.now() - Date.parse(heartbeatAt) > leaseTtlMs };
 }
 export function refreshHeartbeat(store: Store, sessionId: string): void {
   store.db.prepare('UPDATE leases SET heartbeat_at = ? WHERE session_id = ?').run(now(), sessionId);
@@ -162,7 +167,7 @@ function checkSprintWipLimit(store: Store, packetId: string): void {
 
 export function startPacket(store: Store, sessionId: string, worktree: string, packetId: string): void {
   refreshHeartbeat(store, sessionId);
-  const status = currentStatus(store, packetId);
+  const status = currentPacketStatus(store, packetId);
   const lease = leaseOf(store, packetId);
   if (lease !== undefined) {
     if (lease.sessionId === sessionId) return;
@@ -173,9 +178,13 @@ export function startPacket(store: Store, sessionId: string, worktree: string, p
     throw new LifecycleError(`wrong state ${status}`, hint);
   }
   checkSprintWipLimit(store, packetId);
-  transact(store, () => { store.db.prepare(INSERT_LEASE_SQL).run(packetId, sessionId, worktree, now(), now()); recordTransition(store, packetId, STATUS.READY, STATUS.ACTIVE, sessionId); });
+  transact(store, () => {
+    assertDependenciesTerminal(store, packetId);
+    store.db.prepare(INSERT_LEASE_SQL).run(packetId, sessionId, worktree, now(), now());
+    recordTransition(store, packetId, STATUS.READY, STATUS.ACTIVE, sessionId);
+  });
 }
-function assertLeaseForActive(store: Store, sessionId: string | undefined, packetId: string): void {
+export function assertLeaseForActive(store: Store, sessionId: string | undefined, packetId: string): void {
   const lease = leaseOf(store, packetId);
   if (lease === undefined || sessionId === undefined) throw new LifecycleError('lease required to leave active');
   if (lease.sessionId !== sessionId) throw new LifecycleError(`lease held by another session ${lease.sessionId}`);
@@ -194,7 +203,7 @@ function ourGlobs(store: Store, packetId: string): string[] {
   const row = store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get(packetId);
   return row === undefined ? [] : parseGlobs(stringColumn(row, 'write_set'));
 }
-function conflictsWith(ours: string[], row: Record<string, unknown>): boolean {
+function conflictsWith(ours: string[], row: unknown): boolean {
   return parseGlobs(stringColumn(row, 'write_set')).some((b) => ours.some((a) => overlaps(a, b)));
 }
 function checkWriteSetConflict(store: Store, packetId: string): void {
@@ -205,85 +214,96 @@ function checkWriteSetConflict(store: Store, packetId: string): void {
     if (conflictsWith(ours, row)) throw new LifecycleError(`write_set conflict with ${stringColumn(row, 'id')}`);
   }
 }
-function findMergeBase(worktree: string): string | undefined {
-  for (const base of ['origin/main', 'origin/master', 'main', 'master']) try { return execFileSync('git', ['merge-base', base, 'HEAD'], { cwd: worktree, encoding: 'utf8', stdio: 'pipe' }).trim(); } catch { /* next */ }
-  return undefined;
-}
 function gateReview(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
   const lease = leaseOf(store, packetId);
   if (!lease) return;
   const glbs = ourGlobs(store, packetId);
   if (glbs.length === 0) return;
-  const mergeBase = findMergeBase(lease.worktree);
-  if (!mergeBase) return;
-  const changed = (() => { try { return execFileSync('git', ['diff', '--name-only', `${mergeBase}...HEAD`], { cwd: lease.worktree, encoding: 'utf8' }).trim(); } catch { return ''; } })();
-  if (!changed) return;
-  const offending = changed.split('\n').filter((f) => f !== '' && !glbs.some((g) => overlaps(g, f)));
+  let changed: readonly string[];
+  try {
+    const baseReference = loadConfig(dirname(store.dir)).reviewPreflight.baseReference;
+    changed = changedFilesForBase(lease.worktree, baseReference);
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new LifecycleError(`configured review base is unavailable: ${detail}`);
+  }
+  const offending = changed.filter((file) => !glbs.some((glob) => overlaps(glob, file)));
   if (offending.length > 0) throw new LifecycleError(`write_set violation: branch changed files outside write_set: ${offending.join(', ')}`);
 }
 const gateEvidence = (store: Store, packetId: string, to: string): void => {
   if (to !== STATUS.DONE) return;
-  const { evidenceRequired } = parsePacketDocument(readFileSync(stringColumn(store.db.prepare('SELECT path FROM packets WHERE id = ?').get(packetId), 'path'), 'utf8')).definition;
+  const { evidenceRequired } = loadWorkDefinition(store, packetId).value;
   if (evidenceRequired.length > 0 && store.db.prepare("SELECT 1 FROM events WHERE packet_id = ? AND command = ? LIMIT 1").all(packetId, EVENT_EVIDENCE).length === 0)
     throw new LifecycleError(`missing required evidence: ${evidenceRequired.join(', ')}`);
 };
 function gateVerify(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
+  if (reviewCandidateRequired(store, to)) return;
   const lease = leaseOf(store, packetId);
   if (lease === undefined) return;
-  const cfgPath = join(lease.worktree, 'playbook.config.json');
-  if (!existsSync(cfgPath) || /enforceVerifyOnReview\s*:\s*false/.test(readFileSync(cfgPath, 'utf8'))) return;
-  const config = loadConfig(lease.worktree);
-  if (config.verifyCommand.trim() === '') return;
-  try { execSync(config.verifyCommand, { cwd: lease.worktree, timeout: 120_000, stdio: 'pipe' }); }
-  catch { throw new LifecycleError(`verify command failed: ${config.verifyCommand}`); }
+  verifyLegacyReviewSync(lease.worktree);
 }
-function captureEvidence(store: Store, packetId: string, from: string, to: string): void {
-  if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
-  const lease = leaseOf(store, packetId);
-  if (lease === undefined) return;
-  try {
-    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: lease.worktree, encoding: 'utf8' }).trim();
-    const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: lease.worktree, encoding: 'utf8' }).trim();
-    store.db.prepare(INSERT_EVENT_SQL).run(null, packetId, EVENT_EVIDENCE, `head-sha ${sha}`, now());
-    store.db.prepare(INSERT_EVENT_SQL).run(null, packetId, EVENT_EVIDENCE, `branch ${branch}`, now());
-    process.stdout.write(`evidence captured: ${sha} on ${branch}\n`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message.split('\n')[0] ?? err.message : String(err);
-    store.db.prepare(INSERT_EVENT_SQL).run(null, packetId, EVENT_EVIDENCE, `head-sha unavailable: ${msg}`, now());
-  }
-}
-export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): string {
+export function validateMove(
+  store: Store,
+  sessionId: string | undefined,
+  packetId: string,
+  to: PacketStatus,
+): string {
   if (sessionId !== undefined) refreshHeartbeat(store, sessionId);
-  const from = currentStatus(store, packetId);
+  const from = currentPacketStatus(store, packetId);
   if (to === STATUS.ACTIVE) throw new LifecycleError('use task start to activate a packet');
   const allowed = ALLOWED.get(from) ?? [];
   if (!allowed.includes(to)) throw new LifecycleError(`illegal transition ${from} -> ${to}`);
   if (to === STATUS.READY) checkWriteSetConflict(store, packetId);
   if (from === STATUS.ACTIVE) assertLeaseForActive(store, sessionId, packetId);
-  captureEvidence(store, packetId, from, to); gateReview(store, packetId, from, to); gateVerify(store, packetId, from, to); gateEvidence(store, packetId, to);
+  gateReview(store, packetId, from, to);
+  gateEvidence(store, packetId, to);
+  return from;
+}
+
+export function persistMove(
+  store: Store,
+  sessionId: string | undefined,
+  packetId: string,
+  from: string,
+  to: PacketStatus,
+  prepared?: PreparedReviewCandidate,
+): void {
   transact(store, () => {
+    if (to === STATUS.READY) assertDependenciesTerminal(store, packetId);
+    if (prepared !== undefined) persistReviewCandidate(store, prepared.definition, prepared.candidate);
     if (from !== STATUS.ACTIVE || to !== STATUS.BLOCKED) store.db.prepare(DELETE_LEASE_SQL).run(packetId);
     recordTransition(store, packetId, from, to, sessionId);
   });
+}
+
+export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): string {
+  const from = validateMove(store, sessionId, packetId, to);
+  if (reviewCandidateRequired(store, to)) {
+    throw new LifecycleError('review candidate transitions require the asynchronous runtime operation');
+  }
+  gateVerify(store, packetId, from, to);
+  captureLegacyReviewEvidence(store, packetId, from, to, leaseOf(store, packetId));
+  persistMove(store, sessionId, packetId, from, to);
   return from;
 }
+
 export function recoverPacket(store: Store, packetId: string): RecoveryReport {
-  const status = currentStatus(store, packetId);
+  const status = currentPacketStatus(store, packetId);
   const transitionRows = store.db.prepare("SELECT at, from_status, to_status, COALESCE(session_id, '-') AS session_id FROM transitions WHERE packet_id = ? ORDER BY seq DESC LIMIT 5").all(packetId);
   const noteRows = store.db.prepare('SELECT at, detail FROM events WHERE packet_id = ? AND command = ? ORDER BY seq DESC LIMIT 5').all(packetId, EVENT_NOTE);
   const dependsOn = getDeps(store, packetId);
   return { packetId, status, dependsOn, lease: leaseOf(store, packetId),
-    lastTransitions: transitionRows.map((row) => `${stringColumn(row, 'at')} ${stringColumn(row, 'from_status')}->${stringColumn(row, 'to_status')} (${stringColumn(row, 'session_id')})`),
-    lastNotes: noteRows.map((row) => `${stringColumn(row, 'at')} ${stringColumn(row, 'detail')}`) };
+    lastTransitions: transitionRows.map((row) => `${stringColumn(row, TRANSITION_COLUMN.AT)} ${stringColumn(row, TRANSITION_COLUMN.FROM_STATUS)}->${stringColumn(row, TRANSITION_COLUMN.TO_STATUS)} (${stringColumn(row, DATABASE_COLUMN.SESSION_ID)})`),
+    lastNotes: noteRows.map((row) => `${stringColumn(row, TRANSITION_COLUMN.AT)} ${stringColumn(row, 'detail')}`) };
 }
 export function takeoverPacket(
   store: Store, sessionId: string, worktree: string,
   packetId: string, force: boolean,
 ): RecoveryReport {
   const lease = leaseOf(store, packetId);
-  if (lease === undefined && currentStatus(store, packetId) !== STATUS.ACTIVE) {
+  if (lease === undefined && currentPacketStatus(store, packetId) !== STATUS.ACTIVE) {
     throw new LifecycleError('no lease to take over', 'use task start');
   }
   if (lease !== undefined) {
@@ -299,7 +319,7 @@ export function takeoverPacket(
   return recoverPacket(store, packetId);
 }
 export function notePacket(store: Store, sessionId: string, packetId: string, text: string): void {
-  currentStatus(store, packetId);
+  currentPacketStatus(store, packetId);
   const detail = text.trim();
   if (detail.length === 0) throw new LifecycleError('note text required');
   refreshHeartbeat(store, sessionId);
@@ -308,27 +328,6 @@ export function notePacket(store: Store, sessionId: string, packetId: string, te
 function getDeps(store: Store, packetId: string): string[] {
   const rows = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all(packetId);
   return rows.map((row) => stringColumn(row, 'depends_on_id'));
-}
-export function amendPacket(store: Store, docRoot: string, packetId: string, updates: { title?: string; body?: string; writeSet?: string[]; dependsOn?: string[]; requirements?: string[]; evidenceRequired?: string[]; }): void {
-  const row = store.db.prepare('SELECT id, title, body, write_set, status, path FROM packets WHERE id = ?').get(packetId);
-  if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
-  const s = stringColumn(row, 'status');
-  if (s !== STATUS.DRAFT && s !== STATUS.READY) throw new LifecycleError(`cannot amend packet in status ${s}`, 'only draft and ready packets can be amended');
-  const docDef = parsePacketDocument(readFileSync(stringColumn(row, 'path'), 'utf8')).definition;
-  const title = updates.title ?? stringColumn(row, 'title');
-  const body = updates.body ?? stringColumn(row, 'body');
-  const writeSet = updates.writeSet ?? parseGlobs(stringColumn(row, 'write_set'));
-  const dependsOn = updates.dependsOn ?? getDeps(store, packetId);
-  const requirements = updates.requirements ?? docDef.requirements;
-  const evidenceRequired = updates.evidenceRequired ?? docDef.evidenceRequired;
-  transact(store, () => {
-    store.db.prepare('UPDATE packets SET title = ?, body = ?, write_set = ?, updated_at = ? WHERE id = ?')
-      .run(title, body, JSON.stringify(writeSet), now(), packetId);
-    deleteDeps(store, packetId);
-    upsertDeps(store, { id: packetId, title, dependsOn, writeSet, requirements, evidenceRequired });
-  });
-  writeFileSync(stringColumn(row, 'path'), generatePacketDocument(
-    { id: packetId, title, dependsOn, writeSet, requirements, evidenceRequired }, body), 'utf8');
 }
 export function briefPacket(store: Store, packetId: string): string {
   const row = store.db.prepare('SELECT id, title, path, status, body FROM packets WHERE id = ?').get(packetId);

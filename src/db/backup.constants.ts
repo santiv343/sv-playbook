@@ -2,6 +2,7 @@ const FORCE_TAKEOVER = 'force-takeover';
 
 export const BACKUPS_DIR = 'backups';
 export const BACKUP_PREFIX = 'playbook';
+export const BACKUP_REFUSED_PREFIX = 'backup refused:';
 export const BACKUP_REASON = {
   MANUAL: 'manual',
   PRE_RESTORE: 'pre-restore',
@@ -22,3 +23,4 @@ export const BACKUP_RETENTION_DEFAULT = 20;
 export const BACKUP_MAX_AGE_HOURS_DEFAULT = 6;
 export const BACKUP_RETENTION_FLOOR_DEFAULT = 3;
 export const BACKUP_MAX_FAILED_CYCLES = 3;
+export const BACKUP_MANIFEST_FIELD = { SHA256: 'sha256' } as const;

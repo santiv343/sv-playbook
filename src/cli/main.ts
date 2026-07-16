@@ -1,10 +1,13 @@
 import { commonRoot } from '../db/store.js';
 import { commands } from './registry.js';
 import { EXIT } from './command.constants.js';
+import { extractConfirmDestructive } from './command.js';
+import { setContext, getCwd } from '../runtime/context.js';
 import type { Command, Io } from './command.types.js';
+import type { ExecutionContext } from '../runtime/context.types.js';
 import { checkDestructiveGate, queryDestructiveCounts } from './destructive-gate.js';
 
-const CONFIRM_FLAG = '--confirm-destructive';
+const HELP_FLAG = { LONG: '--help', SHORT: '-h' } as const;
 
 const defaultIo: Io = {
   out: (l) => void process.stdout.write(`${l}\n`),
@@ -20,17 +23,20 @@ function usage(io: Io): void {
 
 function gateCheckedArgs(command: Command, args: string[], io: Io): string[] | number {
   if (!command.destructive) return args;
-  const hasConfirm = args.includes(CONFIRM_FLAG);
-  const runArgs = hasConfirm ? args.filter((a) => a !== CONFIRM_FLAG) : args;
-  const repoRoot = commonRoot(process.cwd());
+  const { args: runArgs, hasConfirm } = extractConfirmDestructive(args);
+  const repoRoot = commonRoot(getCwd());
   const gateResult = checkDestructiveGate(io, command.name, repoRoot, hasConfirm, queryDestructiveCounts(repoRoot));
   if (gateResult !== undefined) return gateResult;
   return runArgs;
 }
 
-export async function main(argv: string[], io: Io = defaultIo): Promise<number> {
+export async function main(argv: string[], io: Io = defaultIo, ctx?: ExecutionContext): Promise<number> {
+  if (ctx !== undefined) {
+    setContext(ctx);
+  }
+
   const [name, ...args] = argv;
-  if (name === undefined || name === '--help' || name === '-h') {
+  if (name === undefined || name === HELP_FLAG.LONG || name === HELP_FLAG.SHORT) {
     usage(io);
     return EXIT.USAGE;
   }

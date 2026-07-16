@@ -1,0 +1,207 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "*": "deny",
+    "external_directory": "deny"
+  },
+  "agent": {
+    "advisor": {
+      "description": "Runtime-managed execution profile for advisor. Semantic context is injected per run.",
+      "mode": "all",
+      "model": "deepseek/deepseek-v4-pro",
+      "permission": {
+        "*": "deny",
+        "apply_patch": "deny",
+        "bash": "deny",
+        "edit": "deny",
+        "glob": "allow",
+        "grep": "allow",
+        "invalid": "deny",
+        "question": "deny",
+        "read": "allow",
+        "skill": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "write": "deny"
+      }
+    },
+    "arbiter": {
+      "description": "Runtime-managed execution profile for arbiter. Semantic context is injected per run.",
+      "mode": "all",
+      "model": "deepseek/deepseek-v4-pro",
+      "permission": {
+        "*": "deny",
+        "apply_patch": "deny",
+        "bash": "deny",
+        "edit": "deny",
+        "glob": "allow",
+        "grep": "allow",
+        "invalid": "deny",
+        "question": "deny",
+        "read": "allow",
+        "skill": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "write": "deny"
+      }
+    },
+    "delivery-orchestrator": {
+      "description": "Runtime-managed execution profile for delivery-orchestrator. Semantic context is injected per run.",
+      "mode": "all",
+      "model": "deepseek/deepseek-v4-pro",
+      "permission": {
+        "*": "deny",
+        "apply_patch": "deny",
+        "bash": "deny",
+        "edit": "deny",
+        "glob": "allow",
+        "grep": "allow",
+        "invalid": "deny",
+        "question": "deny",
+        "read": "allow",
+        "skill": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "write": "deny"
+      }
+    },
+    "human-interface": {
+      "description": "Runtime-managed execution profile for human-interface. Semantic context is injected per run.",
+      "mode": "all",
+      "model": "deepseek/deepseek-v4-pro",
+      "permission": {
+        "*": "deny",
+        "apply_patch": "deny",
+        "bash": "deny",
+        "edit": "deny",
+        "glob": "deny",
+        "grep": "deny",
+        "invalid": "deny",
+        "question": "deny",
+        "read": "deny",
+        "skill": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "write": "deny"
+      }
+    },
+    "implementer": {
+      "description": "Runtime-managed execution profile for implementer. Semantic context is injected per run.",
+      "mode": "all",
+      "model": "deepseek/deepseek-v4-flash",
+      "permission": {
+        "*": "deny",
+        "apply_patch": "allow",
+        "bash": "allow",
+        "edit": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "invalid": "deny",
+        "question": "deny",
+        "read": "allow",
+        "skill": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "write": "allow"
+      }
+    },
+    "investigator": {
+      "description": "Runtime-managed execution profile for investigator. Semantic context is injected per run.",
+      "mode": "all",
+      "model": "deepseek/deepseek-v4-pro",
+      "permission": {
+        "*": "deny",
+        "apply_patch": "deny",
+        "bash": "allow",
+        "edit": "deny",
+        "glob": "allow",
+        "grep": "allow",
+        "invalid": "deny",
+        "question": "deny",
+        "read": "allow",
+        "skill": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "write": "deny"
+      }
+    },
+    "planner": {
+      "description": "Runtime-managed execution profile for planner. Semantic context is injected per run.",
+      "mode": "all",
+      "model": "deepseek/deepseek-v4-pro",
+      "permission": {
+        "*": "deny",
+        "apply_patch": "deny",
+        "bash": "deny",
+        "edit": "deny",
+        "glob": "allow",
+        "grep": "allow",
+        "invalid": "deny",
+        "question": "deny",
+        "read": "allow",
+        "skill": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "write": "deny"
+      }
+    },
+    "refuter": {
+      "description": "Runtime-managed execution profile for refuter. Semantic context is injected per run.",
+      "mode": "all",
+      "model": "deepseek/deepseek-v4-pro",
+      "permission": {
+        "*": "deny",
+        "apply_patch": "deny",
+        "bash": "deny",
+        "edit": "deny",
+        "glob": "allow",
+        "grep": "allow",
+        "invalid": "deny",
+        "question": "deny",
+        "read": "allow",
+        "skill": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "write": "deny"
+      }
+    },
+    "reviewer": {
+      "description": "Runtime-managed execution profile for reviewer. Semantic context is injected per run.",
+      "mode": "all",
+      "model": "zhipuai-coding-plan/glm-5.2",
+      "permission": {
+        "*": "deny",
+        "apply_patch": "deny",
+        "bash": "deny",
+        "edit": "deny",
+        "glob": "allow",
+        "grep": "allow",
+        "invalid": "deny",
+        "question": "deny",
+        "read": "allow",
+        "skill": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "write": "deny"
+      }
+    }
+  }
+}
