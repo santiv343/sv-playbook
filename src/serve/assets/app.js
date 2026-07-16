@@ -1,4 +1,4 @@
-import { createIcons, icons } from '/assets/lucide/lucide.mjs';
+import { createIcons, icons } from '/assets/icons.mjs';
 
 const state = { dashboard: null, action: null, notified: new Set() };
 const WORKFLOW_STATUS = { RUNNING: 'running', WAITING: 'waiting', FAILED: 'failed' };

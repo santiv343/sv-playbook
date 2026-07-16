@@ -24,6 +24,7 @@ import {
   amendPacket,
 } from './service.js';
 import { LifecycleError } from './service.errors.js';
+import { SESSION_FILE_NAME } from './service.constants.js';
 import { setupServiceTest as setup } from './service.test.support.js';
 import { initTestRepo } from '../testkit.js';
 const def = (id: string) => ({ id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'], requirements: [], evidenceRequired: ['final-sha'] });
@@ -75,12 +76,12 @@ test('illegal transition is refused with both statuses named', async () => {
   createPacket(store, root, def('P2-001'), 'a');
   assert.throws(() => { movePacket(store, undefined, 'P2-001', 'done'); }, /draft.*done/);
 });
-test('ensureSession is stable per worktree (reads .svp-session back)', async () => {
+test('ensureSession is stable per worktree (reads .svp/session back)', async () => {
   const { root, store } = await setup();
   const a = ensureSession(store, root);
   const b = ensureSession(store, root);
   assert.equal(a, b);
-  const onDisk = (await readFile(join(root, '.svp-session'), 'utf8')).trim();
+  const onDisk = (await readFile(join(root, SESSION_FILE_NAME), 'utf8')).trim();
   assert.equal(onDisk, a);
 });
 test('leaseOf reports holder and freshness; refreshHeartbeat updates it', async () => {

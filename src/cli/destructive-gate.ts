@@ -1,5 +1,5 @@
-import { appendFileSync, closeSync, existsSync, openSync, readSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { CONFIRM_DESTRUCTIVE_FLAG, DESTRUCTIVE_LOG_FILE, DONE_COUNT_SQL, EVENT_COUNT_SQL, EXIT, SESSION_ROLE_FILE } from './command.constants.js';
 import { DB_FILE, SQLITE_FILE_HEADER, SVP_DIR } from '../db/store.constants.js';
 import { openStore } from '../db/store.js';
@@ -48,7 +48,9 @@ function countValue(row: unknown): number {
 
 function recordDestructiveEvent(repoRoot: string, detail: string): void {
   try {
-    appendFileSync(join(repoRoot, DESTRUCTIVE_LOG_FILE), `${new Date().toISOString()} ${detail}\n`, 'utf8');
+    const file = join(repoRoot, DESTRUCTIVE_LOG_FILE);
+    mkdirSync(dirname(file), { recursive: true });
+    appendFileSync(file, `${new Date().toISOString()} ${detail}\n`, 'utf8');
   } catch {
     /* best-effort */
   }

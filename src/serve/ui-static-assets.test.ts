@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { TEXT_ENCODING } from '../platform.constants.js';
 
-const UI_ASSET_ROOT = 'content/ui';
+const UI_ASSET_ROOT = 'src/serve/assets';
 const UI_ASSET_SUFFIXES = ['.html', '.js', '.css'];
 // U+00C3 ('Ã') followed by a UTF-8 continuation byte is the signature of UTF-8
 // text decoded as a single-byte encoding and re-encoded as UTF-8 (mojibake).
@@ -53,7 +53,7 @@ function containsDoubleEncodedUtf8(content: string): boolean {
 
 test('static UI assets contain no double-encoded UTF-8 sequences', () => {
   const assets = collectUiAssetPaths();
-  assert.ok(assets.length >= MIN_UI_ASSET_COUNT, 'expected UI assets under content/ui');
+  assert.ok(assets.length >= MIN_UI_ASSET_COUNT, 'expected UI assets under src/serve/assets');
   for (const asset of assets) {
     const content = readFileSync(asset, TEXT_ENCODING.UTF8);
     assert.ok(!containsDoubleEncodedUtf8(content), `${asset} contains a double-encoded UTF-8 sequence`);

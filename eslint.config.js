@@ -170,7 +170,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/**/*.ts', 'content/ui/**/*.js'],
+    files: ['src/**/*.ts', 'src/serve/assets/**/*.js'],
     rules: {
       'playbook/no-string-literal-comparison': 'error',
     },
@@ -205,6 +205,13 @@ export default tseslint.config(
   },
   {
     files: ['**/*.js'],
+    extends: [tseslint.configs.disableTypeChecked],
+    rules: {
+      'no-restricted-syntax': 'off',
+    },
+  },
+  {
+    files: ['**/*.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
     rules: {
       'no-restricted-syntax': 'off',
