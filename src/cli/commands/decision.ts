@@ -4,6 +4,8 @@ import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
 import { stringColumn } from '../../db/rows.js';
+import { DATABASE_COLUMN } from '../../db/schema-vocabulary.constants.js';
+import { NODE_ERROR_PROPERTY } from '../../platform.constants.js';
 
 function nullableStringColumn(row: unknown, key: string): string | null {
   if (typeof row !== 'object' || row === null) throw new TypeError(`invalid row: expected object for ${key}`);
@@ -21,6 +23,7 @@ interface DecisionRow {
   id: string;
   question: string;
   answer: string | null;
+  packet_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -57,15 +60,23 @@ function nextDecisionId(store: { db: { prepare(sql: string): { all(): unknown[] 
 }
 
 function readDecision(store: { db: { prepare(sql: string): { get(...params: unknown[]): unknown } } }, id: string): DecisionRow | undefined {
-  const row = store.db.prepare('SELECT id, question, answer, created_at, updated_at FROM decisions WHERE id = ?').get(id);
+  const row = store.db.prepare(`SELECT id, question, answer, ${DATABASE_COLUMN.PACKET_ID}, created_at, updated_at FROM decisions WHERE id = ?`).get(id);
   if (row === undefined) return undefined;
   return {
     id: stringColumn(row, 'id'),
     question: stringColumn(row, 'question'),
     answer: nullableStringColumn(row, 'answer'),
+    packet_id: nullableStringColumn(row, DATABASE_COLUMN.PACKET_ID),
     created_at: stringColumn(row, 'created_at'),
     updated_at: stringColumn(row, 'updated_at'),
   };
+}
+
+const SQLITE_CONSTRAINT_FOREIGNKEY = 'SQLITE_CONSTRAINT_FOREIGNKEY';
+
+function isConstraintError(error: unknown): boolean {
+  return error instanceof Error
+    && Reflect.get(error, NODE_ERROR_PROPERTY.CODE) === SQLITE_CONSTRAINT_FOREIGNKEY;
 }
 
 function handleAsk(args: string[], io: Io): number {
@@ -77,7 +88,16 @@ function handleAsk(args: string[], io: Io): number {
   return withStore((store) => {
     const id = nextDecisionId(store);
     const now = new Date().toISOString();
-    store.db.prepare('INSERT INTO decisions (id, question, answer, created_at, updated_at) VALUES (?, ?, NULL, ?, ?)').run(id, question, now, now);
+    const packetId = parsed.values.packet ?? null;
+    try {
+      store.db.prepare(`INSERT INTO decisions (id, question, answer, ${DATABASE_COLUMN.PACKET_ID}, created_at, updated_at) VALUES (?, ?, NULL, ?, ?, ?)`).run(id, question, packetId, now, now);
+    } catch (error) {
+      if (isConstraintError(error)) {
+        io.err(`error: unknown packet: ${parsed.values.packet}`);
+        return EXIT.GATE_FAIL;
+      }
+      throw error;
+    }
     io.out(`asked ${id}`);
     return EXIT.OK;
   });
@@ -141,6 +161,7 @@ function handleShow(args: string[], io: Io): number {
     io.out(`id: ${dec.id}`);
     io.out(`question: ${dec.question}`);
     io.out(`status: ${dec.answer === null ? 'pending' : 'answered'}`);
+    if (dec.packet_id !== null) io.out(`packet: ${dec.packet_id}`);
     if (dec.answer !== null) io.out(`answer: ${dec.answer}`);
     io.out(`created_at: ${dec.created_at}`);
     io.out(`updated_at: ${dec.updated_at}`);

@@ -145,10 +145,16 @@ fuerce re-verificar una entrada vieja antes de citarla como vigente —
 - Pieza 2 del checkpoint: enlace `decision` ↔ `packet` + gate en
   `task move ready` (futuro `packet move ready`) + exigencia de sesión
   humana en `decision answer`.
-- Resolver la deriva de roles: decidir si el modelo nuevo
-  (human-interface/delivery-orchestrator/refuter/arbiter/investigator)
-  reemplaza al viejo (product/planner/orchestrator/implementer/reviewer) o
-  se descarta — hoy conviven a medias (HJ-020).
+- **Deriva de roles (HJ-020), ya no ambigua — verificada 2026-07-17
+  (IDEA-113):** el catálogo bundled (`src/roles/bundled-profile.constants.ts`)
+  YA tiene el modelo nuevo completo (human-interface/planner/refuter/
+  arbiter/delivery-orchestrator/investigator/implementer/reviewer). Los
+  charters reales (`content/roles/*.md`) siguen siendo los 5 viejos — no
+  existen los charters de los 5 roles nuevos. La resolución NO es escribir
+  esos `.md` faltantes — es mover los charters a la DB (seed del catálogo
+  bundled), mismo criterio que D4 aplicó a los packets. Directamente
+  bloquea IDEA-114: cold-start automático a rol human-interface al abrir
+  sesión (`AGENTS.md`/`CLAUDE.md` hoy es agnóstico de rol).
 - Auditoría de las 73 tablas de la DB (IDEA-092) — candidatos a duplicar
   conceptos: `packets`/`packet_definitions`/`task_costs`/`sprints`.
 - Reescritura de `QUICKSTART.md` (IDEA-095), bloqueada hasta que la

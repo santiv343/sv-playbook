@@ -31,7 +31,7 @@
   "baseline": {
     "ormApplicationSql": {
       "count": 281,
-      "digest": "36a9675fd877551cafff991481068b12269011bda2cde1cef8ff6f45c1e64387"
+      "digest": "7cb015e7ada7982b6453b44b229985cb69e4e4642b05623524a864fc56624d88"
     },
     "literalComparisons": {
       "count": 278,
