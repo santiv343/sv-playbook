@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { command as decisionCommand } from './decision.js';
 import { command as taskCommand } from './task.js';
+import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import { initTestRepo } from '../../testkit.js';
 
@@ -89,6 +90,32 @@ test('decision ask then answer round-trips and start surfaces the pending questi
       assert.equal(await decisionCommand.run(['list', '--pending'], io), 0);
       assert.ok(!io.outLines.join('\n').includes(decisionId), 'answered decision should not appear in --pending');
     }
+  });
+});
+
+test('decision ask --packet persists the packet_id link', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'Packet body.\n');
+    const taskIo = fakeIo();
+    await taskCommand.run(['create', '--id', 'PKT-1', '--title', 'Decision Packet', '--write', 'src/**', '--body-file', 'body.md'], taskIo);
+
+    const io = fakeIo();
+    assert.equal(await decisionCommand.run(['ask', '--packet', 'PKT-1', 'is this the right approach?'], io), 0);
+    const out = io.outLines.join('\n');
+    const match = /asked (DEC-\d+)/.exec(out);
+    assert.ok(match !== null && match[1] !== undefined, 'should extract decision id');
+    const decisionId = match[1];
+
+    const showIo = fakeIo();
+    assert.equal(await decisionCommand.run(['show', decisionId], showIo), 0);
+    assert.ok(showIo.outLines.join('\n').includes('packet: PKT-1'), 'show should display the linked packet id');
+  });
+});
+
+test('decision ask --packet rejects an unknown packet id', async () => {
+  await inTempRepo(async () => {
+    const io = fakeIo();
+    assert.equal(await decisionCommand.run(['ask', '--packet', 'NOPE-1', 'question?'], io), EXIT.GATE_FAIL);
   });
 });
 

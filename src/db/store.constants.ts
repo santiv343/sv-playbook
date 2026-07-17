@@ -206,6 +206,8 @@ CREATE TABLE IF NOT EXISTS decisions (
   id TEXT PRIMARY KEY,
   question TEXT NOT NULL,
   answer TEXT,
+  packet_id TEXT REFERENCES packets(id),
+  answered_against_version INTEGER,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
