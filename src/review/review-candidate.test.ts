@@ -46,6 +46,7 @@ test('review dispatch is blocked until runtime creates an immutable SHA-bound ca
       preparationCommand: "node -e \"require('node:fs').writeFileSync('.verify-dependency','available')\"",
       noOutputTimeoutMs: 5_000,
     },
+    tasks: { complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] } },
   }), 'utf8');
   await writeFile(join(root, '.verify-runner.cjs'), [
     "const fs = require('node:fs');",
@@ -173,6 +174,7 @@ test('review candidate is assembled for already-integrated work (empty diff)', a
       preparationCommand: "node -e \"require('node:fs').writeFileSync('.verify-dependency','available')\"",
       noOutputTimeoutMs: 5_000,
     },
+    tasks: { complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] } },
   }), 'utf8');
   await writeFile(join(root, '.verify-runner.cjs'), [
     "const fs = require('node:fs');",
@@ -250,6 +252,7 @@ test('review candidate evidence includes packet notes attached before candidacy'
       preparationCommand: "node -e \"require('node:fs').writeFileSync('.verify-dependency','available')\"",
       noOutputTimeoutMs: 5_000,
     },
+    tasks: { complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] } },
   }), 'utf8');
   await writeFile(join(root, '.verify-runner.cjs'),
     "if (!require('node:fs').existsSync('.verify-dependency')) process.exit(2);\n", 'utf8');

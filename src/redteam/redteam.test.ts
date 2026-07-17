@@ -299,7 +299,7 @@ test('red team: moving to review when verify command fails is refused by the ver
   await writeFile(join(root, 'src', 'redteam', 'file.ts'), ' ', 'utf8');
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
-  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node -e process.exit(1)' }), 'utf8');
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node -e process.exit(1)', tasks: { complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] } } }), 'utf8');
   const store = openStore(root);
   createPacket(store, root, def('RT-VERIFY-001'), 'a');
   const session = ensureSession(store, root);

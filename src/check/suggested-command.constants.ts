@@ -59,6 +59,7 @@ import { PACKETS_DIR, PACKETS_DOCS_DIR } from '../tasks/service.constants.js';
 // flags that appear only in markdown docs, where no constant can be referenced.
 export const EXTERNAL_FLAG_ALLOWLIST: readonly string[] = [
   GIT_ARGUMENT.ABBREV_REF,
+  GIT_ARGUMENT.ALLOW_EMPTY,
   GIT_ARGUMENT.BRANCH,
   GIT_ARGUMENT.DETACH,
   GIT_ARGUMENT.GIT_COMMON_DIR,

@@ -24,7 +24,7 @@ test('loadConfig returns defaults when the file is absent', () => {
     tasks: {
       leaseTtlMs: 30 * 60 * 1_000,
       complexityCheckpoint: {
-        enabled: false,
+        enabled: true,
         requireDecisionForTypes: [],
         requireDecisionForPaths: [],
       },
@@ -89,7 +89,7 @@ test('loadConfig reads a valid config file', () => {
     tasks: {
       leaseTtlMs: 30 * 60 * 1_000,
       complexityCheckpoint: {
-        enabled: false,
+        enabled: true,
         requireDecisionForTypes: [],
         requireDecisionForPaths: [],
       },

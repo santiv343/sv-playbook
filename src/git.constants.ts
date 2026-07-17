@@ -1,6 +1,7 @@
 export const GIT_EXECUTABLE = 'git';
 export const GIT_ARGUMENT = {
   ABBREV_REF: '--abbrev-ref',
+  ALLOW_EMPTY: '--allow-empty',
   BRANCH: '--branch',
   DETACH: '--detach',
   DIFF: 'diff',

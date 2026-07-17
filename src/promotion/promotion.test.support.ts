@@ -50,6 +50,9 @@ async function initializeRepository(root: string): Promise<void> {
       preparationCommand: "node -e \"process.stdout.write('prepared')\"",
       noOutputTimeoutMs: 5_000,
     },
+    tasks: {
+      complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] },
+    },
   }), 'utf8');
   git(root, ['add', '.gitignore', 'README.md', '.verify-runner.cjs', 'playbook.config.json']);
   git(root, ['commit', '-m', 'base']);

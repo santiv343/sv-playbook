@@ -30,7 +30,7 @@ import { STATUS } from './service.constants.js';
 import { setupServiceTest as setup } from './service.test.support.js';
 import { initTestRepo } from '../testkit.js';
 
-const def = (id: string) => ({ id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'], requirements: [], evidenceRequired: ['final-sha'] });
+const def = (id: string, writeSet: string[] = ['src/**']) => ({ id, title: `Packet ${id}`, dependsOn: [], writeSet, requirements: [], evidenceRequired: ['final-sha'] });
 
 test('createPacket writes markdown projection and DB row in draft', async () => {
   const { root, store } = await setup();
@@ -301,7 +301,7 @@ test('move to review is refused when the branch changed a file outside the write
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
   const store = openStore(root);
-  createPacket(store, root, { ...def('WS-001'), writeSet: ['src/a/**'] }, 'a');
+  createPacket(store, root, def('WS-001', ['src/a/**']), 'a');
   const s1 = ensureSession(store, root);
   movePacket(store, undefined, 'WS-001', 'ready');
   startPacket(store, s1, root, 'WS-001');
@@ -353,14 +353,13 @@ test('move to review is refused when the project verify command fails', async ()
   await writeFile(join(root, 'src', 'a', 'ok.ts'), ' ', 'utf8');
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
-  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node -e process.exit(1)' }), 'utf8');
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node -e process.exit(1)', tasks: { complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] } } }), 'utf8');
   const store = openStore(root);
-  createPacket(store, root, { ...def('VERIFY-001'), writeSet: ['src/a/**'] }, 'a');
+  createPacket(store, root, def('VERIFY-001', ['src/a/**']), 'a');
   const s1 = ensureSession(store, root);
   movePacket(store, undefined, 'VERIFY-001', 'ready');
   startPacket(store, s1, root, 'VERIFY-001');
   assert.throws(() => { movePacket(store, s1, 'VERIFY-001', 'review'); }, /verify/);
   assert.equal(listPackets(store)[0]?.status, 'active');
 });
-
 

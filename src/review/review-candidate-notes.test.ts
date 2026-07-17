@@ -42,6 +42,7 @@ test('review candidate evidence carries at most the most recent notes, chronolog
       preparationCommand: "node -e \"require('node:fs').writeFileSync('.verify-dependency','available')\"",
       noOutputTimeoutMs: 5_000,
     },
+    tasks: { complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] } },
   }), 'utf8');
   await writeFile(join(root, '.verify-runner.cjs'),
     "if (!require('node:fs').existsSync('.verify-dependency')) process.exit(2);\n", 'utf8');
