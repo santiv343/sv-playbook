@@ -55,6 +55,7 @@ Este diseño (el checkpoint) es transversal a las 4 y se ataca primero.
 | D7 | `decision answer` exige sesión humana | Reusa el mecanismo `.svp-session-role` que ya existe hoy para gatear operaciones destructivas — no se inventa nada nuevo |
 | D8 | Todo packet que declare un módulo/tabla/mecanismo "nuevo" debe adjuntar evidencia de búsqueda previa antes de que la decisión humana lo apruebe — "prior-art evidence", igual de obligatorio que el RED test. **Mecanismo concreto (refinado, ver IDEA-099):** no alcanza con declarar "ya busqué" — la evidencia es el comando de búsqueda real (grep/regex/codegraph sobre palabras clave derivadas de lo que se propone: nombre de tabla, símbolo, clave de config, concepto) MÁS su salida capturada, mismo estándar que la salida del RED test | Se encontró en vivo durante este mismo diseño: se estaba por proponer `packet_versions` desde cero cuando `packet_definitions` (versionado, con digest, ya enganchado a `run_specs`) y `packet_deps` (join table normalizada) ya existían y hacían el trabajo. La causa raíz es no buscar antes de definir — el propio patrón que este diseño busca erradicar. Refinado por el founder: "que se haga algún grep o búsqueda regex de palabras clave" — no un checkbox de honor |
 | D9 | **Vocabulario canónico: "packet" es el sustantivo genérico de "unidad de trabajo"; "task" deja de usarse como sinónimo genérico.** El comando de CLI `task` se renombra a `packet` (`packet create`, `packet move`, `packet history`, etc.) como su propio paquete de trabajo — no se hace dentro de este diseño, pero los comandos NUEVOS que salgan de este diseño ya se nombran `packet *`, no `task *`, para no construir sobre el nombre que se va a jubilar | Founder: "no reinventemos o cambiemos nombre a algo que tiene que ser similar". Hoy "task" significa 3 cosas distintas en el mismo repo: (1) el verbo de CLI, (2) un prefijo de ID de packet ya existente (`TASK-IMPORT-001` y 8 más), (3) la palabra genérica en prosa. Comparación con Jira: ahí el sustantivo genérico es "Issue"; "Task" es solo un TIPO de issue (junto a Bug/Story/Epic) — nunca la palabra genérica. La DB y el código ya usan "packet" como sustantivo dominante (`packets`, `packet_definitions`, `packet_deps`, tipo `PacketDefinition`, `docs/packets/`); "task" quedó como el desalineado |
+| D10 | **El disparador principal deja de ser una lista de rutas/tipos que el humano declara de antemano; pasa a ser detección automática de "territorio nunca antes tocado".** Un packet dispara el checkpoint cuando su `write_set` toca un patrón de archivo/carpeta que ningún packet anterior de este proyecto tocó nunca — señal 100% mecánica, cero configuración previa. `requireDecisionForTypes`/`requireDecisionForPaths` (D2 original) pasan de ser el mecanismo principal a un **complemento opcional**, para el caso donde el proyecto SÍ sabe de antemano que algo es sensible (ej. "todo lo que toque pagos, siempre"). Además: quien traduce la señal en una pregunta para el humano no es el implementer — es el rol human-interface (o el que configure la app), cuyo charter ya es "explicar estado, mantener la cola de decisiones del humano" (`HJ-004`), nunca ejecutar ni autoaprobarse. El agente propone (detecta + explica el motivo), el humano dispone (sigue siendo `decision answer` con sesión humana, D7) | Founder: "no sé si me convence esto de que el usuario determine rutas importantes. punto de fricción" — declarar rutas de antemano es fricción real y estructuralmente incompleto (no se puede enumerar todo lo importante antes de que pase). Rechazamos que decida el implementer (violaría `HJ-019`: "un rol que evalúa su propio permiso o reclama su propia evidencia" — el mismo patrón de autoconfianza que el checkpoint existe para eliminar), pero el founder aclaró que se refería al agente correcto (human-interface), cuyo rol ya es mediar con el humano, no autoevaluarse |
 
 ## Hallazgos registrados en `docs/backlog.md` durante esta investigación
 
@@ -148,28 +149,34 @@ no resuelto acá.
 ## Sección 4 — Qué es configurable
 
 Vive en `playbook.config.json`, sección `tasks` (ya existe con
-`leaseTtlMs`), como campo nuevo `complexityCheckpoint`:
+`leaseTtlMs`), como campo nuevo `complexityCheckpoint`. Con D10, el
+mecanismo principal (detección de territorio nunca antes tocado) NO se
+configura — es invariante. Lo que queda configurable es más chico que la
+Sección 1 original:
 
 ```json
 "tasks": {
   "leaseTtlMs": 1800000,
   "complexityCheckpoint": {
     "enabled": true,
-    "requireDecisionForTypes": ["ARCH"],
+    "requireDecisionForTypes": [],
     "requireDecisionForPaths": []
   }
 }
 ```
 
-- `enabled` — apagado/prendido general.
-- `requireDecisionForTypes` — prefijos de tipo de packet que siempre
-  necesitan una `decision` respondida antes de `move ready`. `type` ya es
-  un string libre en la tabla `packets` (no hace falta que exista un
-  registro de tipos configurables — IDEA-054 — para que esto funcione).
-- `requireDecisionForPaths` — globs opcionales, si además se quiere gatear
-  por ruta de `write_set`.
-- Default de fábrica: listas vacías (`PRINCIPLE-013` — el núcleo no
-  impone qué es "significativo" para un proyecto nuevo).
+- `enabled` — apagado/prendido general (D10: incluye apagar la detección
+  automática, no solo el complemento de listas).
+- `requireDecisionForTypes` / `requireDecisionForPaths` — **complemento
+  opcional**, no el mecanismo principal (ver D10): para cuando el proyecto
+  ya sabe de antemano que algo es sensible siempre, más allá de si es
+  "territorio nuevo" o no (ej. código de pagos, aunque ya se haya tocado
+  antes). Default de fábrica: listas vacías.
+- **Disparador principal (D10, invariante — no vive en este JSON):** el
+  `write_set` de un packet toca un patrón de archivo/carpeta que ningún
+  packet anterior del proyecto tocó nunca. Cero configuración; el rol
+  human-interface (nunca el implementer) traduce la señal en una pregunta
+  para el humano.
 
 **Interfaz: CLI-driven, con un comando `config` nuevo (decisión final —
 IDEA-097, revertida en la misma sesión).** El founder primero dijo
@@ -200,11 +207,14 @@ concepto, no lo reinventa.
 - Que cualquier cambio de versión del packet después de responder la
   decisión la invalide — sin excepciones por tipo de campo.
 - Que solo una sesión humana pueda responder una `decision`.
+- **(D10)** Que la detección de "territorio nunca antes tocado" sea el
+  disparador principal, y que sea el rol human-interface — nunca el
+  implementer — quien traduzca la señal en pregunta para el humano.
 
 **Configurable — opinión del proyecto, en `playbook.config.json`:**
-- `enabled` — si el checkpoint está prendido.
-- `requireDecisionForTypes` — qué tipos de packet lo disparan.
-- `requireDecisionForPaths` — qué rutas lo disparan.
+- `enabled` — si el checkpoint (completo) está prendido.
+- `requireDecisionForTypes` / `requireDecisionForPaths` — complemento
+  opcional sobre la detección automática, no el mecanismo principal.
 
 Regla general para el resto del diseño (y para cualquier gate futuro que
 se agregue a sv-playbook): **el CÓMO funciona un gate nunca es opinión;
@@ -232,6 +242,17 @@ evitar.
    después se pide la decisión, o al revés — el gate solo mira el estado
    en el momento del chequeo (decisión answered Y `answered_against_version`
    == versión actual), no el orden temporal en que se hicieron las cosas.
+6. **(D10) Cómo se calcula "nunca antes tocado".** Se compara el
+   `write_set` del packet contra el `write_set` de **todas** las versiones
+   de **todos** los packets anteriores (ya están todas en
+   `packet_definitions` — Pieza 1, sin costo extra de infraestructura).
+   Match a nivel de patrón de glob declarado, no de archivo físico
+   resuelto — dos packets con el mismo glob `src/serve/**` cuentan como
+   "mismo territorio" aunque toquen archivos distintos adentro; un glob
+   nuevo que nunca apareció, aunque apunte a la misma carpeta con otra
+   forma de escribirlo (`src/serve/*` vs `src/serve/**`), cuenta como
+   nuevo — no se resuelve equivalencia semántica de globs en v1, es una
+   simplificación consciente, no un bug.
 
 ## Sección 6 — Evidencia / testing requerido
 
