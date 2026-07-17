@@ -10,6 +10,14 @@
     "noOutputTimeoutMs": 600000
   },
   "autonomy": "strict",
+  "tasks": {
+    "leaseTtlMs": 1800000,
+    "complexityCheckpoint": {
+      "enabled": true,
+      "requireDecisionForTypes": [],
+      "requireDecisionForPaths": []
+    }
+  },
   "backup": {
     "enabled": true,
     "retention": 3,
