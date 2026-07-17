@@ -190,9 +190,10 @@ The HTML page polls every 3 seconds and has no control buttons.
 ### `sv-playbook constitution set|add-principle|show|list`
 
 When: to declare or inspect the instance constitution (vision, product definition, principles).
-The constitution is per-instance, CLI-managed, and DB-resident under `.svp/`. Generated exports
-land in `docs/constitution/` for git durability; they carry a GENERATED banner and must never be
-hand-edited.
+The constitution is per-instance, CLI-managed, and DB-resident under `.svp/` — `show`/`list` read
+and print it; there is no file export today (a prior doc claimed one landed in `docs/constitution/`;
+that path never existed in the actual `constitution` command and was removed as dead reference
+material in the 2026-07-17 docs cleanup).
 
 Why: the engine's universal invariants live in `content/principles.md`. The instance constitution
 is declared on top and consulted by agents, serve, and the reviewer to align with the project's
