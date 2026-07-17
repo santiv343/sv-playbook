@@ -262,6 +262,17 @@ export function setDaemonStarting(v: boolean): void {
   daemonStarting = v;
 }
 
+function createStore(db: Database.Database, dir: string): Store {
+  return {
+    db,
+    orm: createStoreOrm(db),
+    dir,
+    close: () => {
+      if (db.open) db.close();
+    },
+  };
+}
+
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   if (daemonStore !== null) {
     return daemonStore;
@@ -279,7 +290,7 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
     checkVersionAndMigrate(db, repoRoot, options);
   }
   migratePacketColumn(db, 'pr', SQLITE_COLUMN_TYPE.TEXT, false);
-  return { db, orm: createStoreOrm(db), dir, close: () => { db.close(); } };
+  return createStore(db, dir);
 }
 export function openStoreReadOnly(repoRoot: string): Store {
   if (daemonStore !== null) return daemonStore;
@@ -294,5 +305,5 @@ export function openStoreReadOnly(repoRoot: string): Store {
     db.close();
     throw new StoreVersionError(`store schema version ${String(version)} does not match runtime version ${SCHEMA_VERSION}`);
   }
-  return { db, orm: createStoreOrm(db), dir, close: () => { db.close(); } };
+  return createStore(db, dir);
 }
