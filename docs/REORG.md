@@ -43,6 +43,9 @@ del trabajo repita el patrón de deriva silenciosa.
 
 ## Hecho
 
+- **Plan de implementación del checkpoint** (2026-07-17):
+  `docs/superpowers/plans/2026-07-17-complexity-checkpoint.md` — 11 tareas
+  RED-first, spec aprobado y autorevisado. Listo para ejecutar.
 - **Investigación completa del repo** (2026-07-16): confirmado que `src/tasks/`
   ya está casi desacoplado (casi sin imports salientes hacia gateway/roles/
   orchestration/context) — la dirección de dependencia correcta ya existe.
