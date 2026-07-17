@@ -43,6 +43,18 @@ del trabajo repita el patrón de deriva silenciosa.
 
 ## Hecho
 
+- **Checkpoint en ejecución** (2026-07-17): un agente despachado por el
+  founder está corriendo `docs/superpowers/plans/2026-07-17-complexity-checkpoint.md`
+  — Tarea 1 commiteada, Tareas 2/3 en progreso al momento de este
+  registro. Este documento (y esta sesión) NO tocan código mientras eso
+  corre — solo investigación/diseño/docs, en paralelo.
+- **Plan de implementación del SOT de comandos** (2026-07-17):
+  `docs/superpowers/plans/2026-07-17-self-discoverable-cli.md` — 6 tareas.
+  Resuelve IDEA-111 (describe/skills/MCP/cli.md deben derivar de una sola
+  fuente generada, hoy `content/cli.md` es prosa a mano que ya se
+  encontró desactualizada una vez). 14 de 25 comandos no tienen ningún
+  string de uso declarado en código — se relevaron los 25 antes de
+  escribir el plan.
 - **Plan de implementación del checkpoint** (2026-07-17):
   `docs/superpowers/plans/2026-07-17-complexity-checkpoint.md` — 11 tareas
   RED-first, spec aprobado y autorevisado. Listo para ejecutar.
