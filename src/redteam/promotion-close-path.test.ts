@@ -20,8 +20,9 @@ test('an already-integrated candidate cannot close once the target ref moved pas
   // target-ref guard is the one that must stop the promotion.
   execFileSync('git', ['checkout', '--detach', fixture.candidateSha], { cwd: fixture.root });
 
+  const controller = new PromotionController(fixture.store, fixture.root);
   await assert.rejects(
-    new PromotionController(fixture.store, fixture.root).promote({
+    controller.promote({
       reviewCandidateId: fixture.reviewCandidateId,
       reviewerRunSpecId: fixture.reviewerRunSpecId,
     }),
@@ -30,12 +31,13 @@ test('an already-integrated candidate cannot close once the target ref moved pas
       && error.message.includes('target ref no longer matches the candidate base'),
   );
 
-  const task = fixture.store.orm.select({ status: packets.status }).from(packets).get();
+  const store = controller.getStore();
+  const task = store.orm.select({ status: packets.status }).from(packets).get();
   assert.equal(task?.status, STATUS.REVIEW, 'task must stay in review');
-  const candidate = fixture.store.orm.select({ id: promotionCandidates.id }).from(promotionCandidates)
+  const candidate = store.orm.select({ id: promotionCandidates.id }).from(promotionCandidates)
     .where(eq(promotionCandidates.reviewCandidateId, fixture.reviewCandidateId)).get();
   assert.ok(candidate !== undefined, 'promotion candidate was recorded');
-  assert.equal(candidateStatus(fixture.store, candidate.id), PROMOTION_STATUS.APPROVED,
+  assert.equal(candidateStatus(store, candidate.id), PROMOTION_STATUS.APPROVED,
     'candidate must stay approved (retryable), never closed or blocked');
-  fixture.store.close();
+  store.close();
 });
