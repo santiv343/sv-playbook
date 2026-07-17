@@ -63,8 +63,8 @@ function readDecision(store: { db: { prepare(sql: string): { get(...params: unkn
   if (row === undefined) return undefined;
   return {
     id: stringColumn(row, 'id'),
-    question: stringColumn(row, 'question'),
-    answer: nullableStringColumn(row, 'answer'),
+    question: stringColumn(row, DATABASE_COLUMN.QUESTION),
+    answer: nullableStringColumn(row, DATABASE_COLUMN.ANSWER),
     packet_id: nullableStringColumn(row, DATABASE_COLUMN.PACKET_ID),
     answered_against_version: nullableNumberColumn(row, DATABASE_COLUMN.ANSWERED_AGAINST_VERSION),
     created_at: stringColumn(row, 'created_at'),
