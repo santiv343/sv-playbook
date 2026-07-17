@@ -5,7 +5,7 @@ import type { PacketStatus } from './service.types.js';
 export const packets = sqliteTable('packets', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
-  path: text('path').notNull(),
+  path: text('path'),
   status: text('status').$type<PacketStatus>().notNull(),
   body: text('body').notNull(),
   writeSetJson: text('write_set').notNull(),

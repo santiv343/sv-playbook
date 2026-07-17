@@ -14,6 +14,7 @@ import { requireActiveRoleCatalog } from '../roles/catalog-activation.js';
 import { bootstrapBundledRoleCatalog } from '../roles/bundled-profile-bootstrap.js';
 import { BUNDLED_ROLE_ID } from '../roles/bundled-profile.constants.js';
 import { createPacket, ensureSession, movePacket, startPacket } from '../tasks/service.js';
+import { generatePacketDocument } from '../packets/document.js';
 import { movePacketToReview } from '../tasks/review-transition.js';
 import { STATUS } from '../tasks/service.constants.js';
 import { loadWorkDefinition } from '../tasks/work-definitions.js';
@@ -134,7 +135,7 @@ interface CandidateWork {
 }
 
 async function createReviewedCandidate(store: Store, root: string, options: FixtureOptions): Promise<CandidateWork> {
-  createPacket(store, root, {
+  const definitionInput = {
     id: FIXTURE.PACKET_ID,
     title: 'Promotion controller fixture',
     dependsOn: [],
@@ -142,8 +143,13 @@ async function createReviewedCandidate(store: Store, root: string, options: Fixt
     requirements: ['Promote the exact candidate.'],
     evidenceRequired: ['candidate-sha'],
     tags: ['backend'],
-  }, 'Promotion fixture.');
-  git(root, ['add', `docs/packets/${FIXTURE.PACKET_ID}.md`]);
+  };
+  const body = 'Promotion fixture.';
+  createPacket(store, root, definitionInput, body);
+  const mdPath = `docs/packets/${FIXTURE.PACKET_ID}.md`;
+  await mkdir(join(root, 'docs', 'packets'), { recursive: true });
+  await writeFile(join(root, mdPath), generatePacketDocument(definitionInput, body), 'utf8');
+  git(root, ['add', mdPath]);
   git(root, ['commit', '-m', 'task definition']);
   const definition = loadWorkDefinition(store, FIXTURE.PACKET_ID);
   const baseSha = git(root, ['rev-parse', 'HEAD']);

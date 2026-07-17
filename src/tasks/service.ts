@@ -2,8 +2,8 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from '../db/store.types.js';
-import { numberColumn, stringColumn } from '../db/rows.js';
-import { generatePacketDocument, parsePacketDocument } from '../packets/document.js';
+import { nullableStringColumn, numberColumn, stringColumn } from '../db/rows.js';
+import { parsePacketDocument } from '../packets/document.js';
 import type { PacketDefinition } from '../packets/document.types.js';
 import { LifecycleError } from './service.errors.js';
 import { contentDir } from '../content.js';
@@ -64,15 +64,11 @@ function recordTransition(store: Store, packetId: string, from: string, to: stri
   store.db.prepare(INSERT_EVENT_SQL).run(sessionId ?? null, packetId, EVENT_TRANSITION, `${from}->${to}`, now());
 }
 
-export function createPacket(store: Store, docRoot: string, def: PacketDefinition, body: string, type?: string): void {
+export function createPacket(store: Store, _docRoot: string, def: PacketDefinition, body: string, type?: string): void {
   const exists = store.db.prepare(EXISTS_SQL).get(def.id);
   if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`, 'existing packet file? use task import <path>');
-  const dir = join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${def.id}.md`);
-  writeFileSync(path, generatePacketDocument(def, body), 'utf8');
   transact(store, () => {
-    store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, STATUS.DRAFT, body, JSON.stringify(def.writeSet), type ?? '', now(), now());
+    store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, null, STATUS.DRAFT, body, JSON.stringify(def.writeSet), type ?? '', now(), now());
     for (const depId of def.dependsOn) {
       store.db.prepare('INSERT INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);
     }
@@ -328,20 +324,22 @@ function getDeps(store: Store, packetId: string): string[] {
   const rows = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all(packetId);
   return rows.map((row) => stringColumn(row, 'depends_on_id'));
 }
+function resolveBody(body: string, path: string | null, packetId: string): string {
+  if (body !== '') return body;
+  if (path === null) throw new LifecycleError(`packet body missing and no file path for: ${packetId}`);
+  if (!existsSync(path)) throw new LifecycleError(`packet file missing: ${path}`);
+  const text = readFileSync(path, 'utf8');
+  return parsePacketDocument(text).body;
+}
+
 export function briefPacket(store: Store, packetId: string): string {
   const row = store.db.prepare('SELECT id, title, path, status, body FROM packets WHERE id = ?').get(packetId);
   if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
   const id = stringColumn(row, 'id');
   const title = stringColumn(row, 'title');
-  const path = stringColumn(row, 'path');
+  const path = nullableStringColumn(row, 'path');
   const status = stringColumn(row, 'status');
-  let body = stringColumn(row, 'body');
-  if (body === '') {
-    if (!existsSync(path)) throw new LifecycleError(`packet file missing: ${path}`);
-    const text = readFileSync(path, 'utf8');
-    const parsed = parsePacketDocument(text);
-    body = parsed.body;
-  }
+  const body = resolveBody(stringColumn(row, 'body'), path, id);
   const deps = getDeps(store, packetId);
   const depLine = deps.length > 0 ? deps.join(', ') : 'none';
   const lease = leaseOf(store, packetId);

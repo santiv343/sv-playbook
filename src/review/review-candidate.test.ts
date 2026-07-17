@@ -86,8 +86,7 @@ test('review dispatch is blocked until runtime creates an immutable SHA-bound ca
     evidenceRequired: [],
     tags: ['backend'],
   }, 'Bounded test work.');
-  git(root, ['add', 'docs/packets/REVIEW-001.md']);
-  git(root, ['commit', '-m', 'task definition']);
+  git(root, ['commit', '--allow-empty', '-m', 'task definition']);
   const definition = loadWorkDefinition(store, 'REVIEW-001');
   movePacket(store, undefined, definition.packetId, 'ready');
   const sessionId = ensureSession(store, root);
@@ -211,8 +210,7 @@ test('review candidate is assembled for already-integrated work (empty diff)', a
     evidenceRequired: [],
     tags: ['backend'],
   }, 'Work that already merged.');
-  git(root, ['add', 'docs/packets/REVIEW-INTEGRATED-001.md']);
-  git(root, ['commit', '-m', 'task definition']);
+  git(root, ['commit', '--allow-empty', '-m', 'task definition']);
   const definition = loadWorkDefinition(store, 'REVIEW-INTEGRATED-001');
   movePacket(store, undefined, definition.packetId, 'ready');
   const sessionId = ensureSession(store, root);
@@ -287,8 +285,7 @@ test('review candidate evidence includes packet notes attached before candidacy'
     evidenceRequired: [],
     tags: ['backend'],
   }, 'Notes reach the reviewer.');
-  git(root, ['add', 'docs/packets/REVIEW-NOTES-001.md']);
-  git(root, ['commit', '-m', 'task definition']);
+  git(root, ['commit', '--allow-empty', '-m', 'task definition']);
   const definition = loadWorkDefinition(store, 'REVIEW-NOTES-001');
   movePacket(store, undefined, definition.packetId, 'ready');
   const sessionId = ensureSession(store, root);

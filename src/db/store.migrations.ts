@@ -22,6 +22,7 @@ import { addPromotionReceiptIntegration, addPromotionTables } from './promotion.
 import { addRunRetryLinkage } from './run-retry.migrations.js';
 import { addRunDurationCeiling } from './run-duration.migrations.js';
 import { addDecisionLinkage } from './decision-linkage.migrations.js';
+import { makePacketPathNullable } from './packet-path-nullable.migrations.js';
 import { applyExclusiveStorePragmas, readStoreSchemaVersion } from './store.pragmas.js';
 import { STORE_PRAGMA } from './store.pragmas.constants.js';
 import { assertMigrationBranch } from './store.migration-branch.js';
@@ -262,6 +263,7 @@ const migrations = {
   [STORE_MIGRATION_ID.PROMOTION_RECEIPT_INTEGRATION]: addPromotionReceiptIntegration,
   [STORE_MIGRATION_ID.WORKSPACE_BINDINGS]: noVersionSpecificMigration,
   [STORE_MIGRATION_ID.DECISION_LINKAGE]: addDecisionLinkage,
+  [STORE_MIGRATION_ID.PACKET_PATH_NULLABLE]: makePacketPathNullable,
 } satisfies Readonly<Record<StoreMigrationId, StoreMigration>>;
 
 function runVersionMigration(db: Database.Database, repoRoot: string, fromVersion: number): void {

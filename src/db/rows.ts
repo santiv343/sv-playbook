@@ -32,3 +32,12 @@ export function nullableNumberColumn(row: unknown, key: string): number | null {
   }
   return value;
 }
+
+export function nullableStringColumn(row: unknown, key: string): string | null {
+  const value = column(row, key);
+  if (value === null) return null;
+  if (typeof value !== 'string') {
+    throw new TypeError(`invalid row: column ${key} must be a string or null`);
+  }
+  return value;
+}
