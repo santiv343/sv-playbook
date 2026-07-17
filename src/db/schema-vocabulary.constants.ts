@@ -24,6 +24,7 @@ export const DATABASE_COLUMN = {
   SESSION_ID: 'session_id',
   USER_VERSION: 'user_version',
   PACKET_ID: 'packet_id',
+  ANSWERED_AGAINST_VERSION: 'answered_against_version',
   VARIANT: 'variant',
 } as const;
 

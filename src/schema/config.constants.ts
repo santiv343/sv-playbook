@@ -57,8 +57,15 @@ export const ReviewPreflightConfigSchema = s.object({
   noOutputTimeoutMs: s.positiveInteger(),
 });
 
+export const ComplexityCheckpointConfigSchema = s.object({
+  enabled: s.boolean(),
+  requireDecisionForTypes: s.array(s.string()),
+  requireDecisionForPaths: s.array(s.string()),
+});
+
 export const TasksConfigSchema = s.object({
   leaseTtlMs: s.positiveInteger(),
+  complexityCheckpoint: ComplexityCheckpointConfigSchema,
 });
 
 export const PlaybookConfigSchema = s.object({
