@@ -1,4 +1,5 @@
 import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { DATABASE_COLUMN } from '../db/schema-vocabulary.constants.js';
 import type { PacketStatus } from './service.types.js';
 
 export const packets = sqliteTable('packets', {
@@ -37,4 +38,14 @@ export const taskEvents = sqliteTable('events', {
   at: text('at').notNull(),
 });
 
-export const taskSchema = { packets, packetDependencies, packetDefinitions, taskEvents };
+export const decisions = sqliteTable('decisions', {
+  id: text(DATABASE_COLUMN.ID).primaryKey(),
+  question: text('question').notNull(),
+  answer: text('answer'),
+  packetId: text(DATABASE_COLUMN.PACKET_ID).references(() => packets.id),
+  answeredAgainstVersion: integer(DATABASE_COLUMN.ANSWERED_AGAINST_VERSION),
+  createdAt: text(DATABASE_COLUMN.CREATED_AT).notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const taskSchema = { packets, packetDependencies, packetDefinitions, taskEvents, decisions };
