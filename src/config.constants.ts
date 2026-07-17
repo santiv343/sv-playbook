@@ -17,7 +17,7 @@ export const REVIEW_PREFLIGHT_DEFAULTS = {
 export const TASKS_DEFAULTS = {
   leaseTtlMs: 30 * 60 * 1_000,
   complexityCheckpoint: {
-    enabled: true,
+    enabled: false,
     requireDecisionForTypes: [],
     requireDecisionForPaths: [],
   },

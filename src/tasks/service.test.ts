@@ -29,6 +29,7 @@ import { packets } from './schema.constants.js';
 import { STATUS } from './service.constants.js';
 import { setupServiceTest as setup } from './service.test.support.js';
 import { initTestRepo } from '../testkit.js';
+
 const def = (id: string) => ({ id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'], requirements: [], evidenceRequired: ['final-sha'] });
 
 test('createPacket writes markdown projection and DB row in draft', async () => {
@@ -361,3 +362,5 @@ test('move to review is refused when the project verify command fails', async ()
   assert.throws(() => { movePacket(store, s1, 'VERIFY-001', 'review'); }, /verify/);
   assert.equal(listPackets(store)[0]?.status, 'active');
 });
+
+

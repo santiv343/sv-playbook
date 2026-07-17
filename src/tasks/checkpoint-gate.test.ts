@@ -8,6 +8,8 @@ import { assertCheckpointClear } from './checkpoint-gate.js';
 import { setupServiceTest } from './service.test.support.js';
 
 const now = (): string => new Date().toISOString();
+const checkpointOn = JSON.stringify({ tasks: { complexityCheckpoint: { enabled: true, requireDecisionForTypes: [], requireDecisionForPaths: [] } } });
+async function setup() { const result = await setupServiceTest(); await writeFile(`${result.root}/playbook.config.json`, checkpointOn, 'utf8'); return result; }
 
 const def = (id: string, writeSet: string[]) => ({
   id,
@@ -19,14 +21,14 @@ const def = (id: string, writeSet: string[]) => ({
 });
 
 test('blocks when write_set is novel and no decision is linked', async () => {
-  const { root, store } = await setupServiceTest();
+  const { root, store } = await setup();
   createPacket(store, root, def('PKT-1', ['src/db/**']), 'prior');
   createPacket(store, root, def('PKT-2', ['src/serve/assets/**']), 'candidate');
   assert.throws(() => { assertCheckpointClear(store, 'PKT-2'); }, CheckpointPendingDecisionError);
 });
 
 test('passes when the novel write_set has an answered, current decision', async () => {
-  const { root, store } = await setupServiceTest();
+  const { root, store } = await setup();
   createPacket(store, root, def('PKT-1', ['src/db/**']), 'prior');
   createPacket(store, root, def('PKT-2', ['src/serve/assets/**']), 'candidate');
   store.orm.insert(decisions).values({
@@ -42,7 +44,7 @@ test('passes when the novel write_set has an answered, current decision', async 
 });
 
 test('blocks again when the packet was amended after the decision was answered', async () => {
-  const { root, store } = await setupServiceTest();
+  const { root, store } = await setup();
   createPacket(store, root, def('PKT-1', ['src/db/**']), 'prior');
   createPacket(store, root, def('PKT-2', ['src/serve/assets/**']), 'candidate');
   store.orm.insert(decisions).values({
