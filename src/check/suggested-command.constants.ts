@@ -13,13 +13,14 @@ export const MARKDOWN_ROOTS = [CONTENT_DIRECTORY_NAME, PACKETS_DOCS_DIR] as cons
 export const MARKDOWN_SUFFIX = FILE_EXTENSION.MARKDOWN;
 // Dated subdirectories are frozen snapshots by repo convention (YYYY-MM-DD-*):
 // they quote the past or the intended future verbatim and are not living guidance.
-// Living guidance is content/**, docs/*.md at the root, and docs/constitution/**.
+// Living guidance is content/** and docs/*.md at the root only.
 export const EXCLUDED_MARKDOWN_PREFIXES = [
   `${PACKETS_DOCS_DIR}/${PACKETS_DIR}/`,
   'docs/design/',
   'docs/plans/',
   'docs/research/',
   'docs/specs/',
+  'docs/superpowers/',
 ] as const;
 
 // In markdown only code spans and fenced blocks count as executable suggestions;
