@@ -1,8 +1,9 @@
-# Complexity checkpoint — diseño en progreso
+# Complexity checkpoint — diseño completo, pendiente de aprobación final
 
-> Documento vivo. Se actualiza a medida que avanza la conversación de diseño.
-> No es un packet ni está aprobado para implementar todavía — es la memoria
-> externa de esta sesión de brainstorming.
+> Documento vivo. Autorevisado el 2026-07-17 (7 secciones, sin
+> contradicciones ni numeración salteada). No es un packet — es la
+> memoria externa de esta sesión de brainstorming, lista para que el
+> founder la apruebe y pase a `writing-plans`.
 
 ## Problema que dispara esto
 
@@ -25,16 +26,21 @@ silenciosa no pueda repetirse sin que un humano lo vea venir.
 
 ## Descomposición de más alto nivel (contexto, no parte de este spec)
 
-El founder pidió desacoplar el sistema en 3 piezas independientes:
+El founder pidió desacoplar el sistema en piezas independientes —
+originalmente 3, reencuadrado a 4 el 2026-07-17 (IDEA-100, ver
+`docs/REORG.md` para el detalle completo):
 
-1. **Núcleo** — máquina de estados tipo Jira (`tasks`, `promotion`,
-   `review`), debe funcionar sin saber que existen agentes ni UI.
-2. **Addon agéntico** — conecta el núcleo con agentes reales vía adapters
+1. **Núcleo** — máquina de estados tipo Jira (`tasks`/`packets`,
+   `promotion`, `review`), agnóstico de agente, UI, Y de dominio de
+   trabajo (un packet no tiene que ser "programar" necesariamente).
+2. **Addon de código** — gates de calidad tipo ESLint, hoy viviendo
+   incorrectamente en el núcleo (`playbook.config.json` → `gates`).
+3. **Addon agéntico** — conecta el núcleo con agentes reales vía adapters
    por harness (OpenCode, Codex, Claude Code, APIs directas).
-3. **Frontend** — vistas de valor agregado (métricas, telemetría); la CLI
+4. **Frontend** — vistas de valor agregado (métricas, telemetría); la CLI
    debe alcanzar para todo lo operativo.
 
-Este diseño (el checkpoint) es transversal a las 3 y se ataca primero.
+Este diseño (el checkpoint) es transversal a las 4 y se ataca primero.
 
 ## Decisiones confirmadas
 
@@ -62,7 +68,7 @@ Este diseño (el checkpoint) es transversal a las 3 y se ataca primero.
   §13 PLANNED); candidato para el addon agéntico (parte 2 de la
   descomposición), no para este diseño.
 
-## Alcance de este spec (Sección 1 — corregida tras verificar el código real)
+## Sección 1 — Alcance (corregida tras verificar el código real)
 
 **Corrección importante (2026-07-17):** la Sección 1 original proponía crear
 `packet_versions` desde cero. Verificando `src/db/store.constants.ts` +
@@ -91,7 +97,7 @@ qué tipo de packet) es config por proyecto — default razonable, ajustable.
 Incluye D8: evidencia de "prior art" obligatoria cuando el packet declara
 algo nuevo.
 
-## Verificación hecha (2026-07-17)
+## Sección 2 — Verificación hecha (2026-07-17)
 
 `node bin/sv-playbook.js status` confirma 189 packets reales en la DB viva.
 Se detuvo el daemon un momento (nada activo real: el único packet `active`
@@ -238,20 +244,36 @@ alcanza para bloquear); (e) test de sesión no-humana rechazada en
 `decision answer`; (f) test del segundo punto de control en
 `active → review`.
 
-## Pendiente — lo único que falta
+## Sección 7 — Dejar de generar `docs/packets/*.md`
 
-- [ ] Plan para dejar de generar `docs/packets/*.md` como export (los 185
-      ya tienen su fila en DB — no hace falta "migrarlos", solo dejar de
-      escribir el archivo; columna `packets.path` hoy `NOT NULL` necesita
-      dejar de ser obligatoria)
-- [ ] IDEA-096 (rename `task` → `packet`) queda fuera de este spec, pero
-      bloquea que los nombres de comando de la Sección 3 sean definitivos
-      hasta que se ejecute
-- [ ] IDEA-097 (¿`PRINCIPLE-013` dice "CLI-driven, nunca hand-edited"?)
-      queda explícitamente sin resolver por decisión del founder
+Chico porque ya se verificó (Sección 2) que los 185 packets existentes
+tienen su fila en DB. El corte concreto:
+
+1. Sacar la línea `writeFileSync(row.path, generatePacketDocument(...))`
+   de `task amend` y del flujo de `task create` (`src/tasks/amend.ts` y
+   el módulo equivalente de creación).
+2. La columna `packets.path` (hoy `NOT NULL`) pasa a nullable o se
+   retira — decisión chica, se resuelve en la implementación.
+3. Los 185 archivos `.md` existentes en `docs/packets/` se borran **en el
+   mismo packet que hace el corte**, no antes ni en un cleanup aparte —
+   quedan en git history si hace falta reconstruir algo.
+4. `legacyWorkDefinition` (la migración de backfill) se retira una vez
+   confirmado que no queda ningún store viejo sin migrar — limpieza
+   posterior, no parte del corte en sí.
+
+## Estado del spec
+
+Las 7 secciones están completas. Pendientes explícitos, ninguno bloquea
+la aprobación del diseño en sí:
+
+- IDEA-096 (rename `task` → `packet`) — su propio trabajo, fuera de este
+  spec; bloquea que los nombres de comando de la Sección 3 sean
+  definitivos hasta que se ejecute.
+- IDEA-097 (interfaz de config) — **resuelto** dentro de esta misma
+  sesión: CLI-driven con comando `config` nuevo (ver Sección 3/4).
 
 ## Próximo paso
 
-Cerrar el último pendiente (dejar de generar el `.md`) y pasar a
-autorevisión del spec completo antes de que el founder lo apruebe como
-definitivo.
+Spec completo y autorevisado (2026-07-17). Listo para aprobación del
+founder como diseño definitivo; el siguiente paso después de aprobado es
+`writing-plans` para convertirlo en un plan de implementación.
