@@ -1,4 +1,4 @@
-function column(row: unknown, key: string): unknown {
+export function column(row: unknown, key: string): unknown {
   if (typeof row !== 'object' || row === null) {
     throw new TypeError(`invalid row: expected object for ${key}`);
   }
@@ -20,6 +20,15 @@ export function numberColumn(row: unknown, key: string): number {
   const value = column(row, key);
   if (typeof value !== 'number') {
     throw new TypeError(`invalid row: column ${key} must be a number`);
+  }
+  return value;
+}
+
+export function nullableNumberColumn(row: unknown, key: string): number | null {
+  const value = column(row, key);
+  if (value === null) return null;
+  if (typeof value !== 'number') {
+    throw new TypeError(`invalid row: column ${key} must be a number or null`);
   }
   return value;
 }

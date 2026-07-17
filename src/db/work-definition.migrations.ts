@@ -5,7 +5,7 @@ import { canonicalJson, digest } from '../context/digest.js';
 import { parsePacketDocument } from '../packets/document.js';
 import { REFERENCE_MIN_ID_LENGTH, REFERENCE_MIN_VERSION, REFERENCE_VERSION_SEPARATOR } from '../platform.constants.js';
 import { WORK_DEFINITION_INITIAL_VERSION, WORK_DEFINITION_SCHEMA_VERSION } from '../tasks/work-definition.constants.js';
-import { stringColumn } from './rows.js';
+import { numberColumn, stringColumn } from './rows.js';
 import { StoreVersionError } from './store.errors.js';
 import { SQLITE_COLUMN_TYPE } from './schema-vocabulary.constants.js';
 import { migrateTableColumn } from './store.migration-helpers.js';
@@ -113,4 +113,13 @@ export function addTypedRunSpecReferences(db: Database.Database): void {
     WHERE workflow_effect_id IS NULL AND EXISTS (
       SELECT 1 FROM workflow_effects WHERE workflow_effects.id = run_specs.dispatch_ref
     )`);
+}
+
+export function currentPacketDefinitionVersion(
+  store: { db: { prepare(sql: string): { get(...params: unknown[]): unknown } } },
+  packetId: string,
+): number {
+  const row = store.db.prepare('SELECT COALESCE(MAX(version), 0) AS current_version FROM packet_definitions WHERE packet_id = ?').get(packetId);
+  if (row !== undefined) return numberColumn(row, 'current_version');
+  return 0;
 }

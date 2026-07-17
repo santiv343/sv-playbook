@@ -73,6 +73,7 @@ test('decision ask then answer round-trips and start surfaces the pending questi
     }
 
     {
+      await writeFile('.svp-session-role', 'human\n');
       const io = fakeIo();
       assert.equal(await decisionCommand.run(['answer', decisionId, 'Yes, enforce strict mode everywhere.'], io), 0);
     }
@@ -116,6 +117,47 @@ test('decision ask --packet rejects an unknown packet id', async () => {
   await inTempRepo(async () => {
     const io = fakeIo();
     assert.equal(await decisionCommand.run(['ask', '--packet', 'NOPE-1', 'question?'], io), EXIT.GATE_FAIL);
+  });
+});
+
+test('decision answer rejects a non-human session', async () => {
+  await inTempRepo(async () => {
+    await writeFile('.svp-session-role', 'agent\n');
+    const io = fakeIo();
+    assert.equal(await decisionCommand.run(['ask', 'Should we?'], io), 0);
+    const out = io.outLines.join('\n');
+    const match = /asked (DEC-\d+)/.exec(out);
+    assert.ok(match !== null && match[1] !== undefined, 'should extract decision id');
+    const decisionId = match[1];
+
+    const answerIo = fakeIo();
+    assert.equal(await decisionCommand.run(['answer', decisionId, 'yes'], answerIo), EXIT.GATE_FAIL);
+    assert.ok(answerIo.errLines.some((l) => l.includes('human')), 'error should mention human session requirement');
+  });
+});
+
+test('decision answer records answered_against_version from the linked packet', async () => {
+  await inTempRepo(async () => {
+    await writeFile('body.md', 'Packet body.\n');
+    const taskIo = fakeIo();
+    await taskCommand.run(['create', '--id', 'PKT-1', '--title', 'Decision Packet', '--write', 'src/**', '--body-file', 'body.md'], taskIo);
+    await taskCommand.run(['move', 'PKT-1', 'ready'], taskIo);
+    await taskCommand.run(['start', 'PKT-1'], taskIo);
+
+    await writeFile('.svp-session-role', 'human\n');
+
+    const io = fakeIo();
+    assert.equal(await decisionCommand.run(['ask', '--packet', 'PKT-1', 'ok to proceed?'], io), 0);
+    const out = io.outLines.join('\n');
+    const match = /asked (DEC-\d+)/.exec(out);
+    assert.ok(match !== null && match[1] !== undefined, 'should extract decision id');
+    const decisionId = match[1];
+
+    assert.equal(await decisionCommand.run(['answer', decisionId, 'yes'], io), 0);
+
+    const showIo = fakeIo();
+    assert.equal(await decisionCommand.run(['show', decisionId], showIo), 0);
+    assert.match(showIo.outLines.join('\n'), /answered_against_version: 1/);
   });
 });
 
