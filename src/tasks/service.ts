@@ -39,6 +39,7 @@ import { loadWorkDefinition, recordWorkDefinition, workDefinitionValue } from '.
 import { eq } from 'drizzle-orm';
 import { packets } from './schema.constants.js';
 import { overlaps } from './write-set.js';
+import { assertCheckpointClear } from './checkpoint-gate.js';
 import { captureLegacyReviewEvidence } from './legacy-review-evidence.js';
 import {
   persistReviewCandidate,
@@ -196,9 +197,7 @@ export function releaseLease(store: Store, sessionId: string, packetId: string):
   refreshHeartbeat(store, sessionId);
   transact(store, () => { store.db.prepare(DELETE_LEASE_SQL).run(packetId); });
 }
-function parseGlobs(raw: string): string[] {
-  const parsed: unknown = JSON.parse(raw); return Array.isArray(parsed) ? parsed.filter((s) => typeof s === 'string') : [];
-}
+function parseGlobs(raw: string): string[] { const parsed: unknown = JSON.parse(raw); return Array.isArray(parsed) ? parsed.filter((s) => typeof s === 'string') : []; }
 function ourGlobs(store: Store, packetId: string): string[] {
   const row = store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get(packetId);
   return row === undefined ? [] : parseGlobs(stringColumn(row, 'write_set'));
@@ -234,8 +233,7 @@ function gateReview(store: Store, packetId: string, from: string, to: string): v
 const gateEvidence = (store: Store, packetId: string, to: string): void => {
   if (to !== STATUS.DONE) return;
   const { evidenceRequired } = loadWorkDefinition(store, packetId).value;
-  if (evidenceRequired.length > 0 && store.db.prepare("SELECT 1 FROM events WHERE packet_id = ? AND command = ? LIMIT 1").all(packetId, EVENT_EVIDENCE).length === 0)
-    throw new LifecycleError(`missing required evidence: ${evidenceRequired.join(', ')}`);
+  if (evidenceRequired.length > 0 && store.db.prepare("SELECT 1 FROM events WHERE packet_id = ? AND command = ? LIMIT 1").all(packetId, EVENT_EVIDENCE).length === 0) throw new LifecycleError(`missing required evidence: ${evidenceRequired.join(', ')}`);
 };
 function gateVerify(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
@@ -255,6 +253,7 @@ export function validateMove(
   if (to === STATUS.ACTIVE) throw new LifecycleError('use task start to activate a packet');
   const allowed = ALLOWED.get(from) ?? [];
   if (!allowed.includes(to)) throw new LifecycleError(`illegal transition ${from} -> ${to}`);
+  if (to === STATUS.READY || to === STATUS.REVIEW) assertCheckpointClear(store, packetId);
   if (to === STATUS.READY) checkWriteSetConflict(store, packetId);
   if (from === STATUS.ACTIVE) assertLeaseForActive(store, sessionId, packetId);
   gateReview(store, packetId, from, to);

@@ -1,6 +1,8 @@
 export const DATABASE_COLUMN = {
   ACTIVATED_AT: 'activated_at',
   ADAPTER_ID: 'adapter_id',
+  ANSWER: 'answer',
+  ANSWERED_AGAINST_VERSION: 'answered_against_version',
   ASSESSED_AT: 'assessed_at',
   CAPABILITY_ID: 'capability_id',
   CATALOG_DIGEST: 'catalog_digest',
@@ -14,18 +16,23 @@ export const DATABASE_COLUMN = {
   KIND: 'kind',
   MESSAGE_ID: 'message_id',
   MODEL_ID: 'model_id',
+  PACKET_ID: 'packet_id',
   PROFILE_DIGEST: 'profile_digest',
   PROFILE_ID: 'profile_id',
   PROVIDER_ID: 'provider_id',
+  QUESTION: 'question',
   RANK: 'rank',
   RECEIPT_JSON: 'receipt_json',
   RESPONSIBILITY_ID: 'responsibility_id',
   ROLE_ID: 'role_id',
   SESSION_ID: 'session_id',
+  UPDATED_AT: 'updated_at',
   USER_VERSION: 'user_version',
-  PACKET_ID: 'packet_id',
-  ANSWERED_AGAINST_VERSION: 'answered_against_version',
   VARIANT: 'variant',
+} as const;
+
+export const DATABASE_TABLE = {
+  DECISIONS: 'decisions',
 } as const;
 
 export const SQLITE_INTEGER_MODE = {

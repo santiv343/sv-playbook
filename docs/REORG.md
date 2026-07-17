@@ -43,6 +43,21 @@ del trabajo repita el patrón de deriva silenciosa.
 
 ## Hecho
 
+- **Plan de bootstrap de contexto + cold-start con rol** (2026-07-17):
+  `docs/superpowers/plans/2026-07-17-context-bootstrap-cold-start.md` —
+  5 tareas. Reencuadrado 3 veces en la misma sesión hasta llegar al
+  diseño correcto: no es "roles a DB" (ya estaban), es reusar
+  `compileContext()` (la función que YA arma el paquete de contexto para
+  workers despachados) para inyectar el contexto del rol `human-interface`
+  directo en `AGENTS.md`/`CLAUDE.md`. En el camino se encontró que
+  `content/principles.md` y `content/taste/*.md` (incluido HJ-001..021,
+  escrito con selectores de rol pensados exactamente para esto) **nunca
+  se cargaron a la DB** — ningún context pack de hoy, ni siquiera el de
+  workers ya despachados, tiene la riqueza real del proyecto. Se auditó
+  el dominio `context` a pedido del founder (tablas, DTOs, validación) y
+  está sólido — solo faltaba contenido. Se encontró y se suma al plan un
+  hueco real de integridad referencial: los selectores de rol no
+  validaban contra el catálogo real (typo = falla silenciosa).
 - **Checkpoint en ejecución** (2026-07-17): un agente despachado por el
   founder está corriendo `docs/superpowers/plans/2026-07-17-complexity-checkpoint.md`
   — Tarea 1 commiteada, Tareas 2/3 en progreso al momento de este
