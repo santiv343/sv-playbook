@@ -58,15 +58,24 @@ del trabajo repita el patrón de deriva silenciosa.
 ## En progreso
 
 Diseño detallado del checkpoint de aprobación humana
-(`docs/superpowers/specs/2026-07-16-complexity-checkpoint-design.md`),
-Pieza 1 (packets en DB, versionados). Sección de alcance acordada; falta
-bajar a detalle:
-- [ ] Modelo de datos completo (`packet_versions`, FK de `decisions`, plan
-      de migración de los 185 packets existentes)
-- [ ] Comandos CLI nuevos/modificados
+(`docs/superpowers/specs/2026-07-16-complexity-checkpoint-design.md`).
+
+**Hallazgo importante (2026-07-17):** la Pieza 1 (packets versionados en DB)
+casi no requería trabajo nuevo — `packet_definitions` y `packet_deps` ya
+existían y ya cubren el 100% de los 189 packets vivos (verificado
+consultando la DB directo). El diseño original se corrigió en el momento
+para no reinventar lo que ya estaba construido; ese mismo hallazgo generó
+la decisión D8: todo packet que declare algo "nuevo" debe adjuntar
+evidencia de búsqueda previa antes de aprobarse — mismo nivel de
+obligatoriedad que el RED test.
+
+Falta bajar a detalle:
+- [ ] Comandos CLI nuevos/modificados (`packet history`, `packet diff`,
+      arreglo de `decision ask --packet`)
 - [ ] Qué es exactamente configurable (formato, defaults)
 - [ ] Manejo de errores / casos límite
 - [ ] Testing / evidencia requerida
+- [ ] Dejar de generar `docs/packets/*.md` como export
 
 ## Pendiente (después del diseño actual)
 
