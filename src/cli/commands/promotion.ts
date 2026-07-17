@@ -7,6 +7,7 @@ import { s } from '../../schema/index.js';
 import { PromotionController } from '../../promotion/promotion.controller.js';
 import { listPromotionReceipts } from '../../promotion/promotion.receipts.js';
 import { STRING_OPTION } from './options.constants.js';
+import { USAGE_HEADER } from '../command.constants.js';
 
 const PROMOTION_SUBCOMMAND = {
   LIST: 'list',
@@ -85,7 +86,7 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   }],
 ]);
 
-const USAGE = ['Usage:', ...Array.from(SUBCOMMANDS.values()).map(({ usage }) => `  ${usage}`)].join('\n');
+const USAGE = [USAGE_HEADER, ...Array.from(SUBCOMMANDS.values()).map(({ usage }) => `  ${usage}`)].join('\n');
 
 export const command: Command = {
   name: 'promotion',

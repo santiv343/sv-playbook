@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { TEXT_ENCODING } from '../../platform.constants.js';
-import { CLI_FORCE_FLAG, EXIT } from '../command.constants.js';
+import { CLI_FORCE_FLAG, ERROR_PREFIX, EXIT, USAGE_HEADER } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { extractConfirmDestructive } from '../command.js';
 import { commonRoot, worktreeRoot } from '../../db/store.js';
@@ -315,16 +315,16 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   ['import', { usage: 'sv-playbook task import <path|ID>', run: (rest, io) => handleImport(rest, io) }],
 ]);
 
-const USAGE = ['Usage:', ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');
+const USAGE = [USAGE_HEADER, ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');
 
 function handleTaskError(error: unknown, io: Io): number {
   if (error instanceof LifecycleError || error instanceof PacketFormatError) {
-    io.err(`error: ${error.message}`);
+    io.err(`${ERROR_PREFIX}${error.message}`);
     if (error instanceof LifecycleError && error.hint !== undefined) io.err(`hint: ${error.hint}`);
     return EXIT.GATE_FAIL;
   }
   if (error instanceof UsageError || error instanceof TypeError) {
-    io.err(USAGE); io.err(`error: ${error.message}`);
+    io.err(USAGE); io.err(`${ERROR_PREFIX}${error.message}`);
     return EXIT.USAGE;
   }
   throw error;

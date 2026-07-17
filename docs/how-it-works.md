@@ -396,6 +396,7 @@ Full guide: `sv-playbook docs cli`. Implemented today:
 | `adopt` | Analyze a repo and scaffold playbook artifacts (inventory+gap only by default; --force to scaffold) |
 | `backup` | Create local SQLite state snapshots |
 | `check` | Validate authored artifacts (structure, instructions drift) |
+| `config` | Read and write playbook configuration |
 | `constitution` | Manage the instance constitution (vision, product definition, principles) |
 | `context` | Manage and compile durable role-scoped context |
 | `contract` | Manage authoritative JSON Schema contracts for typed role handoffs |

@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 import { eq, asc, and } from 'drizzle-orm';
-import { EXIT } from '../command.constants.js';
+import { ERROR_PREFIX, EXIT, USAGE_HEADER } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
@@ -49,7 +49,7 @@ function handleHistory(args: string[], io: Io): number {
       .orderBy(asc(packetDefinitions.version))
       .all();
     if (!rows.length) {
-      io.err(`error: no history for packet: ${packetId}`);
+      io.err(`${ERROR_PREFIX}no history for packet: ${packetId}`);
       return EXIT.GATE_FAIL;
     }
     if (parsed.values.json === true) {
@@ -87,7 +87,7 @@ function handleDiff(args: string[], io: Io): number {
       .where(and(eq(packetDefinitions.packetId, packetId), eq(packetDefinitions.version, Number(toVersion))))
       .get();
     if (fromRow === undefined || toRow === undefined) {
-      io.err(`error: version not found for packet: ${packetId}`);
+      io.err(`${ERROR_PREFIX}version not found for packet: ${packetId}`);
       return EXIT.GATE_FAIL;
     }
     const fromDef = parseDefinitionJson(fromRow.definitionJson);
@@ -113,7 +113,7 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   ['diff', { usage: 'sv-playbook packet diff <ID> --from <v> --to <v> [--json]', run: handleDiff }],
 ]);
 
-const USAGE = ['Usage:', ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');
+const USAGE = [USAGE_HEADER, ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');
 
 export const command: Command = {
   name: 'packet',

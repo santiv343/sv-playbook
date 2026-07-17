@@ -4,6 +4,7 @@ import type { Command } from '../command.types.js';
 import { command as adopt } from './adopt.js';
 import { command as backup } from './backup.js';
 import { command as check } from './check.js';
+import { command as config } from './config.js';
 import { command as constitution } from './constitution.js';
 import { command as context } from './context.js';
 import { command as contract } from './contract.js';
@@ -32,5 +33,5 @@ import { command as task } from './task.js';
 import { command as workflow_policy } from './workflow-policy.js';
 import { command as workspace } from './workspace.js';
 
-export const allCommands: readonly Command[] = [adopt, backup, check, constitution, context, contract, daemon, decision, describe, dispatch, docs, doctor, enforce, execution_profile, handoff, import_, instructions, packet, promotion, rebuild, reconcile, restore, review, role, serve, sprint, status, task, workflow_policy, workspace];
+export const allCommands: readonly Command[] = [adopt, backup, check, config, constitution, context, contract, daemon, decision, describe, dispatch, docs, doctor, enforce, execution_profile, handoff, import_, instructions, packet, promotion, rebuild, reconcile, restore, review, role, serve, sprint, status, task, workflow_policy, workspace];
 
