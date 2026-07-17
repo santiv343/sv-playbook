@@ -21,6 +21,7 @@ import { addModelCapabilityEvaluations, addReviewCandidates, addRoleProjectionRe
 import { addPromotionReceiptIntegration, addPromotionTables } from './promotion.migrations.js';
 import { addRunRetryLinkage } from './run-retry.migrations.js';
 import { addRunDurationCeiling } from './run-duration.migrations.js';
+import { addDecisionLinkage } from './decision-linkage.migrations.js';
 import { applyExclusiveStorePragmas, readStoreSchemaVersion } from './store.pragmas.js';
 import { STORE_PRAGMA } from './store.pragmas.constants.js';
 import { assertMigrationBranch } from './store.migration-branch.js';
@@ -260,6 +261,7 @@ const migrations = {
   [STORE_MIGRATION_ID.RUN_DURATION_CEILING]: addRunDurationCeiling,
   [STORE_MIGRATION_ID.PROMOTION_RECEIPT_INTEGRATION]: addPromotionReceiptIntegration,
   [STORE_MIGRATION_ID.WORKSPACE_BINDINGS]: noVersionSpecificMigration,
+  [STORE_MIGRATION_ID.DECISION_LINKAGE]: addDecisionLinkage,
 } satisfies Readonly<Record<StoreMigrationId, StoreMigration>>;
 
 function runVersionMigration(db: Database.Database, repoRoot: string, fromVersion: number): void {

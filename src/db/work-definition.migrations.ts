@@ -100,7 +100,7 @@ function parseLegacyReference(ref: string): { id: string; version: number } {
 
 export function addTypedRunSpecReferences(db: Database.Database): void {
   migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_id', SQLITE_COLUMN_TYPE.TEXT, false);
-  migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_version', 'INTEGER', false);
+  migrateTableColumn(db, RUN_SPECS_TABLE, 'work_definition_version', SQLITE_COLUMN_TYPE.INTEGER, false);
   migrateTableColumn(db, RUN_SPECS_TABLE, 'workflow_effect_id', 'TEXT REFERENCES workflow_effects(id)', false);
   const rows = db.prepare(`SELECT id, work_definition_ref FROM run_specs
     WHERE work_definition_ref IS NOT NULL AND work_definition_id IS NULL`).all();

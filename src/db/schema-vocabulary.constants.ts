@@ -23,6 +23,7 @@ export const DATABASE_COLUMN = {
   ROLE_ID: 'role_id',
   SESSION_ID: 'session_id',
   USER_VERSION: 'user_version',
+  PACKET_ID: 'packet_id',
   VARIANT: 'variant',
 } as const;
 
@@ -32,4 +33,5 @@ export const SQLITE_INTEGER_MODE = {
 
 export const SQLITE_COLUMN_TYPE = {
   TEXT: 'TEXT',
+  INTEGER: 'INTEGER',
 } as const;
