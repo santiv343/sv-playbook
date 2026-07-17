@@ -13,7 +13,7 @@
   "tasks": {
     "leaseTtlMs": 1800000,
     "complexityCheckpoint": {
-      "enabled": true,
+      "enabled": false,
       "requireDecisionForTypes": [],
       "requireDecisionForPaths": []
     }
