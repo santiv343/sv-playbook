@@ -37,6 +37,7 @@ import { LifecycleError } from '../../tasks/service.errors.js';
 import type { PacketStatus, RecoveryReport } from '../../tasks/service.types.js';
 import { checkDestructiveGate, queryDestructiveCounts } from '../destructive-gate.js';
 import { withStore, withStoreAsync } from '../store.js';
+import { STRING_OPTION } from './options.constants.js';
 
 interface Subcommand {
   usage: string;
@@ -45,7 +46,6 @@ interface Subcommand {
 
 class UsageError extends Error {}
 
-const STRING_OPTION = { type: 'string' } as const;
 const STRING_LIST_OPTION = { type: STRING_OPTION.type, multiple: true } as const;
 const BODY_FILE_OPTION = 'body-file';
 

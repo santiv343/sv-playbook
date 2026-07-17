@@ -410,6 +410,7 @@ Full guide: `sv-playbook docs cli`. Implemented today:
 | `handoff` | Generate a deterministic continuation prompt from live state |
 | `import` | Import packet definitions from docs/packets/*.md into the DB |
 | `instructions` | Generate cold-start agent instructions from a single source |
+| `packet` | Inspect packet version history and diffs |
 | `promotion` | Verify, integrate, and close one immutable candidate through the runtime controller |
 | `rebuild` | Reconstruct operational DB from git packet exports |
 | `reconcile` | Compute and apply convergence actions between the board and the world |

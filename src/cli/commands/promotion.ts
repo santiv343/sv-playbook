@@ -6,6 +6,7 @@ import { EMPTY_SIZE } from '../../platform.constants.js';
 import { s } from '../../schema/index.js';
 import { PromotionController } from '../../promotion/promotion.controller.js';
 import { listPromotionReceipts } from '../../promotion/promotion.receipts.js';
+import { STRING_OPTION } from './options.constants.js';
 
 const PROMOTION_SUBCOMMAND = {
   LIST: 'list',
@@ -17,8 +18,6 @@ const PROMOTION_OPTION = {
   REVIEW_RUN: 'review-run',
   TARGET: 'target',
 } as const;
-
-const STRING_OPTION = { type: 'string' } as const;
 
 interface Subcommand {
   readonly usage: string;

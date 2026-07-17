@@ -9,6 +9,7 @@ import { NODE_ERROR_PROPERTY } from '../../platform.constants.js';
 import { readSessionRole } from '../destructive-gate.js';
 import { WORKFLOW_EXECUTOR } from '../../orchestration/orchestration.constants.js';
 import { currentPacketDefinitionVersion } from '../../db/work-definition.migrations.js';
+import { BOOLEAN_OPTION, STRING_OPTION } from './options.constants.js';
 
 function nullableStringColumn(row: unknown, key: string): string | null {
   const value = column(row, key);
@@ -81,7 +82,7 @@ function isConstraintError(error: unknown): boolean {
 
 function handleAsk(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: true, options: {
-    packet: { type: 'string' },
+    packet: STRING_OPTION,
   } });
   const question = parsed.positionals.join(' ');
   if (question === '') throw new UsageError('ask requires <question text...>');
@@ -134,7 +135,7 @@ function handleAnswer(args: string[], io: Io): number {
 
 function handleList(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: true, options: {
-    pending: { type: 'boolean' },
+    pending: BOOLEAN_OPTION,
   } });
   if (parsed.positionals.length !== 0) throw new UsageError('list takes no positional arguments');
   return withStore((store) => {
