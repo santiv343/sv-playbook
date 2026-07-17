@@ -122,6 +122,7 @@ se ejecute.
 |---|---|
 | `packet history <ID> [--json]` | Lista las versiones en `packet_definitions` para ese packet: número, fecha, digest corto, qué cambió respecto a la anterior (título/body/write_set/depends_on) |
 | `packet diff <ID> --from <v> --to <v> [--json]` | Diff campo por campo entre dos versiones. `--to` por default es la última |
+| `config get <key>` / `config set <key> <value>` / `config list` | Reemplaza la edición directa de `playbook.config.json` (IDEA-097) — misma validación (`PlaybookConfigSchema`, Ajv), sin exponer el JSON crudo |
 
 **Arreglados (cierran deuda existente, no agregan superficie nueva):**
 
@@ -164,15 +165,16 @@ Vive en `playbook.config.json`, sección `tasks` (ya existe con
 - Default de fábrica: listas vacías (`PRINCIPLE-013` — el núcleo no
   impone qué es "significativo" para un proyecto nuevo).
 
-**Interfaz: el archivo se edita directo, no hay comando `config` nuevo.**
-El founder aclaró que la intención real es "archivos de configuración que
-permiten configurar toda la app" (mismo patrón que `.eslintrc`/
-`tsconfig.json`), no un CLI que medie cada cambio. Esto tensiona con la
-letra literal de `PRINCIPLE-013` ("config es CLI-driven... nunca
-hand-edited") — encontrado en vivo, registrado como **IDEA-097**,
-explícitamente sin resolver ("hay que ver"). La validación sigue
-existiendo igual: `PlaybookConfigSchema` (Ajv) ya valida al cargar el
-archivo, eso no cambia.
+**Interfaz: CLI-driven, con un comando `config` nuevo (decisión final —
+IDEA-097, revertida en la misma sesión).** El founder primero dijo
+"archivos de configuración editables directo" y después se arrepintió:
+"sí quiero que la config de todo sea CLI driven, pero bien validada."
+Queda entonces: `config get <key>` / `config set <key> <value>` /
+`config list`, reusando la validación que ya existe
+(`PlaybookConfigSchema`, Ajv) — el comando no reinventa la validación,
+solo deja de exponer el JSON a edición directa sin pasar por ella. Esto
+alinea con la letra literal de `PRINCIPLE-013` ("config es CLI-driven...
+nunca hand-edited"), que había quedado en tensión momentáneamente.
 
 **Caso límite — ¿sigue valiendo la aprobación si el packet cambia
 después?** No comparamos timestamps ni intentamos decidir qué campos
