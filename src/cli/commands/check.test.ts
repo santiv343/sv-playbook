@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../main.js';
+import { command } from './check.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import { initTestRepo } from '../../testkit.js';
@@ -25,6 +26,12 @@ async function inTempRepo<T>(fn: (root: string) => Promise<T>): Promise<T> {
     process.chdir(previous);
   }
 }
+
+test('check command declares a non-empty usage string', () => {
+  assert.notEqual(command.usage.trim(), '');
+  assert.match(command.usage, /^Usage:/);
+  assert.match(command.usage, /sv-playbook check/);
+});
 
 test('check structure fails when a packet is missing a required section', async () => {
   await inTempRepo(async (root) => {

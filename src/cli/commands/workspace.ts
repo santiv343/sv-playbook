@@ -23,6 +23,7 @@ function renderHuman(report: WorkspaceClassificationReport, io: Io): void {
 export const command: Command = {
   name: 'workspace',
   summary: 'Classify dirty paths against task write sets and lifecycle state',
+  usage: WORKSPACE_USAGE,
   run(args, io): Promise<number> {
     const [subcommand, ...rest] = args;
     if (subcommand !== WORKSPACE_SUBCOMMAND.CLASSIFY) {
