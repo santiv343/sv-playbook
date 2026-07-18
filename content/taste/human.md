@@ -1,77 +1,6 @@
+<!-- GENERATED FROM context_items — DO NOT EDIT -->
+
 # Human Judgment Profile
-
-> **Instance:** sv-playbook. This is project configuration, not an engine default.
-> **Owner:** human.
-> **Status:** confirmed from repeated explicit decisions through 2026-07-13.
-> **Purpose:** preserve the human's recurring judgment so disposable agent sessions do not ask for it again or improvise a substitute.
-> **Boundary:** this file owns preferences and decision heuristics. Mechanical invariants, role authority, workflow state, and capability maturity remain authoritative in their registries. Generated context references applicable entries instead of copying this document.
-
-## Applicability
-
-Taste is not a monolithic prompt. Every entry is classified and the runtime compiles the applicable subset from the RunSpec. Applicability is deterministic; an LLM never decides which rules another LLM should see.
-
-The codes below describe this instance. The engine treats role ids, workflow ids, phases, risk levels, capability ids, adapters, providers, and models as validated opaque configuration. It must not ship this table as a fixed universal role list.
-
-Role codes used below:
-
-- `HI`: human-interface
-- `ADV`: advisor
-- `PLN`: planner
-- `REF`: refuter
-- `ARB`: arbiter
-- `DO`: delivery-orchestrator
-- `INV`: investigator
-- `IMP`: implementer
-- `REV`: reviewer
-- `ALL`: every agent role
-- `RUNTIME-DESIGN`: input to the agents designing/reviewing runtime behavior, never an executable runtime responsibility
-
-Delivery modes:
-
-- `core`: include the entry in every run for the listed roles.
-- `scoped`: include when task/workflow/risk/path selectors match.
-- `reference`: include the id and summary; fetch full text only when a selector or incident requires it.
-- `compiler`: consumed by context/check machinery, not injected into an agent merely because it exists.
-
-| Entry | Class | Roles | Relevant phases/scopes | Delivery |
-|---|---|---|---|---|
-| HJ-001 | human-attention | HI, PLN, DO | intake, planning, delivery, reporting, product UX | scoped |
-| HJ-002 | responsibility | ALL | every workflow | core |
-| HJ-003 | responsibility | ALL | every workflow that invokes an agent | core |
-| HJ-004 | authority | ALL | every workflow and handoff | core |
-| HJ-005 | portability-and-sourcing | HI, ADV, PLN, REF, DO | startup, sourcing, architecture, dispatch | scoped |
-| HJ-006 | context-and-handoff | ALL | startup, handoff, resume, reporting | core |
-| HJ-007 | reasoning-quality | ADV, PLN, REF, ARB, DO, INV, REV | decision, planning, diagnosis, review; depth selected by risk | scoped |
-| HJ-008 | human-communication | HI, ADV, PLN, ARB, DO | human-facing output, explanations, recommendations | scoped |
-| HJ-009 | evidence-and-honesty | ALL | claims, reports, decisions, capability use | core |
-| HJ-010 | correction-and-learning | ALL | retry, correction, escalation, retrospective | core |
-| HJ-011 | observability | HI, DO, INV, RUNTIME-DESIGN | monitoring, diagnosis, runtime/UI work | scoped |
-| HJ-012 | engineering-strategy | PLN, REF, DO, INV, IMP, REV | architecture, debugging, implementation, review | scoped |
-| HJ-013 | source-of-truth | PLN, REF, IMP, REV, RUNTIME-DESIGN | authoring, schemas, config, implementation, review | scoped |
-| HJ-014 | configuration-boundary | HI, ADV, PLN, REF, ARB, DO, RUNTIME-DESIGN | product, architecture, config, defaults | scoped |
-| HJ-015 | product-ux | HI, ADV, PLN, REF, RUNTIME-DESIGN | human surface, UI, notifications, onboarding | scoped |
-| HJ-016 | review-quality | PLN, REF, ARB, DO, IMP, REV | acceptance authoring, refutation, review | scoped |
-| HJ-017 | delivery-loop | PLN, DO, IMP, REV, RUNTIME-DESIGN | implementation, verification, promotion | scoped |
-| HJ-018 | decision-routing | HI, ADV, PLN, REF, ARB, DO | classification, routing, escalation | core |
-| HJ-019 | rejection-patterns | ALL | violation, authoring check, incident, review | reference |
-| HJ-020 | supersession | HI, PLN, REF, RUNTIME-DESIGN | cold start, context compilation, migration, drift check | compiler |
-| HJ-021 | uncertainty | HI, ADV, PLN, REF, ARB, DO, REV | inference, proposal, open decision | scoped |
-
-The final structured registry must support selectors for role, workflow, responsibility class, risk, lifecycle phase, task requirements, capability ids, affected paths, and explicit include/exclude overrides. `context explain` must return the source id/hash and matching selector for every included entry, plus deterministic exclusion reasons. Unclassified entries, conflicting active entries, unknown roles/selectors, unresolved supersessions, or a mandatory entry omitted by budget must fail context compilation.
-
-## Generalization Rules
-
-The reusable mechanism is a provider-neutral `ContextPolicyEntry`, not this Markdown shape. Each entry carries a stable id/version, source class, status, strength, statement/artifact reference, rationale, owner, selectors, supersession links, and integrity hash. Source adapters normalize principles, binding decisions, role constraints, task requirements, taste, and defaults into that shape.
-
-Precedence is authority-aware, not a generic "most specific wins" rule:
-
-1. Universal invariants and authority constraints cannot be overridden by taste, task text, model choice, provider configuration, or context budgets.
-2. A binding human decision may refine configurable space within existing human authority and may supersede an earlier decision explicitly.
-3. Role constraints may narrow action and context but never grant authority absent from the authority catalog.
-4. Task requirements may narrow scope and add acceptance conditions but cannot weaken higher-level invariants or expand role authority.
-5. Taste chooses among already-valid alternatives. Defaults apply only when no stronger applicable entry exists.
-
-Taste never grants a capability, proves a fact, changes lifecycle state, or overrides an enforcement boundary. Applicability selection and conflict detection use structured metadata only. Providers, harnesses, operating systems, storage engines, transports, model names, ports, durations, and UI channels appear only as adapter/config references or instance defaults.
 
 ## HJ-001: Optimize for irreducible human attention
 
@@ -254,21 +183,6 @@ Reject a design or run that relies on any of these:
 - a local patch that leaves the failure class open;
 - building a replacement before researching maintained alternatives;
 - hiding a product or risk decision inside an architecture default.
-
-## HJ-020: Supersession map
-
-Until the older ledgers and charters are migrated, this map resolves known conflicts:
-
-- `content/taste/decisions.md` entry "DEC-005: Merge delegated to reviewer" is superseded. Runtime promotion/integration owns merge, close, and cleanup; reviewer returns judgment only.
-- `content/taste/product.md` entry "CLI is the only interface" is refined. Runtime capabilities are the only authoritative mutation path; CLI, UI, and agent tools may be clients of that path.
-- `content/taste/decisions.md` entry "Agents are semantic kernels without hands" is refined by HJ-003. Agents have no shared authority, but implementers may use private harness tools for their inner loop.
-- `content/taste/engineering.md` entry "No claim without literal command output" is superseded by typed runtime receipts. Agent-pasted command output is not authoritative evidence.
-- `ROLE-FOUNDER-INTERFACE-001` language assigning planning, packet authoring, direct state verification, or technical decision ownership to the interface is superseded by HJ-004 and the current role catalog. Specialists produce judgment artifacts; runtime performs effects.
-- `.opencode/prompts/delivery-orchestrator.md` instructions assigning lease checks, child launch, session reconciliation, abort, or process-tree termination to the delivery-orchestrator are superseded. Those are runtime/adapter operations; the role consumes typed outcomes and decides only bounded semantic exceptions.
-- `opencode.json` currently gives `founder-interface` ambient edit/bash access without a compiled role prompt. That configuration is not evidence of valid authority and must not be activated as the final role profile. Adapter permissions must be derived from the authority catalog and exact context bundle.
-- The term `founder` is a legacy alias. Current human-facing product language uses `human` and `human-interface`.
-
-These conflicts must be removed from their original sources and covered by drift checks. This map is a temporary compatibility declaration, not permission to keep duplicate authorities indefinitely.
 
 ## HJ-021: Unknowns must remain explicit
 

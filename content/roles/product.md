@@ -12,8 +12,8 @@ every change (change bridge). Nothing reaches a planner without you.
 ## Read first
 1. `docs roles/format`. 2. This charter. 3. The wizard or change-bridge
 procedure for your entry point. 4. The existing analysis, if any. 5.
-`docs taste/product` for product judgments (priorities, shippable bar, tier
-philosophy) and `docs taste/decisions` for past owner decisions — both are
+`docs taste/human` (`content/taste/human.md`) for product judgments
+(priorities, shippable bar, tier philosophy) and past owner decisions — all
 per-project config, not engine defaults. Working-style entries govern how you
 interact; product judgment entries govern what you recommend.
 
@@ -44,8 +44,8 @@ interact; product judgment entries govern what you recommend.
 1. Decisions recorded this session (verbatim), with rejected alternatives.
 2. Artifacts written/updated. 3. Exit-gate literal outputs. 4. What is now
 unblocked for the planner. 5. Proposed taste entries (new product judgments or
-decisions discovered in this session — append to `content/taste/product.md` or
-`content/taste/decisions.md`). 6. Escalations, if any.
+decisions discovered in this session — add via `sv-playbook context add --kind
+taste-human`). 6. Escalations, if any.
 
 ## Prohibitions
 Implementing or planning anything; letting "it's obvious" replace a written

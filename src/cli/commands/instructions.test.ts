@@ -5,6 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { renderInstructions } from './instructions.js';
 import type { Io } from '../command.types.js';
+import { initTestRepo } from '../../testkit.js';
+import { openStore } from '../../db/store.js';
+import { addContextItem, replaceContextPrecedence } from '../../context/repository.js';
+import { CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from '../../context/context.constants.js';
+import { BUNDLED_ROLE_ID } from '../../roles/bundled-profile.constants.js';
 
 function isErrno(err: unknown): err is { code: string; message: string } & Error {
   return typeof err === 'object' && err !== null && 'code' in err;
@@ -19,8 +24,14 @@ function captureIo(): Io & { output: string[] } {
   };
 }
 
+async function tempRepo(prefix: string): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), prefix));
+  initTestRepo(root);
+  return root;
+}
+
 test('instructions renders and writes cold-start mirrors from a single source', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'svp-instructions-'));
+  const root = await tempRepo('svp-instructions-');
   const configPath = join(root, 'playbook.config.json');
   await writeFile(configPath, JSON.stringify({ productName: 'TestProduct' }), 'utf8');
 
@@ -46,7 +57,7 @@ test('instructions renders and writes cold-start mirrors from a single source', 
 });
 
 test('dry-run without --write outputs content without modifying files', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'svp-instructions-'));
+  const root = await tempRepo('svp-instructions-');
   const configPath = join(root, 'playbook.config.json');
   await writeFile(configPath, JSON.stringify({ productName: 'DryRun' }), 'utf8');
 
@@ -75,7 +86,7 @@ test('dry-run without --write outputs content without modifying files', async ()
 });
 
 test('--write actually writes files to disk', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'svp-instructions-'));
+  const root = await tempRepo('svp-instructions-');
   const configPath = join(root, 'playbook.config.json');
   await writeFile(configPath, JSON.stringify({ productName: 'WriteTest' }), 'utf8');
 
@@ -92,7 +103,7 @@ test('--write actually writes files to disk', async () => {
 });
 
 test('renders tier and verifyCommand from config', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'svp-instructions-'));
+  const root = await tempRepo('svp-instructions-');
   const configPath = join(root, 'playbook.config.json');
   await writeFile(configPath, JSON.stringify({
     productName: 'FullProduct',
@@ -109,7 +120,7 @@ test('renders tier and verifyCommand from config', async () => {
 });
 
 test('missing template file errors gracefully', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'svp-instructions-'));
+  const root = await tempRepo('svp-instructions-');
   const configPath = join(root, 'playbook.config.json');
   await writeFile(configPath, JSON.stringify({ productName: 'Graceful' }), 'utf8');
 
@@ -118,4 +129,29 @@ test('missing template file errors gracefully', async () => {
     renderInstructions({ root, io, write: false }),
     'renderInstructions should not throw for valid template and config',
   );
+});
+
+test('renderInstructions injects the compiled human-interface context', async () => {
+  const root = await tempRepo('svp-instructions-context-');
+
+  const store = openStore(root);
+  replaceContextPrecedence(store, ['principle']);
+  addContextItem(store, {
+    id: 'HJ-001',
+    version: 1,
+    kind: 'principle',
+    status: CONTEXT_ITEM_STATUS.ACTIVE,
+    strength: CONTEXT_ITEM_STRENGTH.MANDATORY,
+    semanticKey: 'human-attention',
+    body: 'Optimize for irreducible human attention.',
+    provenance: 'test fixture',
+    selectors: { role: [BUNDLED_ROLE_ID.HUMAN_INTERFACE] },
+  });
+  store.close();
+
+  const io = captureIo();
+  await renderInstructions({ root, io, write: false });
+
+  const output = io.output.join('\n');
+  assert.match(output, /HJ-001|Optimize for irreducible human attention/);
 });
