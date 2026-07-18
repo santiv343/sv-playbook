@@ -12,6 +12,8 @@ import { FILE_EXTENSION } from '../../platform.constants.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { checkRoleSystem } from '../../roles/system-check.js';
 import { renderInstructionsContent } from './instructions.js';
+import { inspectCommandUsage } from '../../check/command-usage.js';
+import { commands } from '../registry.js';
 
 const PACKETS_DIR = 'docs/packets';
 
@@ -75,6 +77,14 @@ async function checkStructure(root: string, io: Io): Promise<boolean> {
   return results.some(Boolean);
 }
 
+function checkCommandUsage(_root: string, io: Io): Promise<boolean> {
+  const violations = inspectCommandUsage(commands());
+  for (const violation of violations) {
+    io.out(`command-usage: ${violation.commandName} is missing usage`);
+  }
+  return Promise.resolve(Boolean(violations.length));
+}
+
 async function checkInstructions(root: string, io: Io): Promise<boolean> {
   let hasDrift = false;
 
@@ -110,6 +120,7 @@ const TARGETS: Record<string, (root: string, io: Io) => Promise<boolean>> = {
   structure: checkStructure,
   instructions: checkInstructions,
   roles: checkRolesTarget,
+  'command-usage': checkCommandUsage,
 };
 
 async function checkRolesTarget(root: string, io: Io): Promise<boolean> {

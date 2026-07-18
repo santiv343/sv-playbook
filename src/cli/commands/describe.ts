@@ -11,7 +11,7 @@ export const command: Command = {
       io.err(command.usage);
       return Promise.resolve(EXIT.USAGE);
     }
-    const catalog = commands().map((c) => ({ name: c.name, summary: c.summary }));
+    const catalog = commands().map((c) => ({ name: c.name, summary: c.summary, usage: c.usage }));
     io.out(JSON.stringify(catalog));
     return Promise.resolve(EXIT.OK);
   },

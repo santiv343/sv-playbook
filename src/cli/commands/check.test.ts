@@ -141,3 +141,11 @@ test('check structure skips malformed frontmatter for baselined packets', async 
     assert.equal(code, EXIT.OK, 'should exit 0 when only baselined broken packets exist');
   });
 });
+
+test('check command-usage passes when every command has usage', async () => {
+  await inTempRepo(async () => {
+    const io = fakeIo();
+    const code = await main(['check', 'command-usage'], io);
+    assert.equal(code, EXIT.OK);
+  });
+});
