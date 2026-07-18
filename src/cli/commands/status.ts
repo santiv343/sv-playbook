@@ -27,8 +27,9 @@ function renderStatus(status: BoardStatus, io: Io): void {
 
 export const command: Command = {
   name: 'status',
-    summary: 'Print board, lease, event, and backup status',
-    run(args, io): Promise<number> {
+  summary: 'Print board, lease, event, and backup status',
+  usage: USAGE,
+  run(args, io): Promise<number> {
       const parsed = parseArgs({ args, allowPositionals: true, options: { json: { type: CLI_OPTION_TYPE.BOOLEAN } } });
       if (parsed.positionals.length > 0) {
         io.err(USAGE);

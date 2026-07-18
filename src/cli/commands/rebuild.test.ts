@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../main.js';
+import { command as rebuildCommand } from './rebuild.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import { stringColumn } from '../../db/rows.js';
@@ -118,4 +119,9 @@ test('rebuild refuses to replace terminal live state with reconstructed drafts',
     assert.match(io.errLines.join('\n'), /terminal packet/);
     assert.equal(packetStatus(root, 'REBUILD-LOSS-001'), STATUS.DONE);
   });
+});
+
+test('rebuild command declares a non-empty usage string', () => {
+  assert.notEqual(rebuildCommand.usage.trim(), '');
+  assert.match(rebuildCommand.usage, /^Usage: sv-playbook rebuild/);
 });

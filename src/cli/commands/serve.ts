@@ -92,6 +92,7 @@ async function runServer(args: string[], io: Io): Promise<number> {
 export const command: Command = {
   name: 'serve',
   summary: 'Start the local workflow runtime and real-time operations console',
+  usage: USAGE,
   run(args, io): Promise<number> {
     return runServer(args, io);
   },

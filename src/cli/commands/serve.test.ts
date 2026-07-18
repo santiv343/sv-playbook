@@ -191,6 +191,11 @@ test('operational server exposes the board, workflow dashboard, and local UI', a
   });
 });
 
+test('serve command declares a non-empty usage string', () => {
+  assert.notEqual(serveCommand.usage.trim(), '');
+  assert.match(serveCommand.usage, /^Usage: sv-playbook serve/);
+});
+
 test('serve keeps UI reads and forwarded CLI mutations behind one store owner', async () => {
   await inTempRepo(async () => {
     await writeFile('body.md', 'Observe one live mutation.\n');

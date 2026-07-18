@@ -61,3 +61,8 @@ test('import loads a packet body and its deps from markdown into the DB', async 
     store.close();
   });
 });
+
+test('import command declares a non-empty usage string', () => {
+  assert.notEqual(importCommand.usage.trim(), '');
+  assert.match(importCommand.usage, /^Usage: sv-playbook import/);
+});
