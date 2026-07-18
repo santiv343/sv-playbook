@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -22,9 +21,6 @@ const definition = (id: string, writeSet: string[]) => ({
 test('workspace classification assigns every dirty path without LLM judgment', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-workspace-classification-'));
   initTestRepo(root);
-  await writeFile(join(root, '.gitignore'), '.svp/\n.svp-session\ndocs/packets/\n');
-  execFileSync('git', ['add', '.gitignore'], { cwd: root });
-  execFileSync('git', ['-c', 'user.email=test@example.com', '-c', 'user.name=Test', 'commit', '-m', 'initial'], { cwd: root });
   const store = openStore(root);
 
   createPacket(store, root, definition('ACTIVE-001', ['src/current/**']), 'active');

@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util';
-import { EXIT } from '../command.constants.js';
+import { ERROR_PREFIX, EXIT, USAGE_HEADER } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
@@ -9,6 +9,7 @@ import { NODE_ERROR_PROPERTY } from '../../platform.constants.js';
 import { readSessionRole } from '../destructive-gate.js';
 import { WORKFLOW_EXECUTOR } from '../../orchestration/orchestration.constants.js';
 import { currentPacketDefinitionVersion } from '../../db/work-definition.migrations.js';
+import { BOOLEAN_OPTION, STRING_OPTION } from './options.constants.js';
 
 function nullableStringColumn(row: unknown, key: string): string | null {
   const value = column(row, key);
@@ -81,7 +82,7 @@ function isConstraintError(error: unknown): boolean {
 
 function handleAsk(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: true, options: {
-    packet: { type: 'string' },
+    packet: STRING_OPTION,
   } });
   const question = parsed.positionals.join(' ');
   if (question === '') throw new UsageError('ask requires <question text...>');
@@ -93,7 +94,7 @@ function handleAsk(args: string[], io: Io): number {
       store.db.prepare(`INSERT INTO decisions (id, question, answer, ${DATABASE_COLUMN.PACKET_ID}, created_at, updated_at) VALUES (?, ?, NULL, ?, ?, ?)`).run(id, question, packetId, now, now);
     } catch (error) {
       if (isConstraintError(error)) {
-        io.err(`error: unknown packet: ${parsed.values.packet}`);
+        io.err(`${ERROR_PREFIX}unknown packet: ${parsed.values.packet}`);
         return EXIT.GATE_FAIL;
       }
       throw error;
@@ -110,16 +111,16 @@ function handleAnswer(args: string[], io: Io): number {
   return withStore((store, repoRoot) => {
     const role = readSessionRole(repoRoot);
     if (role !== WORKFLOW_EXECUTOR.HUMAN) {
-      io.err(`error: decision ${id} can only be answered in a human session`);
+      io.err(`${ERROR_PREFIX}decision ${id} can only be answered in a human session`);
       return EXIT.GATE_FAIL;
     }
     const dec = readDecision(store, id);
     if (dec === undefined) {
-      io.err(`error: unknown decision: ${id}`);
+      io.err(`${ERROR_PREFIX}unknown decision: ${id}`);
       return EXIT.GATE_FAIL;
     }
     if (dec.answer !== null) {
-      io.err(`error: decision ${id} is already answered`);
+      io.err(`${ERROR_PREFIX}decision ${id} is already answered`);
       return EXIT.GATE_FAIL;
     }
     const answeredAgainstVersion = dec.packet_id !== null
@@ -134,7 +135,7 @@ function handleAnswer(args: string[], io: Io): number {
 
 function handleList(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: true, options: {
-    pending: { type: 'boolean' },
+    pending: BOOLEAN_OPTION,
   } });
   if (parsed.positionals.length !== 0) throw new UsageError('list takes no positional arguments');
   return withStore((store) => {
@@ -163,7 +164,7 @@ function handleShow(args: string[], io: Io): number {
   return withStore((store) => {
     const dec = readDecision(store, id);
     if (dec === undefined) {
-      io.err(`error: unknown decision: ${id}`);
+      io.err(`${ERROR_PREFIX}unknown decision: ${id}`);
       return EXIT.GATE_FAIL;
     }
     io.out(`id: ${dec.id}`);
@@ -185,7 +186,7 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   ['show', { usage: 'sv-playbook decision show <ID>', run: handleShow }],
 ]);
 
-const USAGE = ['Usage:', ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');
+const USAGE = [USAGE_HEADER, ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');
 
 export const command: Command = {
   name: 'decision',
@@ -199,7 +200,7 @@ export const command: Command = {
     } catch (error) {
       if (error instanceof UsageError) {
         io.err(USAGE);
-        io.err(`error: ${error.message}`);
+        io.err(`${ERROR_PREFIX}${error.message}`);
         return Promise.resolve(EXIT.USAGE);
       }
       throw error;

@@ -99,11 +99,9 @@ test('F4: verify step leaves no temporary worktree behind', async () => {
 
   await writeFile(
     join(root, 'playbook.config.json'),
-    JSON.stringify({ verifyCommand: 'node -e "console.log(\'verify ok\')"' }),
+    JSON.stringify({ verifyCommand: 'node -e "console.log(\'verify ok\')"', tasks: { complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] } } }),
     'utf8',
   );
-  execFileSync('git', ['add', 'playbook.config.json'], { cwd: root });
-  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'add config'], { cwd: root });
 
   createPacket(store, root, def('GATE-004-TEST'), 'body');
   movePacket(store, undefined, 'GATE-004-TEST', 'ready');

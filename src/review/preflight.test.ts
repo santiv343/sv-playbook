@@ -77,8 +77,7 @@ test('preflight rejects a verify command that dirties tracked candidate files', 
     evidenceRequired: [],
     tags: [],
   }, 'Verify cleanliness.');
-  git(root, ['add', 'docs/packets/PREFLIGHT-001.md']);
-  git(root, ['commit', '-m', 'task definition']);
+  git(root, ['commit', '--allow-empty', '-m', 'task definition']);
 
   const report = await runPreflight(store, 'PREFLIGHT-001', root, { pr: undefined, persistEvent: false });
 
@@ -122,8 +121,7 @@ test('preflight verification leaves the runtime event loop responsive', async ()
     evidenceRequired: [],
     tags: [],
   }, 'Keep the runtime responsive.');
-  git(root, ['add', 'docs/packets/PREFLIGHT-ASYNC-001.md']);
-  git(root, ['commit', '-m', 'task definition']);
+  git(root, ['commit', '--allow-empty', '-m', 'task definition']);
 
   try {
     const report = await runPreflight(store, 'PREFLIGHT-ASYNC-001', root, { pr: undefined, persistEvent: false });

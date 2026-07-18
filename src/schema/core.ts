@@ -3,7 +3,7 @@ import type { Schema, ObjectShape } from './core.types.js';
 
 const MIN_NON_EMPTY_STRING_LENGTH = 1;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 

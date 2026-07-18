@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
@@ -30,13 +31,12 @@ import { STATUS } from './service.constants.js';
 import { setupServiceTest as setup } from './service.test.support.js';
 import { initTestRepo } from '../testkit.js';
 
-const def = (id: string) => ({ id, title: `Packet ${id}`, dependsOn: [], writeSet: ['src/**'], requirements: [], evidenceRequired: ['final-sha'] });
+const def = (id: string, writeSet: string[] = ['src/**']) => ({ id, title: `Packet ${id}`, dependsOn: [], writeSet, requirements: [], evidenceRequired: ['final-sha'] });
 
-test('createPacket writes markdown projection and DB row in draft', async () => {
+test('createPacket writes DB row in draft and does not write a markdown projection', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P2-001'), 'Body.\n');
-  const text = await readFile(join(root, 'docs', 'packets', 'P2-001.md'), 'utf8');
-  assert.ok(text.includes('id: P2-001'));
+  assert.equal(existsSync(join(root, 'docs', 'packets', 'P2-001.md')), false);
   const rows = listPackets(store);
   assert.equal(rows.length, 1);
   assert.equal(rows[0]?.status, 'draft');
@@ -213,6 +213,7 @@ test('moving to review captures head evidence as events', async () => {
 test('task brief reads the body from the DB, not the markdown file', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('P3-DB'), 'Hello from DB.\n');
+  await mkdir(join(root, 'docs', 'packets'), { recursive: true });
   await writeFile(join(root, 'docs', 'packets', 'P3-DB.md'), 'garbage content', 'utf8');
   const brief = briefPacket(store, 'P3-DB');
   assert.ok(brief.includes('Hello from DB.'), 'brief should contain body from DB, not md file');
@@ -264,21 +265,6 @@ test('importPackets is idempotent and updates deps on re-run', async () => {
   assert.equal(stringColumn(store.db.prepare('SELECT status FROM packets WHERE id = ?').get('IMP-002'), 'status'), 'ready');
 });
 
-test('moving a packet never modifies its generated markdown export', async () => {
-  const { root, store } = await setup();
-  createPacket(store, root, def('MD-001'), 'Body.\n');
-  const path = join(root, 'docs', 'packets', 'MD-001.md');
-  const initialBytes = await readFile(path);
-  const s1 = ensureSession(store, root);
-  movePacket(store, undefined, 'MD-001', 'ready');
-  startPacket(store, s1, root, 'MD-001');
-  movePacket(store, s1, 'MD-001', 'review');
-  const finalBytes = await readFile(path);
-  const finalText = finalBytes.toString('utf8');
-  assert.deepEqual(finalBytes, initialBytes, 'md file bytes should not change after moves');
-  assert.ok(finalText.includes('<!-- GENERATED FROM THE BOARD'), 'missing GENERATED banner');
-});
-
 test('importPackets returns zeros for a missing packets directory', async () => {
   const { store, root } = await setup();
   const { imported, updated } = importPackets(store, root); assert.equal(imported, 0); assert.equal(updated, 0);
@@ -301,7 +287,7 @@ test('move to review is refused when the branch changed a file outside the write
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
   const store = openStore(root);
-  createPacket(store, root, { ...def('WS-001'), writeSet: ['src/a/**'] }, 'a');
+  createPacket(store, root, def('WS-001', ['src/a/**']), 'a');
   const s1 = ensureSession(store, root);
   movePacket(store, undefined, 'WS-001', 'ready');
   startPacket(store, s1, root, 'WS-001');
@@ -318,7 +304,7 @@ test('task create --type feature auto-assigns sequential FEAT ids', async () => 
   assert.equal(stringColumn(rows[0], 'id'), 'FEAT-001'); assert.equal(stringColumn(rows[0], 'type'), 'feature');
 });
 
-test('amend updates the body and write_set in the DB and regenerates the export', async () => {
+test('amend updates the body and write_set in the DB', async () => {
   const { root, store } = await setup();
   createPacket(store, root, def('AMD-001'), 'a');
   amendPacket(store, root, 'AMD-001', { body: 'b', writeSet: ['src/a/**'] });
@@ -353,9 +339,9 @@ test('move to review is refused when the project verify command fails', async ()
   await writeFile(join(root, 'src', 'a', 'ok.ts'), ' ', 'utf8');
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
-  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node -e process.exit(1)' }), 'utf8');
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node -e process.exit(1)', tasks: { complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] } } }), 'utf8');
   const store = openStore(root);
-  createPacket(store, root, { ...def('VERIFY-001'), writeSet: ['src/a/**'] }, 'a');
+  createPacket(store, root, def('VERIFY-001', ['src/a/**']), 'a');
   const s1 = ensureSession(store, root);
   movePacket(store, undefined, 'VERIFY-001', 'ready');
   startPacket(store, s1, root, 'VERIFY-001');
@@ -363,4 +349,9 @@ test('move to review is refused when the project verify command fails', async ()
   assert.equal(listPackets(store)[0]?.status, 'active');
 });
 
+test('createPacket does not write a .md file to disk', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('NO-MD-001'), 'a');
+  assert.equal(existsSync(join(root, 'docs', 'packets', 'NO-MD-001.md')), false);
+});
 

@@ -20,6 +20,7 @@ import {
 import { STATUS } from '../tasks/service.constants.js';
 import { setupServiceTest } from '../tasks/service.test.support.js';
 import { initTestRepo } from '../testkit.js';
+import { generatePacketDocument } from '../packets/document.js';
 
 const def = (id: string, deps: string[] = [], ws: string[] = ['src/redteam/**']) => ({
   id,
@@ -240,8 +241,11 @@ test('red team: fabricated SHA in evidence events does not match git HEAD', asyn
 // ---- CHEAT 9: Export drift detection ----
 test('red team: hand-editing a generated .md export is detected and synced by importPackets', async () => {
   const { root, store } = await setupStore();
-  createPacket(store, root, def('RT-DRIFT-001'), 'Original body.\n');
+  const definition = def('RT-DRIFT-001');
+  createPacket(store, root, definition, 'Original body.\n');
   const mdPath = join(root, 'docs', 'packets', 'RT-DRIFT-001.md');
+  await mkdir(join(root, 'docs', 'packets'), { recursive: true });
+  await writeFile(mdPath, generatePacketDocument(definition, 'Original body.\n'), 'utf8');
   const original = await readFile(mdPath, 'utf8');
   assert.ok(original.includes('Original body.'), 'original export has the body');
   assert.ok(original.includes('<!-- GENERATED FROM THE BOARD'), 'original export has GENERATED banner');
@@ -299,7 +303,7 @@ test('red team: moving to review when verify command fails is refused by the ver
   await writeFile(join(root, 'src', 'redteam', 'file.ts'), ' ', 'utf8');
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
-  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node -e process.exit(1)' }), 'utf8');
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node -e process.exit(1)', tasks: { complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] } } }), 'utf8');
   const store = openStore(root);
   createPacket(store, root, def('RT-VERIFY-001'), 'a');
   const session = ensureSession(store, root);

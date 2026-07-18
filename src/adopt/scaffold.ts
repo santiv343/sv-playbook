@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,7 @@ import { GAP_STATUS } from './gap.types.js';
 import type { Store } from '../db/store.types.js';
 import { createPacket } from '../tasks/service.js';
 import { DEFAULTS } from '../config.constants.js';
+import { PACKETS_DIR, PACKETS_DOCS_DIR } from '../tasks/service.constants.js';
 
 function agentsTemplate(productName: string): string {
   try {
@@ -128,6 +129,7 @@ export function scaffold(
   }
 
   writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  mkdirSync(join(repoRoot, PACKETS_DOCS_DIR, PACKETS_DIR), { recursive: true });
   let wroteAgents = false;
   if (!fileExists(agentsPath)) {
     writeFileSync(agentsPath, agentsTemplate(productName), 'utf8');

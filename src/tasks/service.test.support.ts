@@ -1,14 +1,19 @@
-import { execFileSync } from 'node:child_process';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PLAYBOOK_CONFIG_FILE_NAME } from '../config.constants.js';
 import { openStore } from '../db/store.js';
+import { TEXT_ENCODING } from '../platform.constants.js';
+import { initTestRepo } from '../testkit.js';
+import { testConfig } from '../testkit-fixtures.test.js';
 
 export function initializeTestGitRepository(root: string): void {
-  execFileSync('git', ['init', '-b', 'main'], { cwd: root, stdio: 'pipe' });
-  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root, stdio: 'pipe' });
-  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: root, stdio: 'pipe' });
-  execFileSync('git', ['commit', '--allow-empty', '-m', 'initial'], { cwd: root, stdio: 'pipe' });
+  initTestRepo(root);
+}
+
+export async function writeServiceTestConfig(root: string): Promise<void> {
+  const { writeFile } = await import('node:fs/promises');
+  await writeFile(join(root, PLAYBOOK_CONFIG_FILE_NAME), testConfig, TEXT_ENCODING.UTF8);
 }
 
 export async function setupServiceTest() {

@@ -206,7 +206,7 @@ test('task list and show json expose the full definition including write_set and
     assert.deepStrictEqual(arrayColumn(showData, 'write_set'), ['src/**', 'test/**']);
     assert.deepStrictEqual(arrayColumn(showData, 'depends_on'), ['DEP-001']);
     assert.strictEqual(stringColumn(showData, 'body'), 'Do it.\n');
-    assert.deepStrictEqual(arrayColumn(showData, 'evidence_required'), ['red-test-output', 'verify-root', 'final-sha']);
+    assert.deepStrictEqual(arrayColumn(showData, 'evidence_required'), ['final-sha', 'red-test-output', 'verify-root']);
   });
 });
 
