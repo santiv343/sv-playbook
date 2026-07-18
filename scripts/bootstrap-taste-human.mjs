@@ -1,9 +1,11 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { openStore, commonRoot } from '../dist/db/store.js';
 import { addContextItem, loadContextCatalog, replaceContextPrecedence } from '../dist/context/repository.js';
 import { CONTEXT_ITEM_STATUS } from '../dist/context/context.constants.js';
 import { readMarkdownSection } from '../dist/context/importers/markdown.js';
+import { CONTEXT_PRECEDENCE } from './bootstrap-context.constants.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const root = dirname(__filename);
@@ -148,11 +150,7 @@ const bodyFilePath = join(root, '..', BODY_FILE);
 const store = openStore(repoRoot);
 try {
   // Ensure taste-human has a distinct precedence rank above the legacy human-taste kind.
-  replaceContextPrecedence(store, [
-    'principle', 'human-decision', 'constitutional-invariant', 'binding-decision',
-    'role-constraint', 'task-requirement', 'taste-human', 'human-taste',
-    'instance-default', 'learned-correction', 'role',
-  ]);
+  replaceContextPrecedence(store, CONTEXT_PRECEDENCE);
   console.log('context precedence set');
 
   const catalog = loadContextCatalog(store);
@@ -198,7 +196,6 @@ try {
 
 // Verify selective compilation through the CLI so the bootstrap exercises the
 // same surface agents use.
-import { execFileSync } from 'node:child_process';
 const cli = join(root, '..', 'bin', 'sv-playbook.js');
 function run(args) {
   console.log(`> sv-playbook ${args.join(' ')}`);

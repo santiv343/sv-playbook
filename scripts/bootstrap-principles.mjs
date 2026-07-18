@@ -4,6 +4,7 @@ import { openStore, commonRoot } from '../dist/db/store.js';
 import { addContextItem, loadContextCatalog, replaceContextPrecedence } from '../dist/context/repository.js';
 import { CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from '../dist/context/context.constants.js';
 import { readMarkdownSection } from '../dist/context/importers/markdown.js';
+import { CONTEXT_PRECEDENCE } from './bootstrap-context.constants.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const root = dirname(__filename);
@@ -34,11 +35,7 @@ const store = openStore(repoRoot);
 try {
   // Precedence shared with bootstrap-taste-human.mjs. Must be set before any
   // addContextItem, because a kind with no rank poisons compilation.
-  replaceContextPrecedence(store, [
-    'principle', 'human-decision', 'constitutional-invariant', 'binding-decision',
-    'role-constraint', 'task-requirement', 'taste-human', 'human-taste',
-    'instance-default', 'learned-correction', 'role',
-  ]);
+  replaceContextPrecedence(store, CONTEXT_PRECEDENCE);
   console.log('context precedence set');
 
   const catalog = loadContextCatalog(store);

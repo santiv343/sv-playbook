@@ -62,7 +62,7 @@ resolving it appends a new entry via `sv-playbook context add --kind taste-human
 2. Evidence: literal outputs of steps 1–3 as run by YOU.
 3. Findings ranked by severity, each with file:line and exact fix.
 4. Deviations audit (step 5 result per bullet).
-5. Proposed taste/learning entries (append to the appropriate ledger when resolved).
+5. Proposed taste/learning entries (add via `sv-playbook context add --kind taste-human` when resolved).
 6. Escalations emitted, if any.
 
 ## Stop conditions
