@@ -31,6 +31,18 @@ function parseCatalog(text: string): Array<{ name: string; summary: string }> {
   }, []);
 }
 
+function parseUsageCatalog(text: string): Array<{ name: string; summary: string; usage: string }> {
+  const raw: unknown = JSON.parse(text);
+  if (!Array.isArray(raw)) throw new Error('expected array');
+  return raw.map((item) => {
+    if (!isRecord(item)) throw new Error('expected record');
+    if (typeof item.name !== 'string' || typeof item.summary !== 'string' || typeof item.usage !== 'string') {
+      throw new Error('expected name, summary, and usage strings');
+    }
+    return { name: item.name, summary: item.summary, usage: item.usage };
+  });
+}
+
 test('describe command declares a non-empty usage string', () => {
   assert.notEqual(command.usage.trim(), '');
   assert.match(command.usage, /^Usage: sv-playbook describe/);
@@ -62,4 +74,14 @@ test('describe prints a JSON catalog containing docs, task, doctor, backup, rest
   assert.ok(typeof restore.summary === 'string' && restore.summary.length > 0, 'restore summary empty');
   assert.ok(typeof status.summary === 'string' && status.summary.length > 0, 'status summary empty');
   assert.ok(typeof rebuild.summary === 'string' && rebuild.summary.length > 0, 'rebuild summary empty');
+});
+
+test('describe --json includes a usage field per command', async () => {
+  const io = fakeIo();
+  const code = await main(['describe'], io);
+  assert.equal(code, EXIT.OK, io.errLines.join('\n'));
+  const catalog = parseUsageCatalog(io.outLines.join('\n'));
+  for (const entry of catalog) {
+    assert.notEqual(entry.usage.trim(), '');
+  }
 });

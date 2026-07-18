@@ -86,7 +86,7 @@ test('check structure distinguishes historical baselined packet violations from 
     const frontmatter = [
       '---',
       'id: FOO-001',
-      'title: test',
+      'title: 'test',
       'depends_on: []',
       'write_set: ["src/x.ts"]',
       'requirements: []',
@@ -166,5 +166,13 @@ test('check secrets passes a clean tree', async () => {
     const io = fakeIo();
     const code = await main(['check', 'secrets'], io);
     assert.equal(code, EXIT.OK, 'expected clean tree to pass');
+  });
+});
+
+test('check command-usage passes when every command has usage', async () => {
+  await inTempRepo(async () => {
+    const io = fakeIo();
+    const code = await main(['check', 'command-usage'], io);
+    assert.equal(code, EXIT.OK);
   });
 });
