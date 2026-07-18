@@ -11,6 +11,7 @@ import { loadConfig } from '../../config.js';
 export const command: Command = {
   name: 'backup',
   summary: 'Create local SQLite state snapshots',
+  usage: BACKUP_USAGE,
   run(args, io): Promise<number> {
     const [sub, ...rest] = args;
     if (sub !== STATE_SUBCOMMAND) {

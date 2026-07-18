@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import { main } from '../main.js';
+import { command } from './workspace.js';
 import { initTestRepo } from '../../testkit.js';
 
 function fakeIo(): Io & { readonly outLines: string[]; readonly errLines: string[] } {
@@ -13,6 +14,12 @@ function fakeIo(): Io & { readonly outLines: string[]; readonly errLines: string
   const errLines: string[] = [];
   return { outLines, errLines, out: (line) => void outLines.push(line), err: (line) => void errLines.push(line) };
 }
+
+test('workspace command declares a non-empty usage string', () => {
+  assert.notEqual(command.usage.trim(), '');
+  assert.match(command.usage, /^Usage:/);
+  assert.match(command.usage, /sv-playbook workspace/);
+});
 
 test('workspace classify exposes deterministic path ownership as json', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-workspace-command-'));

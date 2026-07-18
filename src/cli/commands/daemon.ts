@@ -11,6 +11,7 @@ const USAGE = 'Usage: sv-playbook daemon [--port <N>]';
 export const command: Command = {
   name: 'daemon',
   summary: 'Start the sv-playbook daemon (single blessed writer for the store)',
+  usage: USAGE,
   run(args, io): Promise<number> {
     const parsed = parseArgs({
       args,

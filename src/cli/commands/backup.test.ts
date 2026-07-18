@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { main } from '../main.js';
+import { command } from './backup.js';
 import { EXIT } from '../command.constants.js';
 import { openStore } from '../../db/store.js';
 import type { Io } from '../command.types.js';
@@ -33,6 +34,12 @@ async function inTempRepo<T>(fn: (root: string) => Promise<T>): Promise<T> {
 function backupFiles(root: string): string[] {
   return readdirSync(join(root, '.svp', 'backups')).filter((name) => name.endsWith('.sqlite'));
 }
+
+test('backup command declares a non-empty usage string', () => {
+  assert.notEqual(command.usage.trim(), '');
+  assert.match(command.usage, /^Usage:/);
+  assert.match(command.usage, /sv-playbook backup/);
+});
 
 test('backup state creates a sqlite snapshot with metadata', async () => {
   await inTempRepo(async (root) => {
