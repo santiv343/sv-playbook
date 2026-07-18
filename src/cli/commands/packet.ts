@@ -113,11 +113,15 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   ['diff', { usage: 'sv-playbook packet diff <ID> --from <v> --to <v> [--json]', run: handleDiff }],
 ]);
 
-const USAGE = [USAGE_HEADER, ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');
+const USAGE = [
+  'Usage: sv-playbook packet <subcommand>',
+  ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`),
+].join('\n');
 
 export const command: Command = {
   name: 'packet',
   summary: 'Inspect packet version history and diffs',
+  usage: USAGE,
   run(args, io) {
     try {
       const [sub, ...rest] = args;

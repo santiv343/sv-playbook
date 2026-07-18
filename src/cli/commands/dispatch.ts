@@ -14,7 +14,7 @@ import { parseWorkDefinitionReference } from '../../tasks/work-definitions.js';
 import { WorkDefinitionError } from '../../tasks/work-definition.errors.js';
 
 const USAGE = [
-  'Usage:',
+  'Usage: sv-playbook dispatch <subcommand>',
   '  sv-playbook dispatch prepare --role <role> --phase <phase> --task <id@version> [--profile <id>]',
   '  sv-playbook dispatch start --run <run-id>',
   '  sv-playbook dispatch retry --run <run-id>',
@@ -109,6 +109,7 @@ function reportDispatchError(error: unknown, io: Io): number {
 export const command: Command = {
   name: 'dispatch',
   summary: 'Prepare immutable RunSpecs and dispatch only through registered adapters',
+  usage: USAGE,
   async run(args, io): Promise<number> {
     try {
       return await dispatchSubcommand(args, io);
