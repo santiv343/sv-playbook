@@ -3,6 +3,7 @@ import type { Store } from '../db/store.types.js';
 import { DATABASE_COLUMN } from '../db/schema-vocabulary.constants.js';
 import { numberColumn, stringColumn } from '../db/rows.js';
 import { CAPABILITY_EFFECT, CONTEXT_ERROR, CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from './context.constants.js';
+import { BUNDLED_ROLE_CONTEXT_KIND, BUNDLED_ROLE_ID } from '../roles/bundled-profile.constants.js';
 import { REFERENCE_VERSION_SEPARATOR } from '../platform.constants.js';
 import { ContextError } from './context.errors.js';
 import type { CapabilityEffect, ContextItemInput, ContextItemStatus, ContextItemStrength, StoredContextItem } from './context.types.js';
@@ -42,6 +43,17 @@ function validateInput(item: ContextItemInput): void {
   }
 }
 
+const KNOWN_ROLE_IDS = new Set<string>(Object.values(BUNDLED_ROLE_ID));
+
+function validateSelectorRoles(item: ContextItemInput): void {
+  const roleValues = item.selectors?.[BUNDLED_ROLE_CONTEXT_KIND] ?? [];
+  for (const value of roleValues) {
+    if (!KNOWN_ROLE_IDS.has(value)) {
+      throw new ContextError(CONTEXT_ERROR.UNKNOWN_ROLE_SELECTOR, `${itemRef(item)} has an unknown role selector value: ${value}`);
+    }
+  }
+}
+
 function validateSupersessions(store: Store, item: ContextItemInput, targets: readonly ReturnType<typeof refParts>[]): void {
   const statement = store.db.prepare('SELECT status, semantic_key FROM context_items WHERE id = ? AND version = ?');
   for (const target of targets) {
@@ -77,6 +89,7 @@ function validateKindPrecedence(store: Store, item: ContextItemInput): void {
 
 export function addContextItem(store: Store, item: ContextItemInput): void {
   validateInput(item);
+  validateSelectorRoles(item);
   const now = new Date().toISOString();
   const tags = [...new Set(item.tags ?? [])].sort().map((tag) => [item.id, item.version, tag] as const);
   const selectors = Object.entries(item.selectors ?? {})

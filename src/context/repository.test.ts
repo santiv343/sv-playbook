@@ -18,7 +18,7 @@ test('SQLite is authoritative for context content, metadata, precedence, and com
   addContextItem(store, {
     id: 'P-001', version: 1, kind: 'principle', status: CONTEXT_ITEM_STATUS.ACTIVE,
     strength: CONTEXT_ITEM_STRENGTH.MANDATORY, semanticKey: 'determinism', body: 'Runtime owns deterministic work.',
-    provenance: 'human decision', tags: ['engineering'], selectors: { role: ['*'] },
+    provenance: 'human decision', tags: ['engineering'], selectors: { role: ['reviewer'] },
   });
   addContextItem(store, {
     id: 'ROLE-REVIEWER', version: 1, kind: 'role', status: CONTEXT_ITEM_STATUS.ACTIVE,
@@ -109,5 +109,36 @@ test('a context item whose kind has no precedence is refused at intake', async (
   replaceContextPrecedence(store, ['taste']);
   addContextItem(store, item);
   assert.equal(loadContextCatalog(store).items.length, 1);
+  store.close();
+});
+
+test('addContextItem rejects a role selector value that is not a real role', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-context-invalid-role-'));
+  const store = openStore(root);
+  replaceContextPrecedence(store, ['taste']);
+  assert.throws(
+    () => {
+      addContextItem(store, {
+        id: 'HJ-TEST', version: 1, kind: 'taste', status: CONTEXT_ITEM_STATUS.ACTIVE,
+        strength: CONTEXT_ITEM_STRENGTH.MANDATORY, semanticKey: 'hj-test', body: 'test body',
+        provenance: 'test', selectors: { role: ['not-a-real-role'] },
+      });
+    },
+    /unknown role/i,
+  );
+  store.close();
+});
+
+test('addContextItem accepts a role selector value that is a real role', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-context-valid-role-'));
+  const store = openStore(root);
+  replaceContextPrecedence(store, ['taste']);
+  assert.doesNotThrow(() => {
+    addContextItem(store, {
+      id: 'HJ-TEST', version: 1, kind: 'taste', status: CONTEXT_ITEM_STATUS.ACTIVE,
+      strength: CONTEXT_ITEM_STRENGTH.MANDATORY, semanticKey: 'hj-test', body: 'test body',
+      provenance: 'test', selectors: { role: ['human-interface'] },
+    });
+  });
   store.close();
 });
