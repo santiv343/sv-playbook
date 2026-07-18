@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { main } from '../main.js';
+import { command } from './describe.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 
@@ -29,6 +30,11 @@ function parseCatalog(text: string): Array<{ name: string; summary: string }> {
     return acc;
   }, []);
 }
+
+test('describe command declares a non-empty usage string', () => {
+  assert.notEqual(command.usage.trim(), '');
+  assert.match(command.usage, /^Usage: sv-playbook describe/);
+});
 
 test('describe prints a JSON catalog containing docs, task, doctor, backup, restore, status, and rebuild', async () => {
   const io = fakeIo();

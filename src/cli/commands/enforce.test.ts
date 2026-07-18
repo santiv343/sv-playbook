@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../main.js';
+import { command as enforceCommand } from './enforce.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import type { ConformanceReceipt } from '../../enforcement/conformance.types.js';
@@ -52,6 +53,11 @@ const VALID_CONTRACT = {
   },
   acceptance_scenarios: ['SC-001: test scenario passes'],
 };
+
+test('enforce command declares a non-empty usage string', () => {
+  assert.notEqual(enforceCommand.usage.trim(), '');
+  assert.match(enforceCommand.usage, /^Usage: sv-playbook enforce/);
+});
 
 test('invalid profile exits non-zero with schema failure', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'enforce-test-'));

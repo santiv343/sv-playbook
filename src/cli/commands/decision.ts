@@ -186,11 +186,15 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   ['show', { usage: 'sv-playbook decision show <ID>', run: handleShow }],
 ]);
 
-const USAGE = [USAGE_HEADER, ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');
+const USAGE = [
+  'Usage: sv-playbook decision <subcommand>',
+  ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`),
+].join('\n');
 
 export const command: Command = {
   name: 'decision',
   summary: 'Ask, answer, list, and inspect architectural decisions',
+  usage: USAGE,
   run(args, io) {
     try {
       const [sub, ...rest] = args;
