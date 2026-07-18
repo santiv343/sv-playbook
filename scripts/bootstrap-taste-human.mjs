@@ -1,23 +1,18 @@
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { openStore, commonRoot } from '../dist/db/store.js';
+import { addContextItem, loadContextCatalog, replaceContextPrecedence } from '../dist/context/repository.js';
+import { CONTEXT_ITEM_STATUS } from '../dist/context/context.constants.js';
+import { readMarkdownSection } from '../dist/context/importers/markdown.js';
 
 const __filename = fileURLToPath(import.meta.url);
-const root = dirname(dirname(__filename));
-const cli = join(root, 'bin', 'sv-playbook.js');
+const root = dirname(__filename);
+const repoRoot = commonRoot(root);
 
-function run(args) {
-  console.log(`> sv-playbook ${args.join(' ')}`);
-  execFileSync(process.execPath, [cli, ...args], { cwd: root, stdio: 'inherit' });
-}
-
-// Ensure taste-human has a distinct precedence rank above the legacy human-taste kind.
-run([
-  'context', 'precedence',
-  'principle', 'human-decision', 'constitutional-invariant', 'binding-decision',
-  'role-constraint', 'task-requirement', 'taste-human', 'human-taste',
-  'instance-default', 'learned-correction', 'role',
-]);
+const BODY_FILE = 'content/taste/human.md';
+const PROVENANCE = 'content/taste/human.md, bootstrap 2026-07-17';
+const KIND = 'taste-human';
+const VERSION = 1;
 
 // Strength mapping (from content/taste/human.md Delivery column to CONTEXT_ITEM_STRENGTH):
 //   core     -> mandatory  (applies to every run for the listed roles)
@@ -28,14 +23,6 @@ run([
 // RUNTIME-DESIGN is not a dispatchable role. Entries that include it alongside real
 // roles are tagged `runtime-design-input` so runtime-design reviewers can discover them,
 // while the role selector still limits the entry to the executable roles.
-
-const BODY_FILE = 'content/taste/human.md';
-const PROVENANCE = 'content/taste/human.md, bootstrap 2026-07-17';
-const KIND = 'taste-human';
-// This script was authored as a v3 correction on a store that already contained a v2
-// bootstrap with incomplete phase selectors. On a completely fresh store, change VERSION
-// to '1' and remove the --supersedes argument below.
-const VERSION = '3';
 
 const entries = [
   {
@@ -157,31 +144,65 @@ const entries = [
   },
 ];
 
-for (const entry of entries) {
-  const args = [
-    'context', 'add',
-    '--id', entry.id,
-    '--version', VERSION,
-    '--kind', KIND,
-    '--semantic-key', entry.semanticKey,
-    '--body-file', BODY_FILE,
-    '--heading', entry.heading,
-    '--provenance', PROVENANCE,
-    '--strength', entry.strength,
-    '--supersedes', `${entry.id}@2`,
-  ];
-  for (const role of entry.roles) {
-    args.push('--selector', `role=${role}`);
+const bodyFilePath = join(root, '..', BODY_FILE);
+const store = openStore(repoRoot);
+try {
+  // Ensure taste-human has a distinct precedence rank above the legacy human-taste kind.
+  replaceContextPrecedence(store, [
+    'principle', 'human-decision', 'constitutional-invariant', 'binding-decision',
+    'role-constraint', 'task-requirement', 'taste-human', 'human-taste',
+    'instance-default', 'learned-correction', 'role',
+  ]);
+  console.log('context precedence set');
+
+  const catalog = loadContextCatalog(store);
+  const activeRefs = new Set(
+    catalog.items
+      .filter((item) => item.kind === KIND && item.status === CONTEXT_ITEM_STATUS.ACTIVE)
+      .map((item) => item.id),
+  );
+
+  for (const entry of entries) {
+    if (activeRefs.has(entry.id)) {
+      console.log(`skip ${entry.id}: active ${KIND} item already exists`);
+      continue;
+    }
+
+    const body = readMarkdownSection(bodyFilePath, entry.heading);
+    const selectors = {};
+    if (entry.roles.length > 0) selectors.role = entry.roles;
+    if (entry.phases.length > 0) selectors.phase = entry.phases;
+
+    addContextItem(store, {
+      id: entry.id,
+      version: VERSION,
+      kind: KIND,
+      status: CONTEXT_ITEM_STATUS.ACTIVE,
+      strength: entry.strength,
+      semanticKey: entry.semanticKey,
+      body,
+      provenance: PROVENANCE,
+      tags: entry.tags,
+      selectors,
+      dependencies: [],
+      supersedes: [],
+      capabilities: {},
+    });
+    console.log(`added context ${entry.id}@${VERSION}`);
   }
-  for (const phase of entry.phases) {
-    args.push('--selector', `phase=${phase}`);
-  }
-  for (const tag of entry.tags) {
-    args.push('--tag', tag);
-  }
-  run(args);
+
+  console.log('\n=== Verifying selective compilation ===');
+} finally {
+  store.close();
 }
 
-console.log('\n=== Verifying selective compilation ===');
+// Verify selective compilation through the CLI so the bootstrap exercises the
+// same surface agents use.
+import { execFileSync } from 'node:child_process';
+const cli = join(root, '..', 'bin', 'sv-playbook.js');
+function run(args) {
+  console.log(`> sv-playbook ${args.join(' ')}`);
+  execFileSync(process.execPath, [cli, ...args], { cwd: root, stdio: 'inherit' });
+}
 run(['context', 'compile', '--role', 'human-interface', '--phase', 'intake']);
 run(['context', 'compile', '--role', 'implementer', '--phase', 'implementation']);
