@@ -76,6 +76,7 @@ async function handlePreflight(args: string[], io: Io): Promise<number> {
 export const command: Command = {
   name: REVIEW_CMD_NAME,
   summary: 'Review preflight: mechanical checks for packets before reviewer dispatch',
+  usage: REVIEW_PREFLIGHT_USAGE,
   async run(args, io): Promise<number> {
     try {
       const [sub, ...rest] = args;

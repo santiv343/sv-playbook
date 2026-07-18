@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util';
-import { ERROR_PREFIX, EXIT, USAGE_HEADER } from '../command.constants.js';
+import { ERROR_PREFIX, EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';

@@ -158,6 +158,7 @@ test('dispatcher path: destructive=true on a command descriptor triggers the gat
   const cmd: Command = {
     name: '__test__',
     summary: 'test',
+    usage: 'Usage: sv-playbook __test__',
     destructive: true,
     run: () => Promise.resolve(EXIT.OK),
   };
@@ -178,6 +179,7 @@ test('dispatcher path: destructive=true on a command descriptor allows an unboun
   const cmd: Command = {
     name: '__test__',
     summary: 'test',
+    usage: 'Usage: sv-playbook __test__',
     destructive: true,
     run: () => Promise.resolve(EXIT.OK),
   };
