@@ -48,20 +48,7 @@ separate heartbeat command: liveness is refreshed as a side effect of the
 lifecycle operations (`task start`, `task move`, `task release`, `task note`),
 so `task note` doubles as a progress breadcrumb and a keepalive for the lease.
 
-Argument shapes:
-
-```sh
-sv-playbook task create --id <ID> --title <T> [--write <glob>]... [--depends <ID>]... [--req <REQ>]... [--evidence <E>]... --body-file <path>
-sv-playbook task amend <ID> [--title <T>] [--write <glob>]... [--body-file <path>] [--depends <ID>]... [--req <REQ>]... [--evidence <E>]...
-sv-playbook task list [--json]
-sv-playbook task start <ID>
-sv-playbook task move <ID> <status>
-sv-playbook task show <ID> [--json]
-sv-playbook task recover <ID> [--json]
-sv-playbook task takeover <ID> [--force]
-sv-playbook task note <ID> <text...>
-sv-playbook task brief <ID>
-```
+Run `sv-playbook describe` for the exact, always-current argument syntax.
 
 Statuses: `draft ready active review done blocked dropped`.
 
@@ -88,11 +75,7 @@ Why: it brings a new repo under the playbook in one step. Without
 `--force`, the command refuses to clobber existing playbook artifacts
 and reports gaps instead.
 
-Argument shape:
-
-```sh
-sv-playbook adopt [--force]
-```
+Run `sv-playbook describe` for the exact, always-current argument syntax.
 
 ### `sv-playbook describe`
 
@@ -121,11 +104,7 @@ info (not a failure), while any new packet missing sections still causes
 GATE_FAIL. Without a `playbook.config.json` or without `baseline.fingerprints`,
 every packet is checked strictly.
 
-Argument shape:
-
-```sh
-sv-playbook check [structure|instructions]
-```
+Run `sv-playbook describe` for the exact, always-current argument syntax.
 
 ### `sv-playbook doctor`
 
@@ -137,11 +116,7 @@ Why: it gives agents and humans one non-destructive health readout for the
 local environment: Node version, git root, SQLite store schema, packet
 directory, and fresh/stale leases.
 
-Argument shape:
-
-```sh
-sv-playbook doctor [--json]
-```
+Run `sv-playbook describe` for the exact, always-current argument syntax.
 
 ### `sv-playbook status`
 
@@ -155,11 +130,7 @@ instead of inventing its own DB queries.
 Use `sv-playbook status --json` as the machine-readable contract for `serve`
 and automation.
 
-Argument shape:
-
-```sh
-sv-playbook status [--json]
-```
+Run `sv-playbook describe` for the exact, always-current argument syntax.
 
 ### `sv-playbook serve [--port <N>]`
 
@@ -171,11 +142,7 @@ exposes `GET /` (self-contained HTML dashboard with auto-refresh) and
 `GET /api/board` (the same JSON contract as `status --json`). Mutations
 are never available through serve. Default port: 3131.
 
-Argument shape:
-
-```sh
-sv-playbook serve [--port <N>]
-```
+Run `sv-playbook describe` for the exact, always-current argument syntax.
 
 Read-only guarantee: serve reads the board through `readBoardStatus` —
 the same contract as `status --json` — and never calls store mutators.
@@ -193,14 +160,7 @@ Why: the engine's universal invariants live in `content/principles.md`. The inst
 is declared on top and consulted by agents, serve, and the reviewer to align with the project's
 own vision and principles — not the engine's.
 
-Argument shapes:
-
-```sh
-sv-playbook constitution set <section> --body-file <path>
-sv-playbook constitution add-principle --rule <text> --rationale <text>
-sv-playbook constitution show <section> [--json]
-sv-playbook constitution list
-```
+Run `sv-playbook describe` for the exact, always-current argument syntax.
 
 Sections: `vision`, `product_definition` (prose bodies). `principles` is managed via `add-principle`
 and `list-principles` (ordered list). The `show` subcommand only reads prose sections; for principles,
@@ -216,14 +176,7 @@ Why: decisions are data, not chat prose. Every escalation and its answer
 are persisted in the DB and surfaced by start/digest/serve. Answered decisions
 are immutable history — supersede with a new ask instead of mutating.
 
-Argument shapes:
-
-```sh
-sv-playbook decision ask <question text...>
-sv-playbook decision answer <ID> <answer text...>
-sv-playbook decision list [--pending]
-sv-playbook decision show <ID>
-```
+Run `sv-playbook describe` for the exact, always-current argument syntax.
 
 ### `sv-playbook handoff [--role <role>] [--force]`
 
@@ -251,11 +204,7 @@ Why: SQLite is the operational source of truth. Backup checkpoints/copies
 `.svp/playbook.sqlite` into `.svp/backups/` and writes sidecar metadata with
 the source branch, source SHA, schema version, size, and hash.
 
-Argument shape:
-
-```sh
-sv-playbook backup state [--force]
-```
+Run `sv-playbook describe` for the exact, always-current argument syntax.
 
 ### `sv-playbook restore state`
 
@@ -269,11 +218,7 @@ After restore, always run `sv-playbook doctor` and `sv-playbook status` before
 dispatching workers. Stale leases or active packets without leases are process
 state to resolve explicitly, not files to edit by hand.
 
-Argument shape:
-
-```sh
-sv-playbook restore state --file <path> [--force]
-```
+Run `sv-playbook describe` for the exact, always-current argument syntax.
 
 ### `sv-playbook rebuild [--force]`
 
