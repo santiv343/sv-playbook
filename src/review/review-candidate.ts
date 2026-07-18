@@ -13,6 +13,7 @@ import { EMPTY_SIZE, NODE_ERROR_CODE } from '../platform.constants.js';
 import { nodeErrorCode } from '../platform.js';
 import { GIT_ARGUMENT } from '../git.constants.js';
 import { gitOutput, resolveGitMergeBase } from '../git.js';
+import { bootstrapBundledRoleCatalog } from '../roles/bundled-profile-bootstrap.js';
 import { roleCatalogActivation, roleResponsibilities } from '../roles/schema.constants.js';
 import type { StoredWorkDefinition } from '../tasks/work-definition.types.js';
 import { packets } from '../tasks/schema.constants.js';
@@ -50,6 +51,18 @@ function activeCatalog(store: Store): { readonly version: number; readonly diges
     throw new ContextError(REVIEW_CANDIDATE_ERROR.CATALOG_MISSING, 'an active role catalog is required');
   }
   return row;
+}
+
+function activeCatalogWithSelfHeal(store: Store): { readonly version: number; readonly digest: string } {
+  try {
+    return activeCatalog(store);
+  } catch (error: unknown) {
+    if (error instanceof ContextError && error.code === REVIEW_CANDIDATE_ERROR.CATALOG_MISSING) {
+      bootstrapBundledRoleCatalog(store);
+      return activeCatalog(store);
+    }
+    throw error;
+  }
 }
 
 function activeProjections(
@@ -175,7 +188,7 @@ export async function assembleReviewCandidate(
     config.reviewCandidateMaxBytes,
   );
   if (branch === '') throw new ContextError(REVIEW_CANDIDATE_ERROR.EVIDENCE_FAILED, 'candidate branch is unavailable');
-  const catalog = activeCatalog(store);
+  const catalog = activeCatalogWithSelfHeal(store);
   const createdAt = new Date().toISOString();
   const value: ReviewCandidateValue = {
     kind: REVIEW_CANDIDATE_KIND,
