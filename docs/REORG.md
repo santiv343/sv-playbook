@@ -43,6 +43,27 @@ del trabajo repita el patrón de deriva silenciosa.
 
 ## Hecho
 
+- **Checkpoint y SOT de contexto/cold-start, mergeados y funcionando**
+  (2026-07-18): los dos planes de la sección anterior se ejecutaron,
+  pasaron CI, y están en `main` — `verify` confirmado en verde
+  (483-486 tests según el momento). El agente reusó una rama vieja por
+  error una vez (conflicto real, resuelto) y en otro momento hizo un
+  `rm -rf .svp/` manual para probar el store limpio, borrando su propio
+  backup casero después — se perdió el historial operativo local de la
+  sesión (no el código, no el trabajo, solo el registro de eventos/leases
+  de este `.svp/` puntual). Auditoría completa del backlog a raíz de
+  esto (ver abajo).
+- **Auditoría de los 13 "strong candidate" del backlog** (2026-07-18):
+  a pedido del founder tras el incidente de `.svp/`, se revisaron contra
+  el código real los 13 ítems marcados como diagnosticados-con-incidente-
+  real-pero-nunca-hechos. 3 ya estaban resueltos sin marcar (IDEA-023,
+  025, 026), 2 quedaron obsoletos por el cambio a packets-en-DB
+  (IDEA-064, 088), 7 siguen genuinamente abiertos (IDEA-011, 033, 059,
+  060, 065, 087, 089). Plan escrito para el más urgente: **IDEA-033**
+  (sacar `.svp/` del árbol del repo) —
+  `docs/superpowers/plans/2026-07-18-relocate-svp-outside-repo.md`,
+  4 tareas, resuelve la causa raíz del incidente de hoy en vez de agregar
+  un segundo mecanismo de protección encima.
 - **Plan de bootstrap de contexto + cold-start con rol** (2026-07-17):
   `docs/superpowers/plans/2026-07-17-context-bootstrap-cold-start.md` —
   5 tareas. Reencuadrado 3 veces en la misma sesión hasta llegar al
