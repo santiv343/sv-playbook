@@ -9,4 +9,5 @@ dist/
 scripts/*
 !scripts/clean-dist.mjs
 !scripts/copy-serve-assets.mjs
+!scripts/bootstrap-*.mjs
 *.tgz

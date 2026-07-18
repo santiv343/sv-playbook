@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import { compileContext } from '../../context/compiler.js';
 import { CAPABILITY_EFFECT, CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from '../../context/context.constants.js';
 import { ContextError } from '../../context/context.errors.js';
-import type { CapabilityEffect, ContextCompileInput, ContextItemInput } from '../../context/context.types.js';
+import type { CapabilityEffect, ContextCompileInput, ContextItemInput, ContextItemStrength } from '../../context/context.types.js';
 import { readMarkdownSection } from '../../context/importers/markdown.js';
 import { persistContextPack } from '../../context/packs.js';
 import { addContextItem, loadContextCatalog, replaceContextPrecedence } from '../../context/repository.js';
@@ -12,10 +12,11 @@ import type { Store } from '../../db/store.types.js';
 import { getCwd } from '../../runtime/context.js';
 import { CLI_ASSIGNMENT_SEPARATOR, EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
+import { STRING_OPTION } from './options.constants.js';
 
 const USAGE = [
   'Usage:',
-  '  sv-playbook context add --id <id> --version <n> --kind <kind> --semantic-key <key> --body-file <path> --provenance <text> [options]',
+  '  sv-playbook context add --id <id> --version <n> --kind <kind> --semantic-key <key> --body-file <path> --provenance <text> [--strength <mandatory|advisory|reference>] [options]',
   '  sv-playbook context precedence <kind> [kind...]',
   '  sv-playbook context compile --role <role> --phase <phase> [options]',
   '  sv-playbook context list',
@@ -57,6 +58,13 @@ function capabilityPairs(values: readonly string[] | undefined): Record<string, 
   return result;
 }
 
+function parseStrength(value: string): ContextItemStrength {
+  for (const strength of Object.values(CONTEXT_ITEM_STRENGTH)) {
+    if (value === strength) return strength;
+  }
+  throw new UsageError(`invalid --strength: ${value}`);
+}
+
 function withStore<T>(operation: (store: Store) => T): T {
   const store = openStore(commonRoot(getCwd()));
   try {
@@ -70,6 +78,7 @@ function add(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: false, options: {
     id: { type: 'string' }, version: { type: 'string' }, kind: { type: 'string' },
     'semantic-key': { type: 'string' }, 'body-file': { type: 'string' }, heading: { type: 'string' }, provenance: { type: 'string' },
+    strength: STRING_OPTION,
     tag: { type: 'string', multiple: true }, selector: { type: 'string', multiple: true },
     dependency: { type: 'string', multiple: true }, supersedes: { type: 'string', multiple: true },
     capability: { type: 'string', multiple: true },
@@ -79,9 +88,11 @@ function add(args: string[], io: Io): number {
   const body = parsed.values.heading === undefined
     ? readFileSync(bodyFile, 'utf8')
     : readMarkdownSection(bodyFile, parsed.values.heading);
+  const strengthValue = parsed.values.strength ?? CONTEXT_ITEM_STRENGTH.MANDATORY;
+  const strength = parseStrength(strengthValue);
   const input: ContextItemInput = {
     id: required(parsed.values.id, 'id'), version, kind: required(parsed.values.kind, 'kind'),
-    status: CONTEXT_ITEM_STATUS.ACTIVE, strength: CONTEXT_ITEM_STRENGTH.MANDATORY,
+    status: CONTEXT_ITEM_STATUS.ACTIVE, strength,
     semanticKey: required(parsed.values['semantic-key'], 'semantic-key'),
     body,
     provenance: required(parsed.values.provenance, 'provenance'),
