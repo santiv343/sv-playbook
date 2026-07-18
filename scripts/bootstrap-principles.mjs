@@ -9,8 +9,8 @@ import { CONTEXT_PRECEDENCE } from './bootstrap-context.constants.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const root = dirname(__filename);
 const repoRoot = commonRoot(root);
-const bodyFile = join(root, '..', 'AGENTS.md');
-const provenance = 'AGENTS.md, bootstrap 2026-07-18';
+const bodyFile = join(root, '..', 'content', 'principles.md');
+const provenance = 'content/principles.md, bootstrap 2026-07-18';
 const kind = 'principle';
 
 const principles = [
