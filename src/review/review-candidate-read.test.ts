@@ -38,6 +38,9 @@ const DEFINITION_DIGEST = 'sha256:def';
 const ARTIFACT_DIGEST = 'sha256:artifact';
 const SCHEMA_DIGEST = 'sha256:schema';
 const WORKTREE_PREFIX = 'svp-review-candidate-read-';
+const ALL_CANDIDATES_COUNT = 2;
+const FILTERED_CANDIDATES_COUNT = 1;
+const CANDIDATE_E_VERSION = 2;
 
 function seedArtifactContract(store: ReturnType<typeof openStore>, createdAt: string): void {
   store.orm.insert(artifactContracts).values({
@@ -124,7 +127,7 @@ test('listReviewCandidates returns all candidates when no packetId filter is giv
     seedCandidate(store, sessionId, CANDIDATE_A, PACKET_A, 1, SHA_A, BRANCH_A, CREATED_AT);
     seedCandidate(store, sessionId, CANDIDATE_B, PACKET_B, 1, SHA_B, BRANCH_B, CREATED_AT);
     const result = listReviewCandidates(store);
-    assert.equal(result.length, 2);
+    assert.equal(result.length, ALL_CANDIDATES_COUNT);
     assert.ok(result.some((candidate) => candidate.id === CANDIDATE_A));
     assert.ok(result.some((candidate) => candidate.id === CANDIDATE_B));
   });
@@ -137,7 +140,7 @@ test('listReviewCandidates filters by packetId when given', () => {
     seedCandidate(store, sessionId, CANDIDATE_C, PACKET_C, 1, SHA_C, BRANCH_C, CREATED_AT);
     seedCandidate(store, sessionId, CANDIDATE_D, PACKET_D, 1, SHA_D, BRANCH_D, CREATED_AT);
     const result = listReviewCandidates(store, PACKET_C);
-    assert.equal(result.length, 1);
+    assert.equal(result.length, FILTERED_CANDIDATES_COUNT);
     assert.equal(result[0]?.id, CANDIDATE_C);
   });
 });
@@ -152,12 +155,12 @@ test('getReviewCandidate returns the candidate for a known id', () => {
   withTempStore('show-', (store, root) => {
     const sessionId = ensureSession(store, root);
     seedArtifactContract(store, CREATED_AT);
-    seedCandidate(store, sessionId, CANDIDATE_E, PACKET_E, 2, SHA_E, BRANCH_E, CREATED_AT);
+    seedCandidate(store, sessionId, CANDIDATE_E, PACKET_E, CANDIDATE_E_VERSION, SHA_E, BRANCH_E, CREATED_AT);
     const result = getReviewCandidate(store, CANDIDATE_E);
     assert.ok(result);
     assert.equal(result.id, CANDIDATE_E);
     assert.equal(result.packetId, PACKET_E);
-    assert.equal(result.workDefinitionVersion, 2);
+    assert.equal(result.workDefinitionVersion, CANDIDATE_E_VERSION);
     assert.equal(result.candidateSha, SHA_E);
     assert.equal(result.branch, BRANCH_E);
     assert.equal(result.createdAt, CREATED_AT);
