@@ -4,7 +4,6 @@ import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { getCwd } from '../../runtime/context.js';
 import { parsePacketDocument } from '../../packets/document.js';
-import { contentDir } from '../../content.js';
 import { loadConfig } from '../../config.js';
 import { checkViolation } from '../../baseline.js';
 import { BASELINE_RESULT } from '../../baseline.constants.js';
@@ -12,6 +11,7 @@ import type { BaselineConfig } from '../../config.types.js';
 import { FILE_EXTENSION } from '../../platform.constants.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { checkRoleSystem } from '../../roles/system-check.js';
+import { renderInstructionsContent } from './instructions.js';
 
 const PACKETS_DIR = 'docs/packets';
 
@@ -78,20 +78,13 @@ async function checkStructure(root: string, io: Io): Promise<boolean> {
 async function checkInstructions(root: string, io: Io): Promise<boolean> {
   let hasDrift = false;
 
-  const templatePath = join(contentDir(), 'instructions/cold-start.md');
-  let template: string;
+  let expected: string;
   try {
-    template = await readFile(templatePath, 'utf8');
-  } catch {
-    io.out('instructions: missing cold-start template');
+    expected = await renderInstructionsContent(root);
+  } catch (err) {
+    io.out(`instructions: failed to render expected content - ${err instanceof Error ? err.message : String(err)}`);
     return true;
   }
-
-  const config = loadConfig(root);
-  const expected = template
-    .replace(/\{\{productName\}\}/g, config.productName)
-    .replace(/\{\{tier\}\}/g, config.tier)
-    .replace(/\{\{verifyCommand\}\}/g, config.verifyCommand);
 
   for (const harness of HARNESS_FILES) {
     const harnessPath = join(root, harness);
