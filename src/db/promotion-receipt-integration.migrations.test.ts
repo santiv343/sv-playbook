@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { listPromotionReceipts } from '../promotion/promotion.receipts.js';
 import { REVIEW_CANDIDATE_INTEGRATION } from '../review/review-candidate.constants.js';
-import { openStore } from './store.js';
+import { openStore, resolveStoreDir } from './store.js';
 import {
   STORE_INITIAL_SCHEMA_VERSION,
   STORE_MIGRATION_ID,
@@ -20,7 +20,7 @@ test('the receipt integration migration backfills legacy receipts as pending-int
 
   // Simulate a live store written before the integration column existed:
   // drop the column, insert a legacy-shaped receipt, rewind the schema version.
-  const database = new DatabaseSync(join(root, '.svp', 'playbook.sqlite'));
+  const database = new DatabaseSync(join(resolveStoreDir(root), 'playbook.sqlite'));
   database.exec('PRAGMA foreign_keys = OFF');
   database.exec('ALTER TABLE promotion_receipts DROP COLUMN integration');
   database.exec(`INSERT INTO promotion_receipts (

@@ -6,7 +6,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openStore, isDaemonRunning, getDaemonStore } from '../db/store.js';
+import { openStore, isDaemonRunning, getDaemonStore, resolveStoreDir } from '../db/store.js';
 import { startDaemon } from './daemon.js';
 import { DAEMON_TOKEN_FILE } from './daemon.constants.js';
 import { EXIT } from '../cli/command.constants.js';
@@ -95,7 +95,7 @@ test('a worktree CLI cannot open the live store directly and is served through t
       // 4. A separate child process cannot open the DB at all — the
       //    force-acquired exclusive lock prevents any other process from
       //    accessing the database.
-      const dbPath = join(root, '.svp', 'playbook.sqlite');
+      const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
       const subResult = execFileSync(process.execPath, ['-e', `
         const { DatabaseSync } = require('node:sqlite');
         try {
