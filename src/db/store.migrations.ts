@@ -114,8 +114,8 @@ function migrateSprintsTables(db: Database.Database): void {
   }
 }
 
-function migrateEventsTable(db: Database.Database): void {
-  const eventCheck = `command TEXT NOT NULL CHECK (command IN (${sqlInList(EVENT_COMMANDS)}))`;
+function migrateEventsTable(db: Database.Database): void { const eventCheck = `command TEXT NOT NULL CHECK (command IN (${sqlInList(EVENT_COMMANDS)}))`;
+
   db.exec(`CREATE TABLE events_new (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT,
@@ -250,6 +250,7 @@ const migrations = {
   'event-commands-2': migrateEventsTable,
   'event-commands-3': migrateEventsTable,
   'event-commands-4': migrateEventsTable,
+  'event-commands-5': migrateEventsTable,
   'schema-11': noVersionSpecificMigration,
   'schema-12': noVersionSpecificMigration,
   'schema-13': noVersionSpecificMigration,
@@ -301,10 +302,8 @@ function createVerifiedBackup(repoRoot: string, reason: BackupReason): void {
 function assertMigrationBranch(repoRoot: string, migrateLive: boolean | undefined): void {
   if (isOnDefaultBranch(repoRoot)) return;
   const branch = getCurrentBranch(repoRoot);
-  if (migrateLive) {
-    console.error(`bypassing branch guard: migrating live from "${branch}"`);
-    return;
-  }
+  if (migrateLive) { console.error(`bypassing branch guard: migrating live from "${branch}"`); return; }
+  throw new Error(`migration refused on branch: ${branch}`);
 }
 
 function performMigration(db: Database.Database, repoRoot: string, currentVersion: number, options?: OpenStoreOptions): void {
