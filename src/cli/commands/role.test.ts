@@ -136,3 +136,8 @@ test('role CLI projects an adapter config and returns durable projection receipt
     process.chdir(previous);
   }
 });
+
+test('role command declares a non-empty usage string', () => {
+  assert.notEqual(command.usage.trim(), '');
+  assert.match(command.usage, /^Usage:\n\s+sv-playbook role/);
+});

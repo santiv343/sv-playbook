@@ -276,3 +276,8 @@ test('an existing packet file can be imported into the DB through the CLI and ne
     assert.ok(io2.errLines.some((l) => l.includes('amend')), 're-import must hint at amend');
   });
 });
+
+test('task command declares a non-empty usage string', () => {
+  assert.notEqual(taskCommand.usage.trim(), '');
+  assert.match(taskCommand.usage, /^Usage:\n\s+sv-playbook task/);
+});

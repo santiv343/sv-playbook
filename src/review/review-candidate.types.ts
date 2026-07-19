@@ -48,3 +48,12 @@ export interface ManualInputBinding {
   readonly artifactId: string;
   readonly contractRef: string;
 }
+
+export interface ReviewCandidateSummary {
+  readonly id: string;
+  readonly packetId: string;
+  readonly workDefinitionVersion: number;
+  readonly candidateSha: string;
+  readonly branch: string;
+  readonly createdAt: string;
+}

@@ -4,6 +4,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../main.js';
+import { command as statusCommand } from './status.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import { initTestRepo } from '../../testkit.js';
@@ -78,4 +79,9 @@ test('status --json exposes counts, packets, and backup summary', async () => {
     assert.ok(isRecord(parsed.backup));
     assert.equal(parsed.counts.draft, 1);
   });
+});
+
+test('status command declares a non-empty usage string', () => {
+  assert.notEqual(statusCommand.usage.trim(), '');
+  assert.match(statusCommand.usage, /^Usage: sv-playbook status/);
 });
