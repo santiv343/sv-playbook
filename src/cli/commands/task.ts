@@ -121,7 +121,7 @@ function handleAmend(args: string[], io: Io): number {
   if (parsed.values.evidence !== undefined) updates.evidenceRequired = stringValues(parsed.values.evidence);
   if (Object.keys(updates).length === 0) throw new UsageError('amend requires at least one flag');
   return withStore((store) => {
-    amendPacket(store, worktreeRoot(getCwd()), packetId, updates);
+    amendPacket(store, worktreeRoot(getCwd()), packetId, updates, ensureSession(store, worktreeRoot(getCwd())));
     io.out(`amended ${packetId}`);
     return EXIT.OK;
   });
