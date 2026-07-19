@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 import { stringColumn } from './rows.js';
 import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
 import { resolveStoreRoot } from './store-location.js';
+import { relocateStoreIfNeeded } from './store-migration-relocate.js';
 import { GIT_ARGUMENT } from '../git.constants.js';
 import { OS_PLATFORM } from '../platform.constants.js';
 import { getCwd } from '../runtime/context.js';
@@ -302,12 +303,16 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
     return daemonStore;
   }
   assertStoreNotHeldByDaemon(repoRoot);
+  relocateStoreIfNeeded(repoRoot, commonRoot(repoRoot));
   return openStoreAt(resolveStoreDir(repoRoot), repoRoot, options);
 }
 
 function openStoreReadOnlyAt(dir: string, repoRoot: string): Store {
   const path = join(dir, DB_FILE);
-  if (!existsSync(path)) openStore(repoRoot).close();
+  if (!existsSync(path)) {
+    relocateStoreIfNeeded(repoRoot, commonRoot(repoRoot));
+    openStore(repoRoot).close();
+  }
 
   const db = new Database(path, { readonly: true, fileMustExist: true });
   applyReadOnlyStorePragmas(db);
