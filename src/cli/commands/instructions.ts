@@ -6,6 +6,10 @@ import type { Command, Io } from '../command.types.js';
 import { getCwd } from '../../runtime/context.js';
 import { loadConfig } from '../../config.js';
 import { contentDir } from '../../content.js';
+import { loadContextCatalog } from '../../context/repository.js';
+import { compileContext } from '../../context/compiler.js';
+import { BUNDLED_ROLE_ID } from '../../roles/bundled-profile.constants.js';
+import { commonRoot, openStore } from '../../db/store.js';
 
 const TEMPLATE_PATH = 'instructions/cold-start';
 
@@ -24,14 +28,34 @@ const HARNESSES: HarnessSpec[] = [
   { file: 'CLAUDE.md' },
 ];
 
-export async function renderInstructions(opts: RenderOptions): Promise<void> {
-  const config = loadConfig(opts.root);
+export async function renderInstructionsContent(root: string): Promise<string> {
+  const config = loadConfig(root);
   const contentRoot = contentDir();
   const template = await readFile(join(contentRoot, `${TEMPLATE_PATH}.md`), 'utf8');
-  const rendered = template
+
+  const store = openStore(commonRoot(root));
+  let humanInterfaceContext: string;
+  try {
+    const catalog = loadContextCatalog(store);
+    const pack = compileContext(catalog, {
+      role: BUNDLED_ROLE_ID.HUMAN_INTERFACE,
+      phase: 'intake',
+      requestedCapabilities: [],
+    });
+    humanInterfaceContext = pack.items.map((item) => item.body).join('\n\n---\n\n');
+  } finally {
+    store.close();
+  }
+
+  return template
     .replace(/\{\{productName\}\}/g, config.productName)
     .replace(/\{\{tier\}\}/g, config.tier)
-    .replace(/\{\{verifyCommand\}\}/g, config.verifyCommand);
+    .replace(/\{\{verifyCommand\}\}/g, config.verifyCommand)
+    .replace(/\{\{humanInterfaceContext\}\}/g, humanInterfaceContext);
+}
+
+export async function renderInstructions(opts: RenderOptions): Promise<void> {
+  const rendered = await renderInstructionsContent(opts.root);
 
   if (opts.write) {
     for (const harness of HARNESSES) {

@@ -20,13 +20,13 @@ test('move to review runs the configured verify command through the shell', asyn
   execFileSync('git', ['checkout', '-b', 'feature/verify-shell-test'], { cwd: root });
   await mkdir(join(root, 'src', 'a'), { recursive: true });
   await writeFile(join(root, 'src', 'a', 'ok.ts'), ' ', 'utf8');
-  execFileSync('git', ['add', '.'], { cwd: root });
-  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
   await writeFile(
     join(root, 'playbook.config.json'),
-    JSON.stringify({ verifyCommand: 'node -e "require(\'node:fs\').writeFileSync(\'verify-marker.txt\',\'ok\')"' }),
+    JSON.stringify({ verifyCommand: 'node -e "require(\'node:fs\').writeFileSync(\'verify-marker.txt\',\'ok\')"', tasks: { complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] } } }),
     'utf8',
   );
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
   const store = openStore(root);
   createPacket(store, root, {
     id: 'VERIFY-SHELL-001',

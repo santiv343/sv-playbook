@@ -1,5 +1,6 @@
 import { digest } from '../context/digest.js';
 import { loadConfig } from '../config.js';
+import { openStore } from '../db/store.js';
 import type { Store } from '../db/store.types.js';
 import { EMPTY_SIZE } from '../platform.constants.js';
 import { runCleanVerification } from '../review/preflight-clean-verification.js';
@@ -107,13 +108,23 @@ function assertCurrentIdentity(
 
 export class PromotionController {
   private readonly dependencies: PromotionControllerDependencies;
+  private store: Store;
 
   constructor(
-    private readonly store: Store,
+    store: Store,
     private readonly repoRoot: string,
     dependencyOverrides: Partial<PromotionControllerDependencies> = {},
   ) {
+    this.store = store;
     this.dependencies = { ...DEFAULT_DEPENDENCIES, ...dependencyOverrides };
+  }
+
+  /**
+   * Returns the currently-bound store. Callers must treat it as read-only
+   * unless they are tests managing fixture lifecycle.
+   */
+  getStore(): Store {
+    return this.store;
   }
 
   async promote(request: PromotionRequest): Promise<PromotionReceipt> {
@@ -213,7 +224,19 @@ export class PromotionController {
     if (this.dependencies.git.headSha(this.repoRoot) !== candidate.candidateSha) {
       throw new PromotionError(PROMOTION_ERROR.CANDIDATE_STALE, 'current worktree HEAD is not the candidate SHA');
     }
-    const cleanReceipt = await this.dependencies.verifyClean(this.repoRoot);
+    // The clean verification spawns a separate git worktree and runs the
+    // project verify command there. On Windows, keeping the primary store
+    // connection open while another process initializes the worktree store
+    // can produce SQLITE_BUSY / "database is locked" errors, so we close and
+    // reopen around the preflight.
+    const previousStore = this.store;
+    previousStore.close();
+    let cleanReceipt: CleanVerificationReceipt;
+    try {
+      cleanReceipt = await this.dependencies.verifyClean(this.repoRoot);
+    } finally {
+      this.store = openStore(this.repoRoot);
+    }
     if (cleanReceipt.status !== PREFLIGHT_STATUS.PASS || cleanReceipt.candidateSha !== candidate.candidateSha) {
       recordCheckReceipt(
         this.store,

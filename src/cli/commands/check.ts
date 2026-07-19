@@ -4,14 +4,17 @@ import { EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { getCwd } from '../../runtime/context.js';
 import { parsePacketDocument } from '../../packets/document.js';
-import { contentDir } from '../../content.js';
 import { loadConfig } from '../../config.js';
 import { checkViolation } from '../../baseline.js';
 import { BASELINE_RESULT } from '../../baseline.constants.js';
 import type { BaselineConfig } from '../../config.types.js';
-import { FILE_EXTENSION } from '../../platform.constants.js';
+import { EMPTY_SIZE, FILE_EXTENSION } from '../../platform.constants.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { checkRoleSystem } from '../../roles/system-check.js';
+import { scanForSecrets } from '../../check/secrets.js';
+import { readCheckedSources } from '../../check/source-tree.js';
+import { TEST_FILE_MARKER } from '../../check/duplicate-string.constants.js';
+import { renderInstructionsContent } from './instructions.js';
 
 const PACKETS_DIR = 'docs/packets';
 
@@ -78,20 +81,13 @@ async function checkStructure(root: string, io: Io): Promise<boolean> {
 async function checkInstructions(root: string, io: Io): Promise<boolean> {
   let hasDrift = false;
 
-  const templatePath = join(contentDir(), 'instructions/cold-start.md');
-  let template: string;
+  let expected: string;
   try {
-    template = await readFile(templatePath, 'utf8');
-  } catch {
-    io.out('instructions: missing cold-start template');
+    expected = await renderInstructionsContent(root);
+  } catch (err) {
+    io.out(`instructions: failed to render expected content - ${err instanceof Error ? err.message : String(err)}`);
     return true;
   }
-
-  const config = loadConfig(root);
-  const expected = template
-    .replace(/\{\{productName\}\}/g, config.productName)
-    .replace(/\{\{tier\}\}/g, config.tier)
-    .replace(/\{\{verifyCommand\}\}/g, config.verifyCommand);
 
   for (const harness of HARNESS_FILES) {
     const harnessPath = join(root, harness);
@@ -117,7 +113,27 @@ const TARGETS: Record<string, (root: string, io: Io) => Promise<boolean>> = {
   structure: checkStructure,
   instructions: checkInstructions,
   roles: checkRolesTarget,
+  secrets: checkSecretsTarget,
 };
+
+function isTestSource(path: string): boolean {
+  return path.includes(TEST_FILE_MARKER.TEST) || path.includes(TEST_FILE_MARKER.SPEC);
+}
+
+function checkSecretsTarget(root: string, io: Io): Promise<boolean> {
+  let sources: { path: string; source: string }[];
+  try {
+    sources = readCheckedSources(root);
+  } catch {
+    return Promise.resolve(false);
+  }
+  const files = sources.filter(({ path }) => !isTestSource(path)).map(({ path, source }) => ({ path, content: source }));
+  const violations = scanForSecrets(files);
+  for (const violation of violations) {
+    io.out(`secrets: ${violation.path}:${violation.line} ${violation.kind}`);
+  }
+  return Promise.resolve(violations.length > EMPTY_SIZE);
+}
 
 async function checkRolesTarget(root: string, io: Io): Promise<boolean> {
   const repoRoot = commonRoot(root);

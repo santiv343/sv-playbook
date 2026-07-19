@@ -4,6 +4,7 @@ import { ContextError } from '../context/context.errors.js';
 import { dispatchRun } from './gateway.js';
 import { GATEWAY_LIFECYCLE_ERROR, GATEWAY_RUN_STATUS } from './gateway.constants.js';
 import type { GatewayRuntime, WorkRunSpecRequest } from './gateway.types.js';
+import { ADAPTER_RUN_STATE } from './gateway.types.js';
 import { loadRunSnapshot } from './gateway-repository.js';
 import { prepareRunSpec } from './run-spec.js';
 import { REFERENCE_KIND } from '../platform.constants.js';
@@ -87,5 +88,24 @@ test('run duration ceiling cancels a run whose provider never stops making progr
   );
   assert.equal(adapter.cancelled, true);
   assert.equal(loadRunSnapshot(store, runSpec.id)?.status, GATEWAY_RUN_STATUS.TIMED_OUT);
+  store.close();
+});
+
+test('SC-013: an unknown adapter state fails the run immediately without waiting for progress timeout', async () => {
+  const { root, store } = await fixture({ observationIntervalMs: TEST_OBSERVATION_INTERVAL_MS });
+  const runSpec = prepareRunSpec(store, workRequest());
+  const adapter = new FakeAdapter();
+  adapter.observations.push({
+    adapterId: adapter.id, sessionId: 'session-1', messageId: 'message-1',
+    state: ADAPTER_RUN_STATE.UNKNOWN,
+    progressToken: 'unknown-progress', observedToolIds: [],
+    evidence: { providerState: 'idle', deliveryState: 'pending' },
+  });
+
+  await assert.rejects(
+    dispatchRun(store, runSpec.id, new Map([[adapter.id, adapter]]), root),
+    (error: unknown) => error instanceof ContextError,
+  );
+  assert.equal(loadRunSnapshot(store, runSpec.id)?.status, GATEWAY_RUN_STATUS.FAILED);
   store.close();
 });

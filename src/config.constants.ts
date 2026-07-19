@@ -16,7 +16,12 @@ export const REVIEW_PREFLIGHT_DEFAULTS = {
 
 export const TASKS_DEFAULTS = {
   leaseTtlMs: 30 * 60 * 1_000,
-} as const;
+  complexityCheckpoint: {
+    enabled: false,
+    requireDecisionForTypes: [],
+    requireDecisionForPaths: [],
+  },
+};
 
 export const DEFAULTS: PlaybookConfig = {
   productName: 'unnamed',

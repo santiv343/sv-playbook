@@ -1,9 +1,11 @@
 import Database from 'better-sqlite3';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
-import { dirname, join, resolve, sep } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, realpathSync as fsRealpathSync, unlinkSync } from 'node:fs';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { stringColumn } from './rows.js';
 import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
+import { resolveStoreRoot } from './store-location.js';
+import { relocateStoreIfNeeded } from './store-migration-relocate.js';
 import { GIT_ARGUMENT } from '../git.constants.js';
 import { OS_PLATFORM } from '../platform.constants.js';
 import { getCwd } from '../runtime/context.js';
@@ -31,6 +33,22 @@ export function worktreeRoot(startDir: string): string {
   return execFileSync('git', GIT_TOPLEVEL_ARGS, { cwd: startDir, encoding: 'utf8' }).trim();
 }
 
+export function resolveStoreDir(repoRoot: string): string {
+  try {
+    return resolveStoreRoot(commonRoot(repoRoot));
+  } catch {
+    return resolveStoreRoot(repoRoot);
+  }
+}
+
+function canonicalRootOrRepoRoot(repoRoot: string): string {
+  try {
+    return commonRoot(repoRoot);
+  } catch {
+    return repoRoot;
+  }
+}
+
 // ── Daemon client (worktree → daemon forwarding) ──
 function execGitCommonDir(s: string): string {
   return execFileSync('git', GIT_COMMON_DIR_ARGS, { cwd: s, encoding: 'utf8' }).trim();
@@ -41,17 +59,40 @@ function execGitTopLevel(s: string): string {
 }
 
 // git prints forward-slash paths while node:path resolves to backslashes on
-// win32 — normalize both sides (separators and drive-letter case) before
-// comparing, or every repo root is misclassified as a worktree on Windows.
+// win32 — normalize both sides (separators, drive-letter case, and any 8.3
+// short-name aliases) before comparing, or repo roots are misclassified on
+// Windows when os.tmpdir() returns a short-name path while git returns the
+// canonical long-name path.
+function tryNativeRealpath(p: string): string | null {
+  try { return fsRealpathSync.native(p); } catch { return null; }
+}
+
+function tryRealpath(p: string): string | null {
+  try { return fsRealpathSync(p); } catch { return null; }
+}
+
+function tryCanonicalPath(p: string): string | null {
+  const direct = process.platform === OS_PLATFORM.WINDOWS ? tryNativeRealpath(p) : tryRealpath(p);
+  if (direct !== null) return direct;
+  // The path itself may not exist yet (e.g. a test constructs a subdirectory
+  // path before creating it). Canonicalize the parent and append the final
+  // name so a short-name parent does not leak into the comparison.
+  const parent = dirname(p);
+  const base = basename(p);
+  const canonicalParent = process.platform === OS_PLATFORM.WINDOWS ? tryNativeRealpath(parent) : tryRealpath(parent);
+  return canonicalParent !== null ? join(canonicalParent, base) : null;
+}
+
 function normalizePathForCompare(p: string): string {
-  return process.platform === OS_PLATFORM.WINDOWS ? resolve(p).toLowerCase() : resolve(p);
+  const canonical = tryCanonicalPath(p);
+  const resolved = canonical ?? resolve(p);
+  return process.platform === OS_PLATFORM.WINDOWS ? resolved.toLowerCase() : resolved;
 }
 
 export function isWorktree(s: string): boolean {
   try { return normalizePathForCompare(dirname(resolve(s, execGitCommonDir(s)))) !== normalizePathForCompare(execGitTopLevel(s)); }
   catch { return false; }
 }
-
 export function isDaemonRunning(repoRoot: string): boolean {
   const lockPath = join(repoRoot, SVP_DIR, DAEMON_LOCK_FILE);
   if (!existsSync(lockPath)) return false;
@@ -225,6 +266,7 @@ export function setDaemonStore(s: Store | null): void {
       db: s.db,
       orm: s.orm,
       dir: s.dir,
+      repoRoot: s.repoRoot,
       close: () => {},
     };
   }
@@ -238,12 +280,20 @@ export function setDaemonStarting(v: boolean): void {
   daemonStarting = v;
 }
 
-export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
-  if (daemonStore !== null) {
-    return daemonStore;
-  }
-  assertStoreNotHeldByDaemon(repoRoot);
-  const dir = join(repoRoot, SVP_DIR); mkdirSync(dir, { recursive: true });
+function createStore(db: Database.Database, dir: string, repoRoot: string): Store {
+  return {
+    db,
+    orm: createStoreOrm(db),
+    dir,
+    repoRoot,
+    close: () => {
+      if (db.open) db.close();
+    },
+  };
+}
+
+function openStoreAt(dir: string, repoRoot: string, options?: OpenStoreOptions): Store {
+  mkdirSync(dir, { recursive: true });
   const dbPath = join(dir, DB_FILE);
   const isNew = !existsSync(dbPath);
   const db = new Database(dbPath);
@@ -255,14 +305,25 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
     checkVersionAndMigrate(db, repoRoot, options);
   }
   migratePacketColumn(db, 'pr', SQLITE_COLUMN_TYPE.TEXT, false);
-  return { db, orm: createStoreOrm(db), dir, close: () => { db.close(); } };
+  return createStore(db, dir, repoRoot);
 }
-export function openStoreReadOnly(repoRoot: string): Store {
-  if (daemonStore !== null) return daemonStore;
+
+export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
+  if (daemonStore !== null) {
+    return daemonStore;
+  }
   assertStoreNotHeldByDaemon(repoRoot);
-  const dir = join(repoRoot, SVP_DIR);
+  relocateStoreIfNeeded(repoRoot, canonicalRootOrRepoRoot(repoRoot));
+  return openStoreAt(resolveStoreDir(repoRoot), repoRoot, options);
+}
+
+function openStoreReadOnlyAt(dir: string, repoRoot: string): Store {
   const path = join(dir, DB_FILE);
-  if (!existsSync(path)) openStore(repoRoot).close();
+  if (!existsSync(path)) {
+    relocateStoreIfNeeded(repoRoot, canonicalRootOrRepoRoot(repoRoot));
+    openStore(repoRoot).close();
+  }
+
   const db = new Database(path, { readonly: true, fileMustExist: true });
   applyReadOnlyStorePragmas(db);
   const version = readStoreSchemaVersion(db);
@@ -270,5 +331,15 @@ export function openStoreReadOnly(repoRoot: string): Store {
     db.close();
     throw new StoreVersionError(`store schema version ${String(version)} does not match runtime version ${SCHEMA_VERSION}`);
   }
-  return { db, orm: createStoreOrm(db), dir, close: () => { db.close(); } };
+  return createStore(db, dir, repoRoot);
+}
+
+export function openStoreReadOnly(repoRoot: string): Store {
+  if (daemonStore !== null) return daemonStore;
+  assertStoreNotHeldByDaemon(repoRoot);
+  return openStoreReadOnlyAt(resolveStoreDir(repoRoot), repoRoot);
+}
+
+export function openStoreInTree(repoRoot: string, dir: string, options?: OpenStoreOptions): Store {
+  return openStoreAt(dir, repoRoot, options);
 }

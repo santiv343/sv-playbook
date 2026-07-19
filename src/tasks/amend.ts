@@ -92,6 +92,21 @@ export function amendPacket(
     return;
   }
   const current = loadWorkDefinition(store, packetId).value;
+  if (row.status === STATUS.ACTIVE) {
+    assertActiveAmendFields(updates);
+    assertWriteSetExtension(current.writeSet, updates);
+    const definition = amendedDefinition(packetId, current, row.title, updates);
+    const body = row.body;
+    transact(store, () => {
+      store.orm.update(packets).set({
+        writeSetJson: canonicalJson(definition.writeSet),
+        updatedAt: new Date().toISOString(),
+      }).where(eq(packets.id, packetId)).run();
+      recordWorkDefinition(store, workDefinitionValue(definition, body, current.type));
+      store.db.prepare(INSERT_EVENT_SQL).run(null, packetId, EVENT_AMEND_ACTIVE, `write_set extended: ${current.writeSet.join(', ')} -> ${definition.writeSet.join(', ')}`, new Date().toISOString());
+    });
+    return;
+  }
   const definition = amendedDefinition(packetId, current, row.title, updates);
   const body = updates.body ?? row.body;
   transact(store, () => {

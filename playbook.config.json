@@ -10,6 +10,14 @@
     "noOutputTimeoutMs": 600000
   },
   "autonomy": "strict",
+  "tasks": {
+    "leaseTtlMs": 1800000,
+    "complexityCheckpoint": {
+      "enabled": false,
+      "requireDecisionForTypes": [],
+      "requireDecisionForPaths": []
+    }
+  },
   "backup": {
     "enabled": true,
     "retention": 3,
@@ -30,16 +38,16 @@
   },
   "baseline": {
     "ormApplicationSql": {
-      "count": 282,
-      "digest": "4718393b0c705aa13e802136cfb896300eecb5f1d3f5a5d3c38b5ec28fba7870"
+      "count": 281,
+      "digest": "55744a6ce6d41136e060a2f5da8cf2387c1c0ef00c75e16ef740deffddbf4a31"
     },
     "literalComparisons": {
       "count": 278,
       "digest": "8995bc81c45074e37f57b6af7bc81dc1d1a70909aff4f26448d18c4b09c8ef75"
     },
     "duplicateStrings": {
-      "count": 1314,
-      "digest": "4320322678e43907309467a6b142f8a82c12bcc71ef99dad25d3c26db075c7ab"
+      "count": 1308,
+      "digest": "7db3d1a12878df639027206ea8d8c97ef6fb35cbae52339699ccd138ac8c10b8"
     },
     "fingerprints": [
       "docs/packets/ADOPT-AURORA-001.md",

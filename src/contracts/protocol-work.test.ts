@@ -88,7 +88,7 @@ function addRole(store: Store, escalationClass = 'contract-violation'): void {
     outputContractRef: 'plan-v1', minimumModelCapability: 'planning',
     exclusiveJudgments: ['delivery.plan'], capabilityRequestClasses: [],
   });
-  addRoleHandoff(store, { sourceRoleId: 'planner', targetRoleId: 'planner-target', artifactContractRef: 'plan-v1' });
+  addRoleHandoff(store, { sourceRoleId: 'planner', targetRoleId: 'reviewer', artifactContractRef: 'plan-v1' });
   setRolePolicy(store, {
     roleId: 'planner', prohibitions: ['dispatch.execute'], selfCorrectionMode: 'bounded',
     selfCorrectionScopes: ['plan'], stopConditions: ['intent-gap'], escalationClasses: [escalationClass],
@@ -102,19 +102,19 @@ function addTargetRole(store: Store): void {
   addContextItem(store, {
     id: 'ROLE-TARGET', version: 1, kind: 'role', status: CONTEXT_ITEM_STATUS.ACTIVE,
     strength: CONTEXT_ITEM_STRENGTH.MANDATORY, semanticKey: 'role.target', body: 'Review.',
-    provenance: 'test', selectors: { role: ['planner-target'] },
+    provenance: 'test', selectors: { role: ['reviewer'] },
   });
   addResponsibility(store, { id: 'plan.review', classification: 'semantic', description: 'Review plans.' });
   addRoleContract(store, {
-    roleId: 'planner-target', mission: 'Review plans.', contextItemRef: 'ROLE-TARGET@1', inputContractRef: 'plan-v1',
+    roleId: 'reviewer', mission: 'Review plans.', contextItemRef: 'ROLE-TARGET@1', inputContractRef: 'plan-v1',
     outputContractRef: 'review-v1', minimumModelCapability: 'review',
     exclusiveJudgments: ['plan.review'], capabilityRequestClasses: [],
   });
   setRolePolicy(store, {
-    roleId: 'planner-target', prohibitions: ['dispatch.execute'], selfCorrectionMode: 'bounded',
+    roleId: 'reviewer', prohibitions: ['dispatch.execute'], selfCorrectionMode: 'bounded',
     selfCorrectionScopes: ['review'], stopConditions: ['evidence-gap'], escalationClasses: ['contract-violation'],
   });
-  requireRole(store, 'planner-target');
+  requireRole(store, 'reviewer');
 }
 
 function fragment(ref: string): Record<string, unknown> {
@@ -143,7 +143,7 @@ test('protocol work packet deterministically derives the exact role and contract
   assert.equal(first.id, second.id);
   assert.equal(first.packetDigest, second.packetDigest);
   assert.deepEqual(first.proposalRules.exactContractRefs, ['intent-v1', 'plan-v1', 'review-v1']);
-  assert.equal(first.contracts.find(({ ref }) => ref === PLAN_CONTRACT_REF)?.inputForRoles[0], 'planner-target');
+  assert.equal(first.contracts.find(({ ref }) => ref === PLAN_CONTRACT_REF)?.inputForRoles[0], 'reviewer');
   assert.equal(first.contracts.find(({ ref }) => ref === PLAN_CONTRACT_REF)?.outputFromRoles[0], 'planner');
   const count = store.db.prepare('SELECT count(*) AS count FROM protocol_work_packets').get();
   assert.equal(numberColumn(count, 'count'), 1);

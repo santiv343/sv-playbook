@@ -134,3 +134,30 @@ test('check structure skips malformed frontmatter for baselined packets', async 
     assert.equal(code, EXIT.OK, 'should exit 0 when only baselined broken packets exist');
   });
 });
+
+test('check secrets flags a file containing a private key header', async () => {
+  await inTempRepo(async (root) => {
+    const sourceDir = join(root, 'src');
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(
+      join(sourceDir, 'config.ts'),
+      'export const key = `-----BEGIN RSA PRIVATE KEY-----\\nabc\\n-----END RSA PRIVATE KEY-----`;',
+      'utf-8',
+    );
+
+    const io = fakeIo();
+    const code = await main(['check', 'secrets'], io);
+    const output = io.outLines.join('\n');
+
+    assert.notEqual(code, EXIT.OK, 'expected non-zero exit for secret violation');
+    assert.ok(output.includes('private-key-header'), `expected private-key-header mention, got: ${output}`);
+  });
+});
+
+test('check secrets passes a clean tree', async () => {
+  await inTempRepo(async () => {
+    const io = fakeIo();
+    const code = await main(['check', 'secrets'], io);
+    assert.equal(code, EXIT.OK, 'expected clean tree to pass');
+  });
+});

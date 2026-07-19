@@ -42,6 +42,7 @@ test('review candidate evidence carries at most the most recent notes, chronolog
       preparationCommand: "node -e \"require('node:fs').writeFileSync('.verify-dependency','available')\"",
       noOutputTimeoutMs: 5_000,
     },
+    tasks: { complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] } },
   }), 'utf8');
   await writeFile(join(root, '.verify-runner.cjs'),
     "if (!require('node:fs').existsSync('.verify-dependency')) process.exit(2);\n", 'utf8');
@@ -76,8 +77,7 @@ test('review candidate evidence carries at most the most recent notes, chronolog
     evidenceRequired: [],
     tags: ['backend'],
   }, 'Notes are bounded.');
-  git(root, ['add', 'docs/packets/REVIEW-NOTES-BOUND-001.md']);
-  git(root, ['commit', '-m', 'task definition']);
+  git(root, ['commit', '--allow-empty', '-m', 'task definition']);
   const definition = loadWorkDefinition(store, 'REVIEW-NOTES-BOUND-001');
   movePacket(store, undefined, definition.packetId, 'ready');
   const sessionId = ensureSession(store, root);

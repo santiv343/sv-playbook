@@ -1,13 +1,15 @@
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { createStateBackup } from './backup.js';
+import { DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SQLITE_INTEGRITY_OK, STORE_TABLE, sqlInList } from './store.constants.js';
+import { resolveStoreDir } from './store.js';
+
 import { BACKUP_REASON } from './backup.constants.js';
 import type { BackupReason } from './backup.types.js';
 import { numberColumn, stringColumn } from './rows.js';
-import { DEFAULT_GIT_BRANCH, DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SQLITE_INTEGRITY_OK, STORE_TABLE, SVP_DIR, sqlInList } from './store.constants.js';
+
 import { StoreVersionError } from './store.errors.js';
 import { pendingMigrationIds } from './store.migration-manifest.js';
 import type { StoreMigrationId } from './store.migration-manifest.types.js';
@@ -22,31 +24,15 @@ import { addModelCapabilityEvaluations, addReviewCandidates, addRoleProjectionRe
 import { addPromotionReceiptIntegration, addPromotionTables } from './promotion.migrations.js';
 import { addRunRetryLinkage } from './run-retry.migrations.js';
 import { addRunDurationCeiling } from './run-duration.migrations.js';
+import { addDecisionLinkage } from './decision-linkage.migrations.js';
+import { makePacketPathNullable } from './packet-path-nullable.migrations.js';
 import { applyExclusiveStorePragmas, readStoreSchemaVersion } from './store.pragmas.js';
 import { STORE_PRAGMA } from './store.pragmas.constants.js';
+import { assertMigrationBranch } from './store.migration-branch.js';
 
 const TABLES_SQL = "SELECT name FROM sqlite_master WHERE type='table'";
 const beginImmediateSql = 'BEGIN IMMEDIATE';
 const insertSchemaMigratedSql = 'INSERT INTO events (command, at) VALUES (?, ?)';
-
-function getCurrentBranch(repoRoot: string): string {
-  try {
-    return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
-  } catch {
-    return '';
-  }
-}
-
-function isOnDefaultBranch(repoRoot: string): boolean {
-  const branch = getCurrentBranch(repoRoot);
-  if (branch === '' || branch === DEFAULT_GIT_BRANCH.MAIN || branch === DEFAULT_GIT_BRANCH.LEGACY) return true;
-  try {
-    const remoteRef = execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
-    return branch === remoteRef.replace('refs/remotes/origin/', '');
-  } catch {
-    return false;
-  }
-}
 
 export function migratePacketColumn(
   db: Database.Database,
@@ -280,6 +266,8 @@ const migrations = {
   [STORE_MIGRATION_ID.RUN_DURATION_CEILING]: addRunDurationCeiling,
   [STORE_MIGRATION_ID.PROMOTION_RECEIPT_INTEGRATION]: addPromotionReceiptIntegration,
   [STORE_MIGRATION_ID.WORKSPACE_BINDINGS]: noVersionSpecificMigration,
+  [STORE_MIGRATION_ID.DECISION_LINKAGE]: addDecisionLinkage,
+  [STORE_MIGRATION_ID.PACKET_PATH_NULLABLE]: makePacketPathNullable,
 } satisfies Readonly<Record<StoreMigrationId, StoreMigration>>;
 
 function runVersionMigration(db: Database.Database, repoRoot: string, fromVersion: number): void {
@@ -297,13 +285,6 @@ function createVerifiedBackup(repoRoot: string, reason: BackupReason): void {
   const integrityCheck = stringColumn(backupDb.prepare('PRAGMA integrity_check').get(), 'integrity_check');
   backupDb.close();
   if (integrityCheck !== SQLITE_INTEGRITY_OK) throw new Error('pre-migration backup verification failed (integrity check)');
-}
-
-function assertMigrationBranch(repoRoot: string, migrateLive: boolean | undefined): void {
-  if (isOnDefaultBranch(repoRoot)) return;
-  const branch = getCurrentBranch(repoRoot);
-  if (migrateLive) { console.error(`bypassing branch guard: migrating live from "${branch}"`); return; }
-  throw new Error(`migration refused on branch: ${branch}`);
 }
 
 function performMigration(db: Database.Database, repoRoot: string, currentVersion: number, options?: OpenStoreOptions): void {
@@ -359,7 +340,7 @@ function assertNoForeignLeases(dbPath: string, leaseTtlMs: number, currentSessio
 
 export function migrateStore(repoRoot: string, options?: MigrateStoreOptions): void {
   assertMigrationBranch(repoRoot, options?.migrateLive);
-  const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
+  const dbPath = join(resolveStoreDir(repoRoot), DB_FILE);
   createVerifiedBackup(repoRoot, BACKUP_REASON.MANUAL);
   assertNoForeignLeases(dbPath, loadConfig(repoRoot).tasks.leaseTtlMs, options?.currentSessionId);
   const db = new Database(dbPath);

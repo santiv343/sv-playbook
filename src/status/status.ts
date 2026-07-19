@@ -1,7 +1,7 @@
-import { dirname } from 'node:path';
 import { getBackupStatus } from '../db/backup.js';
 import { loadConfig } from '../config.js';
 import { numberColumn, stringColumn } from '../db/rows.js';
+import { DATABASE_COLUMN } from '../db/schema-vocabulary.constants.js';
 import type { Store } from '../db/store.types.js';
 import { STATUS } from '../tasks/service.constants.js';
 import {
@@ -24,11 +24,11 @@ function leaseRows(store: Store): Map<string, StatusLease> {
   const rows = store.db.prepare(STATUS_SQL.LEASES).all();
   for (const row of rows) {
     const heartbeatAt = stringColumn(row, 'heartbeat_at');
-    result.set(stringColumn(row, 'packet_id'), {
+    result.set(stringColumn(row, DATABASE_COLUMN.PACKET_ID), {
       sessionId: stringColumn(row, 'session_id'),
       worktree: stringColumn(row, 'worktree'),
       heartbeatAt,
-      stale: Date.now() - Date.parse(heartbeatAt) > loadConfig(dirname(store.dir)).tasks.leaseTtlMs,
+      stale: Date.now() - Date.parse(heartbeatAt) > loadConfig(store.repoRoot).tasks.leaseTtlMs,
     });
   }
   return result;
@@ -38,7 +38,7 @@ function eventRows(store: Store): Map<string, StatusEvent> {
   const result = new Map<string, StatusEvent>();
   const rows = store.db.prepare(STATUS_SQL.LAST_EVENTS).all();
   for (const row of rows) {
-    result.set(stringColumn(row, 'packet_id'), {
+    result.set(stringColumn(row, DATABASE_COLUMN.PACKET_ID), {
       command: stringColumn(row, 'command'),
       detail: stringColumn(row, 'detail'),
       at: stringColumn(row, 'at'),

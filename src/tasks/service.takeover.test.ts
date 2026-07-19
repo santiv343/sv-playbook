@@ -14,6 +14,7 @@ import {
   startPacket,
   takeoverPacket,
 } from './service.js';
+import { writeServiceTestConfig } from './service.test.support.js';
 
 const def = (id: string) => ({
   id,
@@ -26,6 +27,7 @@ const def = (id: string) => ({
 
 test('takeover adopts an active packet whose lease was released', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-takeover-'));
+  await writeServiceTestConfig(root);
   const store = openStore(root);
   createPacket(store, root, def('P3-003'), 'a');
   const s1 = ensureSession(store, root);

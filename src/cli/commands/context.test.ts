@@ -27,7 +27,7 @@ test('context CLI persists canonical content and compiles a role-scoped pack', a
     const added = await command.run([
       'add', '--id', 'P-1', '--version', '1', '--kind', 'principle',
       '--semantic-key', 'determinism', '--body-file', bodyPath, '--provenance', 'test',
-      '--selector', 'role=implementer', '--capability', 'read=allow',
+      '--strength', 'mandatory', '--selector', 'role=implementer', '--capability', 'read=allow',
     ], addedIo);
     assert.equal(added, 0, addedIo.errLines.join('\n'));
 

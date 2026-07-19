@@ -1,5 +1,5 @@
 import type * as s from './core.types.js';
-import type { TierSchema, AutonomySchema, BackupConfigSchema, BaselineConfigSchema, GatesConfigSchema, ModelEvaluationConfigSchema, PlaybookConfigSchema, ReviewPreflightConfigSchema, TasksConfigSchema } from './config.constants.js';
+import type { TierSchema, AutonomySchema, BackupConfigSchema, BaselineConfigSchema, ComplexityCheckpointConfigSchema, GatesConfigSchema, ModelEvaluationConfigSchema, PlaybookConfigSchema, ReviewPreflightConfigSchema, TasksConfigSchema } from './config.constants.js';
 
 export type Tier = s.Infer<typeof TierSchema>;
 export type Autonomy = s.Infer<typeof AutonomySchema>;
@@ -11,5 +11,6 @@ export type DuplicateStringBaseline = NonNullable<BaselineConfig['duplicateStrin
 export type GatesConfig = s.Infer<typeof GatesConfigSchema>;
 export type ModelEvaluationConfig = s.Infer<typeof ModelEvaluationConfigSchema>;
 export type ReviewPreflightConfig = s.Infer<typeof ReviewPreflightConfigSchema>;
+export type ComplexityCheckpointConfig = s.Infer<typeof ComplexityCheckpointConfigSchema>;
 export type TasksConfig = s.Infer<typeof TasksConfigSchema>;
 export type PlaybookConfig = s.Infer<typeof PlaybookConfigSchema>;

@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { realpathSync } from 'node:fs';
 import { mkdir, mkdtemp } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { openStore } from '../db/store.js';
 import { createDaemon, startDaemon } from '../daemon/daemon.js';
@@ -30,8 +31,8 @@ const transitionRows = sqliteTable('transitions', {
 });
 
 function norm(path: string): string {
-  const resolved = resolve(path);
-  return process.platform === OS_PLATFORM.WINDOWS ? resolved.toLowerCase() : resolved;
+  const canonical = process.platform === OS_PLATFORM.WINDOWS ? realpathSync.native(path) : realpathSync(path);
+  return canonical.toLowerCase();
 }
 
 function fakeSignalPort(): SignalPort {

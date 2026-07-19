@@ -1,8 +1,8 @@
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { CONFIRM_DESTRUCTIVE_FLAG, DESTRUCTIVE_LOG_FILE, DONE_COUNT_SQL, EVENT_COUNT_SQL, EXIT, SESSION_ROLE_FILE } from './command.constants.js';
-import { DB_FILE, SQLITE_FILE_HEADER, SVP_DIR } from '../db/store.constants.js';
-import { openStore } from '../db/store.js';
+import { DB_FILE, SQLITE_FILE_HEADER } from '../db/store.constants.js';
+import { resolveStoreDir, openStore } from '../db/store.js';
 import type { DestructiveCounts, Io } from './command.types.js';
 
 export function readSessionRole(repoRoot: string): string | null {
@@ -24,7 +24,7 @@ function fileIsSQLite(path: string): boolean {
 }
 
 export function queryDestructiveCounts(repoRoot: string): DestructiveCounts {
-  const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
+  const dbPath = join(resolveStoreDir(repoRoot), DB_FILE);
   if (!fileIsSQLite(dbPath)) return { done: 0, events: 0 };
   try {
     const store = openStore(repoRoot);

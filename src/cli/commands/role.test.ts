@@ -103,7 +103,7 @@ test('role CLI projects an adapter config and returns durable projection receipt
     noProgressTimeoutMs: 600_000, cancellationGraceMs: 10_000, tools: { read: true }, enabled: true,
   });
   addExecutionProfile(store, {
-    id: 'consumer-profile', roleId: 'result-consumer', adapterId: OPENCODE_ADAPTER_ID, agentId: 'result-consumer',
+    id: 'consumer-profile', roleId: 'reviewer', adapterId: OPENCODE_ADAPTER_ID, agentId: 'reviewer',
     providerId: TEST_PROVIDER_ID, modelId: TEST_MODEL_ID, adapterConfig: {}, observationIntervalMs: 1,
     noProgressTimeoutMs: 600_000, cancellationGraceMs: 10_000, tools: { read: true }, enabled: true,
   });
