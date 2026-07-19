@@ -1,18 +1,30 @@
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { HASH_ENCODING, OS_PLATFORM } from '../platform.constants.js';
 import { DIGEST_ALGORITHM } from './store.constants.js';
 
 const APP_DIR_NAME = 'sv-playbook';
 const REPO_ID_LENGTH = 16;
 
+function canonicalizeRepoRoot(p: string): string {
+  try {
+    if (process.platform === OS_PLATFORM.WINDOWS && typeof realpathSync.native === 'function') {
+      return realpathSync.native(p);
+    }
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+}
+
 export function repoId(canonicalCommonRoot: string): string {
   return createHash(DIGEST_ALGORITHM.SHA256).update(canonicalCommonRoot).digest(HASH_ENCODING.HEX).slice(0, REPO_ID_LENGTH);
 }
 
 export function resolveStoreRoot(canonicalCommonRoot: string): string {
-  const id = repoId(canonicalCommonRoot);
+  const id = repoId(canonicalizeRepoRoot(canonicalCommonRoot));
   if (process.platform === OS_PLATFORM.WINDOWS) {
     const base = process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local');
     return join(base, APP_DIR_NAME, id);
