@@ -42,6 +42,7 @@ function setPolicy(args: string[], io: Io): number {
 export const command: Command = {
   name: 'workflow-policy',
   summary: 'Configure deterministic workflow failure retry classification',
+  usage: USAGE,
   run(args, io): Promise<number> {
     try {
       const [subcommand, ...rest] = args;

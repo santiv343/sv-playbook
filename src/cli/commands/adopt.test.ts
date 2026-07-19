@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../main.js';
+import { command } from './adopt.js';
 import type { Io } from '../command.types.js';
 import { initTestRepo } from '../../testkit.js';
 
@@ -30,6 +31,12 @@ async function inTempBareRepo<T>(fn: () => Promise<T>): Promise<T> {
     process.chdir(previous);
   }
 }
+
+test('adopt command declares a non-empty usage string', () => {
+  assert.notEqual(command.usage.trim(), '');
+  assert.match(command.usage, /^Usage:/);
+  assert.match(command.usage, /sv-playbook adopt/);
+});
 
 test('adopt scaffolds config, AGENTS.md and remediation packets for a bare repo', async () => {
   await inTempBareRepo(async () => {

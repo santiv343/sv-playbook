@@ -149,6 +149,7 @@ const USAGE = [USAGE_HEADER, ...Array.from(SUBCOMMANDS.values()).map((s) => `  $
 export const command: Command = {
   name: REVIEW_CMD_NAME,
   summary: 'Review preflight and candidate inspection',
+  usage: 'Usage: sv-playbook review <preflight|candidate>',
   async run(args, io): Promise<number> {
     try {
       const [sub, ...rest] = args;

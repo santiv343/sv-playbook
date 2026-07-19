@@ -13,3 +13,6 @@ scripts/*
 !scripts/bootstrap-*.mjs
 !scripts/regenerate-context-content.mjs
 *.tgz
+
+# Superpowers scratch workspace
+.superpowers/

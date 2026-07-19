@@ -235,6 +235,7 @@ function renderCheck(check: CheckResult, io: Io): void {
 export const command: Command = {
   name: 'doctor',
   summary: 'Diagnose Node, git, store, packet, and lease health',
+  usage: DOCTOR_USAGE,
   run(args, io): Promise<number> {
     const parsed = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } });
     if (parsed.positionals.length > 0) {

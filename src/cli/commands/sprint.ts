@@ -233,6 +233,7 @@ const USAGE = ['Usage:', ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.u
 export const command: Command = {
   name: 'sprint',
   summary: 'Manage sprints: planning unit between milestone and task',
+  usage: USAGE,
   run(args, io) {
     try {
       const [sub, ...rest] = args;

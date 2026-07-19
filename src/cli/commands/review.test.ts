@@ -13,6 +13,11 @@ import { packets, packetDefinitions } from '../../tasks/schema.constants.js';
 import { ensureSession } from '../../tasks/service.js';
 import { reviewCandidates } from '../../review/schema.constants.js';
 
+test('review command declares a non-empty usage string', () => {
+  assert.notEqual(reviewCommand.usage.trim(), '');
+  assert.match(reviewCommand.usage, /^Usage: sv-playbook review/);
+});
+
 const CANDIDATE_ID = 'RC-CLI-001';
 const PACKET_ID = 'PKT-CLI-001';
 const UNKNOWN_CANDIDATE = 'RC-NOPE';

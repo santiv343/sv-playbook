@@ -144,6 +144,7 @@ const SUBCOMMANDS: Readonly<Record<string, (args: string[], io: Io) => number>> 
 export const command: Command = {
   name: 'context',
   summary: 'Manage and compile durable role-scoped context',
+  usage: USAGE,
   run(args, io): Promise<number> {
     try {
       const [subcommand, ...rest] = args;
