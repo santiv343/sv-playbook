@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { main } from '../main.js';
+import { command } from './doctor.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import { createStateBackup } from '../../db/backup.js';
@@ -42,6 +43,12 @@ function markPacketDone(id: string): void {
     store.close();
   }
 }
+
+test('doctor command declares a non-empty usage string', () => {
+  assert.notEqual(command.usage.trim(), '');
+  assert.match(command.usage, /^Usage:/);
+  assert.match(command.usage, /sv-playbook doctor/);
+});
 
 test('doctor reports core project health in a git repo', async () => {
   await inTempRepo(async () => {

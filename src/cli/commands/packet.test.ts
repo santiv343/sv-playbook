@@ -26,6 +26,11 @@ async function inTempRepo<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+test('packet command declares a non-empty usage string', () => {
+  assert.notEqual(packetCommand.usage.trim(), '');
+  assert.match(packetCommand.usage, /^Usage: sv-playbook packet/);
+});
+
 test('packet history lists versions oldest to newest with digests', async () => {
   await inTempRepo(async () => {
     await writeFile('body.md', 'Body.\n', 'utf8');

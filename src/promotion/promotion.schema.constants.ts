@@ -15,10 +15,12 @@ export const PROMOTION_TABLE = {
   RECEIPTS: 'promotion_receipts',
 } as const;
 
-const COLUMN = {
+export const PROMOTION_CANDIDATE_COLUMN = {
   ATTEMPT_ID: 'attempt_id',
   CANDIDATE_ID: 'candidate_id',
   CANDIDATE_SHA: 'candidate_sha',
+  CONFIG_DIGEST: 'config_digest',
+  CONTRACT_DIGEST: 'contract_digest',
   REASON: 'reason',
   RECEIPT_DIGEST: 'receipt_digest',
   RESULT_SHA: 'result_sha',
@@ -27,18 +29,20 @@ const COLUMN = {
   TARGET_REF: 'target_ref',
   TASK_ID: 'task_id',
   WORK_DEFINITION_DIGEST: 'work_definition_digest',
+  WORK_DEFINITION_VERSION: 'work_definition_version',
 } as const;
+const COLUMN = PROMOTION_CANDIDATE_COLUMN;
 
 export const promotionCandidates = sqliteTable(PROMOTION_TABLE.CANDIDATES, {
   id: text(COLUMN.CANDIDATE_ID).primaryKey(),
   reviewCandidateId: text(COLUMN.REVIEW_CANDIDATE_ID).notNull().unique(),
   taskId: text(COLUMN.TASK_ID).notNull(),
-  workDefinitionVersion: integer('work_definition_version').notNull(),
+  workDefinitionVersion: integer(COLUMN.WORK_DEFINITION_VERSION).notNull(),
   workDefinitionDigest: text(COLUMN.WORK_DEFINITION_DIGEST).notNull(),
   baseSha: text('base_sha').notNull(),
   candidateSha: text(COLUMN.CANDIDATE_SHA).notNull(),
-  configDigest: text('config_digest').notNull(),
-  contractDigest: text('contract_digest').notNull(),
+  configDigest: text(COLUMN.CONFIG_DIGEST).notNull(),
+  contractDigest: text(COLUMN.CONTRACT_DIGEST).notNull(),
   createdAt: text(DATABASE_COLUMN.CREATED_AT).notNull(),
 }, (table) => [uniqueIndex('promotion_candidate_identity').on(
   table.taskId,
