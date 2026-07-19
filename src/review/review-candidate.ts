@@ -1,5 +1,4 @@
 import { and, desc, eq } from 'drizzle-orm';
-import { dirname } from 'node:path';
 import { v7 as uuidv7 } from 'uuid';
 import { validateArtifact } from '../contracts/artifacts.js';
 import { loadConfig } from '../config.js';
@@ -171,7 +170,7 @@ export async function assembleReviewCandidate(
   definition: StoredWorkDefinition,
   lease: LeaseInfo,
 ): Promise<PendingReviewCandidate> {
-  const config = loadConfig(dirname(store.dir));
+  const config = loadConfig(store.repoRoot);
   const content = candidateContent(
     lease.worktree,
     config.reviewPreflight.baseReference,

@@ -1,5 +1,4 @@
 import { eq } from 'drizzle-orm';
-import { dirname } from 'node:path';
 import type { Store } from '../db/store.types.js';
 import { loadConfig } from '../config.js';
 import { parseJson } from '../schema/core.js';
@@ -13,7 +12,7 @@ function writeSetFromDefinitionJson(definitionJson: string): string[] {
 }
 
 export function assertCheckpointClear(store: Store, packetId: string): void {
-  const config = loadConfig(dirname(store.dir)).tasks.complexityCheckpoint;
+  const config = loadConfig(store.repoRoot).tasks.complexityCheckpoint;
   if (!config.enabled) return;
 
   const packet = store.orm.select().from(packets).where(eq(packets.id, packetId)).get();

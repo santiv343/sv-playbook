@@ -3,10 +3,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { createStateBackup } from './backup.js';
+import { DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SQLITE_INTEGRITY_OK, STORE_TABLE, sqlInList } from './store.constants.js';
+import { resolveStoreDir } from './store.js';
+
 import { BACKUP_REASON } from './backup.constants.js';
 import type { BackupReason } from './backup.types.js';
 import { numberColumn, stringColumn } from './rows.js';
-import { DB_FILE, EVENT_COMMANDS, EVENT_SCHEMA_MIGRATED, SCHEMA, SCHEMA_VERSION, SQLITE_INTEGRITY_OK, STORE_TABLE, SVP_DIR, sqlInList } from './store.constants.js';
+
 import { StoreVersionError } from './store.errors.js';
 import { pendingMigrationIds } from './store.migration-manifest.js';
 import type { StoreMigrationId } from './store.migration-manifest.types.js';
@@ -336,7 +339,7 @@ function assertNoForeignLeases(dbPath: string, leaseTtlMs: number, currentSessio
 
 export function migrateStore(repoRoot: string, options?: MigrateStoreOptions): void {
   assertMigrationBranch(repoRoot, options?.migrateLive);
-  const dbPath = join(repoRoot, SVP_DIR, DB_FILE);
+  const dbPath = join(resolveStoreDir(repoRoot), DB_FILE);
   createVerifiedBackup(repoRoot, BACKUP_REASON.MANUAL);
   assertNoForeignLeases(dbPath, loadConfig(repoRoot).tasks.leaseTtlMs, options?.currentSessionId);
   const db = new Database(dbPath);

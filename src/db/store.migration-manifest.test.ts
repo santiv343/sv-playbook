@@ -4,7 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { openStore } from './store.js';
+import { openStore, resolveStoreDir } from './store.js';
 import { numberColumn } from './rows.js';
 import { SCHEMA_VERSION } from './store.constants.js';
 import { STORE_INITIAL_SCHEMA_VERSION, STORE_MIGRATION_IDS } from './store.migration-manifest.constants.js';
@@ -16,7 +16,7 @@ test('schema version is derived from the ordered migration manifest', () => {
 test('schema migration runs every pending step in order', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-mig-chain-'));
   openStore(root).close();
-  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
   const db = new DatabaseSync(dbPath);
   db.exec('CREATE TABLE role_escalation_routes (value TEXT)');
   db.exec('CREATE TABLE role_escalations (value TEXT)');
