@@ -3,6 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { EMPTY_SIZE } from '../platform.constants.js';
 import { openStore } from '../db/store.js';
 import { addExecutionProfile } from '../gateway/profiles.js';
 import { executionProfiles, roleProjectionReceipts } from '../gateway/schema.constants.js';
@@ -49,7 +50,7 @@ test('checkRoleSystem fails hard on incomplete execution profiles once env setup
   const result = await checkRoleSystem(store, root);
 
   assert.equal(result.valid, false);
-  assert.ok(result.violations.length > 0);
+  assert.ok(result.violations.length > EMPTY_SIZE);
   assert.ok(result.violations.some((v) => v.includes('no enabled execution profile')));
   store.close();
 });
