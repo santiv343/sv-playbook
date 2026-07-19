@@ -1,45 +1,36 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { TEXT_ENCODING } from '../platform.constants.js';
 import { readBuildDigest } from './build-digest.js';
 import { BUILD_DIGEST_FIELD, BUILD_DIGEST_FILE_NAME } from './build-digest.constants.js';
 
-const DIST_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DIGEST_PATH = join(DIST_DIR, BUILD_DIGEST_FILE_NAME);
-
-function backupPath(): string {
-  return `${DIGEST_PATH}.backup-${Date.now()}`;
+function makeTempDigestPath(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'svp-build-digest-'));
+  return join(dir, BUILD_DIGEST_FILE_NAME);
 }
 
 test('readBuildDigest returns null when build-digest.json does not exist', () => {
-  const backup = backupPath();
-  let restored = false;
-  if (existsSync(DIGEST_PATH)) {
-    renameSync(DIGEST_PATH, backup);
-  }
+  const digestPath = makeTempDigestPath();
   try {
-    assert.equal(readBuildDigest(), null);
+    assert.equal(readBuildDigest(digestPath), null);
   } finally {
-    if (existsSync(backup)) {
-      renameSync(backup, DIGEST_PATH);
-      restored = true;
-    }
+    rmSync(join(digestPath, '..'), { recursive: true, force: true });
   }
-  assert.ok(restored || existsSync(DIGEST_PATH), 'fixture state should be restored');
 });
 
 test('readBuildDigest returns the digest string when the file exists', () => {
-  const backup = backupPath();
-  const original = readFileSync(DIGEST_PATH, TEXT_ENCODING.UTF8);
-  renameSync(DIGEST_PATH, backup);
+  const digestPath = makeTempDigestPath();
   try {
-    writeFileSync(DIGEST_PATH, JSON.stringify({ [BUILD_DIGEST_FIELD]: 'abc123' }), TEXT_ENCODING.UTF8);
-    assert.equal(readBuildDigest(), 'abc123');
+    writeFileSync(
+      digestPath,
+      JSON.stringify({ [BUILD_DIGEST_FIELD]: 'abc123' }),
+      TEXT_ENCODING.UTF8,
+    );
+    assert.equal(readBuildDigest(digestPath), 'abc123');
   } finally {
-    renameSync(backup, DIGEST_PATH);
-    assert.equal(readFileSync(DIGEST_PATH, 'utf8'), original);
+    rmSync(join(digestPath, '..'), { recursive: true, force: true });
   }
 });
