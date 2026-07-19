@@ -5,7 +5,7 @@ import { BACKUP_REASON } from '../../db/backup.constants.js';
 import { createStateBackup } from '../../db/backup.js';
 import { assertSqliteIntegrity, terminalPacketCountAt } from '../../db/inspection.js';
 import { stringColumn } from '../../db/rows.js';
-import { commonRoot, openStore } from '../../db/store.js';
+import { commonRoot, resolveStoreDir, openStore, openStoreInTree } from '../../db/store.js';
 import { DB_FILE, SVP_DIR } from '../../db/store.constants.js';
 import type { Store } from '../../db/store.types.js';
 import { getCwd } from '../../runtime/context.js';
@@ -124,12 +124,13 @@ function importPacketsFromDocs(repoRoot: string, store: Store): RebuildCounts {
 
 function buildCandidate(repoRoot: string, svpDir: string): { tempRoot: string; dbPath: string; counts: RebuildCounts } {
   const tempRoot = mkdtempSync(join(svpDir, 'rebuild-'));
-  const store = openStore(tempRoot);
+  const inTreeDir = join(tempRoot, SVP_DIR);
+  const store = openStoreInTree(repoRoot, inTreeDir);
 
   try {
     const counts = importPacketsFromDocs(repoRoot, store);
     store.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-    return { tempRoot, dbPath: join(tempRoot, SVP_DIR, DB_FILE), counts };
+    return { tempRoot, dbPath: join(inTreeDir, DB_FILE), counts };
   } finally {
     store.close();
   }
@@ -163,7 +164,7 @@ export const command: Command = {
     }
 
     try {
-      const svpDir = join(repoRoot, SVP_DIR);
+      const svpDir = resolveStoreDir(repoRoot);
       const dbPath = join(svpDir, DB_FILE);
 
       const liveLeases = freshLeases(repoRoot);

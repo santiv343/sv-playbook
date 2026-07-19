@@ -1,4 +1,3 @@
-import { dirname } from 'node:path';
 import { getBackupStatus } from '../db/backup.js';
 import { loadConfig } from '../config.js';
 import { numberColumn, stringColumn } from '../db/rows.js';
@@ -29,7 +28,7 @@ function leaseRows(store: Store): Map<string, StatusLease> {
       sessionId: stringColumn(row, 'session_id'),
       worktree: stringColumn(row, 'worktree'),
       heartbeatAt,
-      stale: Date.now() - Date.parse(heartbeatAt) > loadConfig(dirname(store.dir)).tasks.leaseTtlMs,
+      stale: Date.now() - Date.parse(heartbeatAt) > loadConfig(store.repoRoot).tasks.leaseTtlMs,
     });
   }
   return result;
