@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  BUILD_DIGEST_FIELD,
+  BUILD_DIGEST_FILE_NAME,
+} from '../dist/db/build-digest.constants.js';
 
 function collectJsFiles(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -15,4 +19,7 @@ const distRoot = 'dist';
 const files = collectJsFiles(distRoot).sort();
 const hash = createHash('sha256');
 for (const file of files) hash.update(readFileSync(file));
-writeFileSync(join(distRoot, 'build-digest.json'), JSON.stringify({ digest: hash.digest('hex') }));
+writeFileSync(
+  join(distRoot, BUILD_DIGEST_FILE_NAME),
+  JSON.stringify({ [BUILD_DIGEST_FIELD]: hash.digest('hex') }),
+);
