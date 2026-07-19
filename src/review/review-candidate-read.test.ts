@@ -9,7 +9,7 @@ import { initTestRepo } from '../testkit.js';
 import { packets, packetDefinitions } from '../tasks/schema.constants.js';
 import { ensureSession } from '../tasks/service.js';
 import { reviewCandidates } from './schema.constants.js';
-import { getReviewCandidate, listReviewCandidates } from './review-candidate.js';
+import { getReviewCandidate, listReviewCandidates } from './review-candidate-read.js';
 
 const CANDIDATE_A = 'RC-001';
 const CANDIDATE_B = 'RC-002';
