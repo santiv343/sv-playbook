@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { main } from '../main.js';
+import { command } from './docs.js';
 import type { Io } from '../command.types.js';
 
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
@@ -8,6 +9,11 @@ function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const errLines: string[] = [];
   return { outLines, errLines, out: (l) => void outLines.push(l), err: (l) => void errLines.push(l) };
 }
+
+test('docs command declares a non-empty usage string', () => {
+  assert.notEqual(command.usage.trim(), '');
+  assert.match(command.usage, /^Usage: sv-playbook docs/);
+});
 
 test('docs with unknown topic lists available topics and exits 2', async () => {
   const io = fakeIo();

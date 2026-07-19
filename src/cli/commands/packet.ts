@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 import { eq, asc, and } from 'drizzle-orm';
-import { ERROR_PREFIX, EXIT, USAGE_HEADER } from '../command.constants.js';
+import { ERROR_PREFIX, EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
@@ -113,11 +113,15 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   ['diff', { usage: 'sv-playbook packet diff <ID> --from <v> --to <v> [--json]', run: handleDiff }],
 ]);
 
-const USAGE = [USAGE_HEADER, ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');
+const USAGE = [
+  'Usage: sv-playbook packet <subcommand>',
+  ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`),
+].join('\n');
 
 export const command: Command = {
   name: 'packet',
   summary: 'Inspect packet version history and diffs',
+  usage: USAGE,
   run(args, io) {
     try {
       const [sub, ...rest] = args;

@@ -325,6 +325,7 @@ function handleTaskError(error: unknown, io: Io): number {
 export const command: Command = {
   name: 'task',
   summary: 'Create, list, start, move, inspect, and recover execution packets',
+  usage: USAGE,
   destructiveSubcommands: [EVENT_TAKEOVER],
   async run(args, io) {
     try {

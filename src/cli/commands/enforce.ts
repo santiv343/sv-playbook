@@ -9,6 +9,7 @@ const ENFORCE_ARG_COUNT = 3;
 export const command: Command = {
   name: 'enforce',
   summary: 'Machine-authoritative contract conformance check (read-only)',
+  usage: USAGE,
   run(args, io): Promise<number> {
     if (args.length !== ENFORCE_ARG_COUNT) {
       io.err(USAGE);

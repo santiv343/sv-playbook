@@ -6,8 +6,9 @@ const AVAILABLE_TOPICS = 'Available topics:';
 
 export const command: Command = {
   name: 'docs',
-    summary: 'Print a playbook process document (list topics when no argument)',
-    async run(args, io) {
+  summary: 'Print a playbook process document (list topics when no argument)',
+  usage: 'Usage: sv-playbook docs [<topic>]',
+  async run(args, io) {
     const [topic] = args;
     if (topic === undefined) {
       io.out(AVAILABLE_TOPICS);
@@ -23,5 +24,5 @@ export const command: Command = {
     }
     io.out(text);
     return EXIT.OK;
-    },
+  },
 };

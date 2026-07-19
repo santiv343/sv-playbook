@@ -91,6 +91,7 @@ const USAGE = [USAGE_HEADER, ...Array.from(SUBCOMMANDS.values()).map(({ usage })
 export const command: Command = {
   name: 'promotion',
   summary: 'Verify, integrate, and close one immutable candidate through the runtime controller',
+  usage: USAGE,
   destructive: true,
   async run(args, io) {
     const [subcommand, ...rest] = args;

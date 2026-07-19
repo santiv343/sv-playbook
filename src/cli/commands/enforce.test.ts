@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../main.js';
+import { command as enforceCommand } from './enforce.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import type { ConformanceReceipt } from '../../enforcement/conformance.types.js';
@@ -25,6 +26,12 @@ function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = [];
   const errLines: string[] = [];
   return { outLines, errLines, out: (l) => void outLines.push(l), err: (l) => void errLines.push(l) };
+}
+
+async function writeFixtureFiles(dir: string, contract: unknown, profile: unknown = MINIMAL_PROFILE): Promise<void> {
+  await writeFile(join(dir, 'schema.json'), JSON.stringify(MINIMAL_SCHEMA));
+  await writeFile(join(dir, 'profile.json'), JSON.stringify(profile));
+  await writeFile(join(dir, 'contract.json'), typeof contract === 'string' ? contract : JSON.stringify(contract));
 }
 
 const MINIMAL_SCHEMA = {
@@ -53,15 +60,16 @@ const VALID_CONTRACT = {
   acceptance_scenarios: ['SC-001: test scenario passes'],
 };
 
+test('enforce command declares a non-empty usage string', () => {
+  assert.notEqual(enforceCommand.usage.trim(), '');
+  assert.match(enforceCommand.usage, /^Usage: sv-playbook enforce/);
+});
+
 test('invalid profile exits non-zero with schema failure', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'enforce-test-'));
   try {
-    const invalidProfile = {};
-    await writeFile(join(dir, 'schema.json'), JSON.stringify(MINIMAL_SCHEMA));
-    await writeFile(join(dir, 'profile.json'), JSON.stringify(invalidProfile));
-    await writeFile(join(dir, 'contract.json'), JSON.stringify(VALID_CONTRACT));
-
     const io = fakeIo();
+    await writeFixtureFiles(dir, VALID_CONTRACT, {});
     const code = await main(['enforce', join(dir, 'contract.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io);
     assert.notEqual(code, EXIT.OK);
     const receipt = readReceipt(io.outLines);
@@ -83,11 +91,8 @@ test('duplicate scenario IDs detected', async () => {
         'SC-001: duplicate scenario',
       ],
     };
-    await writeFile(join(dir, 'schema.json'), JSON.stringify(MINIMAL_SCHEMA));
-    await writeFile(join(dir, 'profile.json'), JSON.stringify(MINIMAL_PROFILE));
-    await writeFile(join(dir, 'contract.json'), JSON.stringify(contract));
-
     const io = fakeIo();
+    await writeFixtureFiles(dir, contract);
     const code = await main(['enforce', join(dir, 'contract.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io);
     assert.notEqual(code, EXIT.OK);
     const receipt = readReceipt(io.outLines);
@@ -109,11 +114,8 @@ test('orphaned scenarios detected', async () => {
         'SC-002: orphaned scenario',
       ],
     };
-    await writeFile(join(dir, 'schema.json'), JSON.stringify(MINIMAL_SCHEMA));
-    await writeFile(join(dir, 'profile.json'), JSON.stringify(MINIMAL_PROFILE));
-    await writeFile(join(dir, 'contract.json'), JSON.stringify(contract));
-
     const io = fakeIo();
+    await writeFixtureFiles(dir, contract);
     const code = await main(['enforce', join(dir, 'contract.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io);
     assert.notEqual(code, EXIT.OK);
     const receipt = readReceipt(io.outLines);
@@ -143,11 +145,8 @@ test('dangling references detected', async () => {
       },
       acceptance_scenarios: ['SC-001: only valid scenario'],
     };
-    await writeFile(join(dir, 'schema.json'), JSON.stringify(MINIMAL_SCHEMA));
-    await writeFile(join(dir, 'profile.json'), JSON.stringify(MINIMAL_PROFILE));
-    await writeFile(join(dir, 'contract.json'), JSON.stringify(contract));
-
     const io = fakeIo();
+    await writeFixtureFiles(dir, contract);
     const code = await main(['enforce', join(dir, 'contract.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io);
     assert.notEqual(code, EXIT.OK);
     const receipt = readReceipt(io.outLines);
@@ -176,11 +175,8 @@ test('incomplete control detected', async () => {
         },
       },
     };
-    await writeFile(join(dir, 'schema.json'), JSON.stringify(MINIMAL_SCHEMA));
-    await writeFile(join(dir, 'profile.json'), JSON.stringify(MINIMAL_PROFILE));
-    await writeFile(join(dir, 'contract.json'), JSON.stringify(contract));
-
     const io = fakeIo();
+    await writeFixtureFiles(dir, contract);
     const code = await main(['enforce', join(dir, 'contract.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io);
     assert.notEqual(code, EXIT.OK);
     const receipt = readReceipt(io.outLines);
@@ -209,11 +205,8 @@ test('agent owner detected', async () => {
         },
       },
     };
-    await writeFile(join(dir, 'schema.json'), JSON.stringify(MINIMAL_SCHEMA));
-    await writeFile(join(dir, 'profile.json'), JSON.stringify(MINIMAL_PROFILE));
-    await writeFile(join(dir, 'contract.json'), JSON.stringify(contract));
-
     const io = fakeIo();
+    await writeFixtureFiles(dir, contract);
     const code = await main(['enforce', join(dir, 'contract.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io);
     assert.notEqual(code, EXIT.OK);
     const receipt = readReceipt(io.outLines);
@@ -241,11 +234,9 @@ test('canonical digests are independent of JSON formatting', async () => {
     const io1 = fakeIo();
     const code1 = await main(['enforce', join(dir, 'contract-compact.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io1);
     assert.equal(code1, EXIT.OK);
-
     const io2 = fakeIo();
     const code2 = await main(['enforce', join(dir, 'contract-pretty.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io2);
     assert.equal(code2, EXIT.OK);
-
     const io3 = fakeIo();
     const code3 = await main(['enforce', join(dir, 'contract-reordered.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io3);
     assert.equal(code3, EXIT.OK);
@@ -253,15 +244,10 @@ test('canonical digests are independent of JSON formatting', async () => {
     const receipt1 = readReceipt(io1.outLines);
     const receipt2 = readReceipt(io2.outLines);
     const receipt3 = readReceipt(io3.outLines);
-
-    assert.equal(receipt1.contract_digest, receipt2.contract_digest,
-      'compact and pretty-printed must produce same digest');
-    assert.equal(receipt2.contract_digest, receipt3.contract_digest,
-      'different key order must produce same digest');
-    assert.equal(receipt1.schema_digest, receipt2.schema_digest,
-      'schema digest must be stable');
-    assert.equal(receipt1.profile_digest, receipt2.profile_digest,
-      'profile digest must be stable');
+    assert.equal(receipt1.contract_digest, receipt2.contract_digest, 'compact and pretty-printed must produce same digest');
+    assert.equal(receipt2.contract_digest, receipt3.contract_digest, 'different key order must produce same digest');
+    assert.equal(receipt1.schema_digest, receipt2.schema_digest, 'schema digest must be stable');
+    assert.equal(receipt1.profile_digest, receipt2.profile_digest, 'profile digest must be stable');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -281,11 +267,8 @@ test('duplicate control IDs detected in raw JSON', async () => {
     });
     const rawContract = `{"contract_version":"1.0.0","control_catalog":{"CTRL-001":${validCtrl},"CTRL-001":${validCtrl}},"acceptance_scenarios":["SC-001: test scenario passes"]}`;
 
-    await writeFile(join(dir, 'schema.json'), JSON.stringify(MINIMAL_SCHEMA));
-    await writeFile(join(dir, 'profile.json'), JSON.stringify(MINIMAL_PROFILE));
-    await writeFile(join(dir, 'contract.json'), rawContract);
-
     const io = fakeIo();
+    await writeFixtureFiles(dir, rawContract);
     const code = await main(['enforce', join(dir, 'contract.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io);
     assert.notEqual(code, EXIT.OK);
     const receipt = readReceipt(io.outLines);
@@ -325,11 +308,8 @@ test('agent owner with various patterns detected', async () => {
       },
       acceptance_scenarios: ['SC-001: test scenario'],
     };
-    await writeFile(join(dir, 'schema.json'), JSON.stringify(MINIMAL_SCHEMA));
-    await writeFile(join(dir, 'profile.json'), JSON.stringify(MINIMAL_PROFILE));
-    await writeFile(join(dir, 'contract.json'), JSON.stringify(contract));
-
     const io = fakeIo();
+    await writeFixtureFiles(dir, contract);
     const code = await main(['enforce', join(dir, 'contract.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io);
     assert.notEqual(code, EXIT.OK);
     const receipt = readReceipt(io.outLines);
@@ -347,11 +327,8 @@ test('agent owner with various patterns detected', async () => {
 test('valid fixture produces exit 0 with conformant receipt', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'enforce-test-'));
   try {
-    await writeFile(join(dir, 'schema.json'), JSON.stringify(MINIMAL_SCHEMA));
-    await writeFile(join(dir, 'profile.json'), JSON.stringify(MINIMAL_PROFILE));
-    await writeFile(join(dir, 'contract.json'), JSON.stringify(VALID_CONTRACT));
-
     const io = fakeIo();
+    await writeFixtureFiles(dir, VALID_CONTRACT);
     const code = await main(['enforce', join(dir, 'contract.json'), join(dir, 'schema.json'), join(dir, 'profile.json')], io);
     assert.equal(code, EXIT.OK, `expected exit 0, got ${code}`);
     const receipt = readReceipt(io.outLines);

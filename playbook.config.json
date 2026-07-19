@@ -42,12 +42,12 @@
       "digest": "55744a6ce6d41136e060a2f5da8cf2387c1c0ef00c75e16ef740deffddbf4a31"
     },
     "literalComparisons": {
-      "count": 282,
-      "digest": "aecd9006c638b4f7286493eb87f80a9b33fe388f1b16aa8c016189ccf9780245"
+      "count": 278,
+      "digest": "68ac154973377fb4f1923b67dd9ac0473178608ae6964f91b4a0cfc613296582"
     },
     "duplicateStrings": {
-      "count": 1305,
-      "digest": "38d29edbcc6d3bda39d00bdf524b7aaa6a747e70cf0a862adf61c58bbc055956"
+      "count": 1303,
+      "digest": "c9561a5d13171511abcc29811282a983c98b58b2b7419ecfec51f772b68c55cf"
     },
     "fingerprints": [
       "docs/packets/ADOPT-AURORA-001.md",

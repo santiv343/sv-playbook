@@ -13,6 +13,12 @@ function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   return { outLines, errLines, out: (line) => { outLines.push(line); }, err: (line) => { errLines.push(line); } };
 }
 
+test('context command declares a non-empty usage string', () => {
+  assert.notEqual(command.usage.trim(), '');
+  assert.match(command.usage, /^Usage:/);
+  assert.match(command.usage, /sv-playbook context/);
+});
+
 test('context CLI persists canonical content and compiles a role-scoped pack', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-context-cli-'));
   initTestRepo(root);
