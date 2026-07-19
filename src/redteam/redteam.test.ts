@@ -5,9 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openStore } from '../db/store.js';
+import { openStore, resolveStoreDir } from '../db/store.js';
 import { stringColumn, numberColumn } from '../db/rows.js';
-import { DB_FILE, SVP_DIR } from '../db/store.constants.js';
+import { DB_FILE } from '../db/store.constants.js';
 import {
   createPacket,
   ensureSession,
@@ -115,10 +115,10 @@ test('red team: deleting .svp DB is recoverable via rebuild', async () => {
   const { root, store } = await setupStore();
   createPacket(store, root, def('RT-RECOVER-001'), 'a');
   store.close();
-  const dbPath = join(root, SVP_DIR, DB_FILE);
-  assert.ok(existsSync(dbPath), '.svp DB should exist');
+  const dbPath = join(resolveStoreDir(root), DB_FILE);
+  assert.ok(existsSync(dbPath), 'store DB should exist');
   rmSync(dbPath);
-  assert.ok(!existsSync(dbPath), '.svp DB should be deleted');
+  assert.ok(!existsSync(dbPath), 'store DB should be deleted');
   const store2 = openStore(root);
   assert.ok(store2.db, 'store re-opens after deletion');
   const rows = store2.db.prepare('SELECT COUNT(*) AS cnt FROM packets').all();
@@ -329,15 +329,15 @@ test('red team: starting a draft packet is refused with the current status name'
 });
 
 // ---- SAFETY: Store migration always uses fixture DBs, never the shared .svp ----
-test('red team: store fixture DB is used during migration, never the shared .svp', async () => {
+test('red team: store fixture DB lives outside the fixture root after relocation', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rt-mig-'));
   initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
 
   const store = openStore(root);
-  const fixturePath = join(root, SVP_DIR, DB_FILE);
-  assert.ok(existsSync(fixturePath), 'fixture DB must exist under fixture root');
-  assert.ok(fixturePath.startsWith(root), 'fixture DB path must be under the test root');
+  const fixturePath = join(resolveStoreDir(root), DB_FILE);
+  assert.ok(existsSync(fixturePath), 'fixture DB must exist at the resolved external location');
+  assert.ok(!fixturePath.startsWith(root), 'fixture DB path must be outside the test root');
   store.close();
 });
 

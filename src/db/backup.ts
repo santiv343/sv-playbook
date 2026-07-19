@@ -3,7 +3,9 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { basename, join, dirname, isAbsolute } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { DB_FILE, SCHEMA_VERSION, SQLITE_FILE_HEADER, SQLITE_INTEGRITY_OK, SVP_DIR } from './store.constants.js';
+import { DB_FILE, SCHEMA_VERSION, SQLITE_FILE_HEADER, SQLITE_INTEGRITY_OK } from './store.constants.js';
+import { resolveStoreDir } from './store.js';
+
 import { BACKUP_MANIFEST_FIELD, BACKUP_PREFIX, BACKUP_REFUSED_PREFIX, BACKUPS_DIR, BACKUP_REASON, BACKUP_RETENTION_DEFAULT, BACKUP_RETENTION_FLOOR_DEFAULT } from './backup.constants.js';
 import type { BackupOptions, BackupReport, BackupStatus, BackupStatusOptions, RestoreReport } from './backup.types.js';
 import { stringColumn, numberColumn } from './rows.js';
@@ -14,6 +16,7 @@ import { FILE_EXTENSION } from '../platform.constants.js';
 
 const now = (): string => new Date().toISOString();
 const MIN_RESTORABLE_SCHEMA_VERSION = 3;
+
 const stamp = (v: string): string => {
   const base = v.replace(/[:\-T.Z]/g, '').slice(0, 17);
   const suffix = Math.random().toString(36).slice(2, 6);
@@ -26,10 +29,10 @@ function resolveBackupsDir(repoRoot: string): string {
     if (isAbsolute(config.backup.dir)) return config.backup.dir;
     return join(repoRoot, config.backup.dir);
   }
-  return join(repoRoot, SVP_DIR, BACKUPS_DIR);
+  return join(resolveStoreDir(repoRoot), BACKUPS_DIR);
 }
 
-function dbPath(repoRoot: string): string { return join(repoRoot, SVP_DIR, DB_FILE); }
+function dbPath(repoRoot: string): string { return join(resolveStoreDir(repoRoot), DB_FILE); }
 
 function sha256(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
