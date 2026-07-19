@@ -9,7 +9,8 @@ import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { openStore, isDaemonRunning } from '../db/store.js';
+import { openStore, isDaemonRunning, resolveStoreDir } from '../db/store.js';
+import { SVP_DIR } from '../db/store.constants.js';
 import { startDaemon } from '../daemon/daemon.js';
 import { OS_PLATFORM } from '../platform.constants.js';
 import { initTestRepo } from '../testkit.js';
@@ -24,16 +25,13 @@ function realCliEnv(): NodeJS.ProcessEnv {
 
 function freePort(): Promise<number> {
   return new Promise((resolve) => {
-    const s = createNetServer();
-    s.listen(0, () => {
+    const s = createNetServer().listen(0, () => {
       const addr = s.address();
-      let p = 0;
-      if (typeof addr === 'object' && addr !== null && 'port' in addr) p = addr.port;
-      s.close(() => { resolve(p); });
+      resolve(typeof addr === 'object' && addr !== null && 'port' in addr ? addr.port : 0);
+      s.close();
     });
   });
 }
-
 function postJson(port: number, path: string, body: unknown): Promise<{ statusCode: number | undefined; body: string }> {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
@@ -81,12 +79,10 @@ async function pollHealth(port: number, timeoutMs: number): Promise<string | nul
 }
 
 // Shared cleanup for daemon child processes — graceful via API, force as fallback.
-// Uses child.exitCode (null while running) instead of a flag to avoid async
-// mutation tracking issues and to keep the linter happy.
 async function stopDaemonChild(child: ReturnType<typeof spawn>, root: string, port: number): Promise<void> {
   if (child.exitCode !== null) return;
   try {
-    const t = (await readFile(join(root, '.svp', '.svp-daemon-token'), 'utf8')).trim().split('\n')[0] ?? '';
+    const t = (await readFile(join(root, SVP_DIR, '.svp-daemon-token'), 'utf8')).trim().split('\n')[0] ?? '';
     if (t) await postJson(port, '/api/v1/shutdown', { token: t });
   } catch { /* best-effort */ }
   const waitMs = (ms: number): Promise<void> => new Promise((r) => { child.once('exit', () => { r(); }); setTimeout(() => { r(); }, ms).unref(); });
@@ -142,7 +138,7 @@ test('red team: a worktree process cannot open the store directly while the daem
 
     // A separate child process attempting to open the live store directly is
     // blocked by the force-acquired exclusive lock.
-    const dbPath = join(root, '.svp', 'playbook.sqlite');
+    const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
     const childResult = execFileSync(process.execPath, ['-e', `
       const { DatabaseSync } = require('node:sqlite');
       try {
@@ -211,7 +207,7 @@ test('red team: built CLI at a repo root runs in direct mode — status exits 0 
   });
 
   assert.equal(result.status, 0, `status at a repo root must exit 0 (direct mode), got ${result.status}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
-  assert.ok(existsSync(join(root, '.svp', 'playbook.sqlite')), '.svp/playbook.sqlite must be created at the fixture root');
+  assert.ok(existsSync(join(resolveStoreDir(root), 'playbook.sqlite')), 'playbook.sqlite must be created for the fixture root');
 });
 
 test('red team: sv-playbook daemon starts at a repo root — health responds, then shutdown (STORE-003)', async () => {
@@ -281,7 +277,7 @@ test('activation probe: spawn daemon detached, health, reject second writer, roo
     assert.ok(!daemonExited, 'daemon process must still be running after health check');
 
     // ── 2. Second-writer rejection ──
-    const dbPath = join(root, '.svp', 'playbook.sqlite');
+    const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
     const secondWriterResult = spawnSync(process.execPath, ['-e', `
       const { DatabaseSync } = require('node:sqlite');
       const db = new DatabaseSync(${JSON.stringify(dbPath)});
@@ -304,7 +300,7 @@ test('activation probe: spawn daemon detached, health, reject second writer, roo
       `CLI from root with daemon must forward and succeed, got exit ${fwdResult.status}\nstderr: ${fwdResult.stderr}`);
 
     // ── 4. Graceful shutdown via /api/v1/shutdown (works on all platforms) ──
-    const tokenPath = join(root, '.svp', '.svp-daemon-token');
+    const tokenPath = join(root, SVP_DIR, '.svp-daemon-token');
     const shutdownToken = (await readFile(tokenPath, 'utf8')).trim().split('\n')[0] ?? '';
     assert.ok(shutdownToken.length > 0, 'daemon token must be readable');
     const shutdownRes = await postJson(port, '/api/v1/shutdown', { token: shutdownToken });
@@ -321,7 +317,7 @@ test('activation probe: spawn daemon detached, health, reject second writer, roo
     // ── 5. Cleanup verification on ALL platforms ──
     try { process.kill(pid, 0); assert.fail('daemon must be dead after shutdown'); }
     catch { /* expected — process is gone */ }
-    const lockPath = join(root, '.svp', '.svp-daemon.lock');
+    const lockPath = join(root, SVP_DIR, '.svp-daemon.lock');
     assert.ok(!existsSync(lockPath), 'lock file must be cleaned up');
     assert.ok(!existsSync(tokenPath), 'token file must be cleaned up');
 

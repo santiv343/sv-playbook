@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { main } from '../main.js';
 import { EXIT } from '../command.constants.js';
-import { openStore } from '../../db/store.js';
+import { openStore, resolveStoreDir } from '../../db/store.js';
 import type { Io } from '../command.types.js';
 import { initTestRepo } from '../../testkit.js';
 
@@ -31,7 +31,7 @@ async function inTempRepo<T>(fn: (root: string) => Promise<T>): Promise<T> {
 }
 
 function backupFiles(root: string): string[] {
-  return readdirSync(join(root, '.svp', 'backups')).filter((name) => name.endsWith('.sqlite'));
+  return readdirSync(join(resolveStoreDir(root), 'backups')).filter((name) => name.endsWith('.sqlite'));
 }
 
 test('backup state creates a sqlite snapshot with metadata', async () => {
@@ -44,7 +44,7 @@ test('backup state creates a sqlite snapshot with metadata', async () => {
     assert.ok(files.length >= 1);
     const newest = files.toSorted().at(-1);
     assert.ok(newest !== undefined);
-    assert.ok(existsSync(join(root, '.svp', 'backups', newest.replace(/\.sqlite$/, '.json'))));
+    assert.ok(existsSync(join(resolveStoreDir(root), 'backups', newest.replace(/\.sqlite$/, '.json'))));
     assert.ok(io.outLines.some((line) => line.includes('backup:')));
   });
 });
@@ -56,8 +56,8 @@ test('restore state replaces the current store from a backup file', async () => 
     assert.equal(await main(['backup', 'state'], backupIo), EXIT.OK);
     const backupName = backupFiles(root).toSorted().at(-1);
     assert.ok(backupName !== undefined);
-    const backupPath = join(root, '.svp', 'backups', backupName);
-    await writeFile(join(root, '.svp', 'playbook.sqlite'), 'not sqlite');
+    const backupPath = join(resolveStoreDir(root), 'backups', backupName);
+    await writeFile(join(resolveStoreDir(root), 'playbook.sqlite'), 'not sqlite');
 
     const restoreIo = fakeIo();
     assert.equal(await main(['restore', 'state', '--file', backupPath, '--confirm-destructive'], restoreIo), EXIT.OK, restoreIo.errLines.join('\n'));
