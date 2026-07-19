@@ -3,10 +3,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting, resolveStoreDir } from '../db/store.js';
+import { readBuildDigest } from '../db/build-digest.js';
 import { assertExclusiveStoreLock } from '../db/inspection.js';
 import { DB_FILE, SVP_DIR } from '../db/store.constants.js';
-import { DAEMON_LOCK_FILE, DAEMON_ROUTE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
-import { HTTP_METHOD, NODE_ERROR_CODE, PROCESS_EVENT } from '../platform.constants.js';
+import { BUILD_DIGEST_HEALTH_FIELD, DAEMON_LOCK_FILE, DAEMON_ROUTE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
+import { HTTP_METHOD, NODE_ERROR_CODE, PROCESS_EVENT, TEXT_ENCODING } from '../platform.constants.js';
 import { nodeErrorCode } from '../platform.js';
 import { runWithContext, createContext } from '../runtime/context.js';
 import type { Store } from '../db/store.types.js';
@@ -35,16 +36,6 @@ function generateToken(): string {
   return createHash('sha256').update(randomUUID()).digest('hex').slice(0, 32);
 }
 
-function writeTokenFileOwnerOnly(tokenPath: string, token: string): void {
-  try { unlinkSync(tokenPath); } catch { /* did not exist */ }
-  const fd = openSync(tokenPath, 'wx', 0o600);
-  try {
-    writeSync(fd, `${token}\n`);
-  } finally {
-    closeSync(fd);
-  }
-}
-
 function writeLockFileAtomically(lockPath: string, pid: number, port: number, nonce: string): void {
   const fd = openSync(lockPath, 'wx', 0o600);
   try {
@@ -58,7 +49,7 @@ function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     req.on(PROCESS_EVENT.DATA, (chunk: Buffer) => { chunks.push(chunk); });
-    req.on('end', () => { resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('end', () => { resolve(Buffer.concat(chunks).toString(TEXT_ENCODING.UTF8)); });
     req.on(PROCESS_EVENT.ERROR, reject);
   });
 }
@@ -66,6 +57,28 @@ function readBody(req: IncomingMessage): Promise<string> {
 function jsonResponse(res: ServerResponse, code: number, body: unknown): void {
   res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
+}
+
+function methodNotAllowed(res: ServerResponse): void {
+  jsonResponse(res, 405, { error: ERR_METHOD_NOT_ALLOWED });
+}
+
+function handleHealth(req: IncomingMessage, res: ServerResponse): void {
+  if (req.method !== HTTP_METHOD.GET) {
+    methodNotAllowed(res);
+    return;
+  }
+  jsonResponse(res, 200, {
+    status: 'ok',
+    version: DAEMON_VERSION,
+    pid: process.pid,
+    storeLock: 'exclusive',
+    [BUILD_DIGEST_HEALTH_FIELD]: readBuildDigest(),
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Object(value) === value && !Array.isArray(value);
 }
 
 function buildExecIo(): { out: (l: string) => void; err: (l: string) => void; outLines: string[]; errLines: string[] } {
@@ -79,14 +92,10 @@ function buildExecIo(): { out: (l: string) => void; err: (l: string) => void; ou
   };
 }
 
-function redactError(): string {
-  return ERR_INTERNAL;
-}
-
 function parseExecRequest(raw: string, token: string, res: ServerResponse): { argv: string[]; ctx: ReturnType<typeof createContext> } | null {
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
-  if (typeof parsed !== 'object' || parsed === null) { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
+  if (!isRecord(parsed)) { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
 
   const parsedToken: unknown = Reflect.get(parsed, 'token');
   if (parsedToken !== token) { jsonResponse(res, 403, { error: ERR_INVALID_TOKEN }); return null; }
@@ -113,17 +122,6 @@ function acquireLock(lockPath: string, pid: number, port: number, nonce: string)
   }
 }
 
-function methodNotAllowed(res: ServerResponse): void {
-  jsonResponse(res, 405, { error: ERR_METHOD_NOT_ALLOWED });
-}
-
-function handleHealth(req: IncomingMessage, res: ServerResponse): void {
-  if (req.method !== HTTP_METHOD.GET) {
-    methodNotAllowed(res);
-    return;
-  }
-  jsonResponse(res, 200, { status: 'ok', version: DAEMON_VERSION, pid: process.pid, storeLock: 'exclusive' });
-}
 
 function handleExecRoute(
   token: string,
@@ -175,7 +173,7 @@ function handleShutdown(token: string, req: IncomingMessage, res: ServerResponse
     let parsedToken: unknown;
     try {
       const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed === 'object' && parsed !== null) {
+      if (isRecord(parsed)) {
         parsedToken = Reflect.get(parsed, 'token');
       }
     } catch {
@@ -210,7 +208,7 @@ function handleExec(token: string, state: TerminationState, commandPort: Command
 
     const store = state.store;
     if (store === null) {
-      jsonResponse(res, 500, { error: redactError(), daemonVersion: DAEMON_VERSION });
+      jsonResponse(res, 500, { error: ERR_INTERNAL, daemonVersion: DAEMON_VERSION });
       return;
     }
     try {
@@ -230,7 +228,7 @@ function handleExec(token: string, state: TerminationState, commandPort: Command
       const stderr = execIo.errLines.join('\n') + (execIo.errLines.length > 0 ? '\n' : '');
       jsonResponse(res, 200, { exitCode, stdout, stderr, daemonVersion: DAEMON_VERSION });
     }).catch(() => {
-      jsonResponse(res, 500, { error: redactError(), daemonVersion: DAEMON_VERSION });
+      jsonResponse(res, 500, { error: ERR_INTERNAL, daemonVersion: DAEMON_VERSION });
     });
   }).catch(() => {
     jsonResponse(res, 400, { error: ERR_REQ_READ_FAILED });
@@ -292,7 +290,13 @@ function initializeDaemonRuntime(repoRoot: string, port: number): DaemonRuntime 
   setDaemonStore(store);
   state.store = store;
   verifyDaemonStore(store, join(resolveStoreDir(repoRoot), DB_FILE), lockPath);
-  writeTokenFileOwnerOnly(tokenPath, token);
+  try { unlinkSync(tokenPath); } catch { /* did not exist */ }
+  const tokenFd = openSync(tokenPath, 'wx', 0o600);
+  try {
+    writeSync(tokenFd, `${token}\n`);
+  } finally {
+    closeSync(tokenFd);
+  }
   return { token, state };
 }
 

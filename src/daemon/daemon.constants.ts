@@ -9,6 +9,7 @@ export const DAEMON_ROUTE = {
   EXECUTE: '/api/v1/exec',
   SHUTDOWN: '/api/v1/shutdown',
 } as const;
+export const BUILD_DIGEST_HEALTH_FIELD = 'buildDigest';
 export const ERR_INVALID_CONTEXT = 'invalid context';
 
 /** TCP connect deadline in ms for the forwarding transport child process.

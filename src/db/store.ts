@@ -11,7 +11,8 @@ import { OS_PLATFORM } from '../platform.constants.js';
 import { getCwd } from '../runtime/context.js';
 import { StoreVersionError } from './store.errors.js';
 import { DAEMON_DEFAULT_PORT, DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE, GIT_DIR_NAME } from '../daemon/daemon.constants.js';
-import { forwardToDaemonSync } from '../daemon/client.js';
+import { fetchDaemonBuildDigestSync, forwardToDaemonSync } from '../daemon/client.js';
+import { readBuildDigest } from './build-digest.js';
 import type { OpenStoreOptions, Store } from './store.types.js';
 import { checkVersionAndMigrate, migratePacketColumn } from './store.migrations.js';
 import { SQLITE_COLUMN_TYPE } from './schema-vocabulary.constants.js';
@@ -247,7 +248,16 @@ function tryAutoForward(): void {
 
     const token = readDaemonToken(repoRoot);
     if (token === null) return;
-    process.exit(forwardToDaemonSync(args, token, readDaemonPort(repoRoot)));
+
+    const port = readDaemonPort(repoRoot);
+    const myDigest = readBuildDigest();
+    const daemonDigest = fetchDaemonBuildDigestSync(port);
+    if (daemonDigest !== myDigest) {
+      console.error('daemon is running an older build — restart it with `sv-playbook daemon`');
+      process.exit(1);
+    }
+
+    process.exit(forwardToDaemonSync(args, token, port));
   } catch { /* proceed with direct mode */ }
 }
 

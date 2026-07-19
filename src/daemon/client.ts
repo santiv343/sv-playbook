@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
-import { NODE_EVAL_FLAG, TEXT_ENCODING } from '../platform.constants.js';
-import { DAEMON_REQUEST_TIMEOUT_MS_DEFAULT, GIT_DIR_NAME } from './daemon.constants.js';
+import { NODE_EVAL_FLAG, PROCESS_STDIO, TEXT_ENCODING } from '../platform.constants.js';
+import { BUILD_DIGEST_HEALTH_FIELD, DAEMON_CONNECT_TIMEOUT_MS_DEFAULT, DAEMON_REQUEST_TIMEOUT_MS_DEFAULT, GIT_DIR_NAME } from './daemon.constants.js';
 import { SESSION_FILE_NAME } from '../tasks/service.constants.js';
 import type { ExecutionContext } from '../runtime/context.types.js';
 import { getContext } from '../runtime/context.js';
@@ -41,6 +41,30 @@ function readSessionId(cwd: string): string | null {
 
 // Single forwarding transport — used by production (store.ts auto-forward)
 // and exercised directly by the daemon tests.
+function buildHealthScript(port: number, timeout: number): string {
+  return `const http=require('http');const r=http.get({hostname:'127.0.0.1',port:${port},path:'/api/v1/health',timeout:${timeout}},s=>{let d='';s.setEncoding('utf8');s.on('data',c=>d+=c);s.on('end',()=>{try{const p=JSON.parse(d);console.log(JSON.stringify({${BUILD_DIGEST_HEALTH_FIELD}:p.${BUILD_DIGEST_HEALTH_FIELD}??null}));process.exit(0);}catch{process.exit(1);}});});r.on('error',()=>process.exit(1));r.on('timeout',()=>process.exit(1));`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Object(value) === value && !Array.isArray(value);
+}
+
+export function fetchDaemonBuildDigestSync(port: number): string | null {
+  const result = spawnSync(process.execPath, [NODE_EVAL_FLAG, buildHealthScript(port, DAEMON_CONNECT_TIMEOUT_MS_DEFAULT)], {
+    encoding: TEXT_ENCODING.UTF8,
+    stdio: [PROCESS_STDIO.IGNORE, PROCESS_STDIO.PIPE, PROCESS_STDIO.PIPE],
+  });
+  if (result.status || result.stdout === '') return null;
+  try {
+    const parsed: unknown = JSON.parse(result.stdout.trim());
+    if (!isRecord(parsed) || !(BUILD_DIGEST_HEALTH_FIELD in parsed)) return null;
+    const digest = parsed[BUILD_DIGEST_HEALTH_FIELD];
+    return String(digest) === digest ? digest : null;
+  } catch {
+    return null;
+  }
+}
+
 export function forwardToDaemonSync(argv: string[], token: string, port: number, ctx?: ExecutionContext, requestTimeoutMs?: number): number {
   const context = ctx ?? getContext() ?? { cwd: process.cwd(), sessionId: readSessionId(process.cwd()) };
   const body = JSON.stringify({ token, argv, context });
