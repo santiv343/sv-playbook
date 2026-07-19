@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { openStore, isDaemonRunning } from '../db/store.js';
 import { SVP_DIR } from '../db/store.constants.js';
 import { startDaemon } from '../daemon/daemon.js';
-import { OS_PLATFORM } from '../platform.constants.js';
+import { EMPTY_SIZE, HTTP_STATUS, OS_PLATFORM } from '../platform.constants.js';
 import { initTestRepo } from '../testkit.js';
 import { get as httpGet } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
@@ -36,7 +36,7 @@ function healthOnce(port: number): Promise<string | null> {
       let data = '';
       res.setEncoding('utf8');
       res.on('data', (c: string) => { data += c; });
-      res.on('end', () => { resolve(res.statusCode === 200 ? data : null); });
+      res.on('end', () => { resolve(res.statusCode === HTTP_STATUS.OK ? data : null); });
     });
     req.on('error', () => { resolve(null); });
     req.setTimeout(1000, () => { req.destroy(); resolve(null); });
@@ -76,7 +76,7 @@ test('red team: SIGKILL crash is detected via nonce mismatch and system recovers
     const tokenPath = join(svpDir, '.svp-daemon-token');
     const origLock = await readFile(lockPath, 'utf8');
     const origToken = (await readFile(tokenPath, 'utf8')).trim().split('\n')[0] ?? '';
-    assert.ok(origToken.length > 0, 'original token must exist');
+    assert.ok(origToken.length > EMPTY_SIZE, 'original token must exist');
 
     const daemonPid = daemonChild.pid;
     assert.ok(daemonPid !== undefined, 'daemon PID must be known');

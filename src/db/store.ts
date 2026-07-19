@@ -7,7 +7,7 @@ import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_K
 import { resolveStoreRoot } from './store-location.js';
 import { relocateStoreIfNeeded } from './store-migration-relocate.js';
 import { GIT_ARGUMENT } from '../git.constants.js';
-import { OS_PLATFORM } from '../platform.constants.js';
+import { EMPTY_SIZE, OS_PLATFORM } from '../platform.constants.js';
 import { getCwd } from '../runtime/context.js';
 import { StoreVersionError } from './store.errors.js';
 import { DAEMON_DEFAULT_PORT, DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE, GIT_DIR_NAME } from '../daemon/daemon.constants.js';
@@ -94,9 +94,11 @@ export function isWorktree(s: string): boolean {
   try { return normalizePathForCompare(dirname(resolve(s, execGitCommonDir(s)))) !== normalizePathForCompare(execGitTopLevel(s)); }
   catch { return false; }
 }
+const LOCK_FILE_NONCE_LINE_COUNT = 4;
+
 function checkDaemonIdentity(lines: string[], repoRoot: string): boolean {
-  const storedNonce = lines.length >= 4 ? lines[3]?.trim() : undefined;
-  if (storedNonce === undefined || storedNonce.length === 0) return true;
+  const storedNonce = lines.length >= LOCK_FILE_NONCE_LINE_COUNT ? lines[3]?.trim() : undefined;
+  if (storedNonce === undefined || storedNonce.length === EMPTY_SIZE) return true;
   const token = readDaemonToken(repoRoot);
   return token !== null && token === storedNonce;
 }
