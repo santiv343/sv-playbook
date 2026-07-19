@@ -9,7 +9,7 @@ import { CLI_ASSIGNMENT_SEPARATOR, EXIT } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 
 const USAGE = [
-  'Usage:',
+  'Usage: sv-playbook execution-profile <subcommand>',
   '  sv-playbook execution-profile add --id <id> --role <role> --adapter <id> --agent <id> --provider <id> --model <id> --adapter-config-file <path> --poll-ms <n> --timeout-ms <n> --grace-ms <n> [--max-duration-ms <n>] --tool <id=allow|deny>...',
   '  sv-playbook execution-profile set --id <id> --role <role> --adapter <id> --agent <id> --provider <id> --model <id> --adapter-config-file <path> --poll-ms <n> --timeout-ms <n> --grace-ms <n> [--max-duration-ms <n>] --tool <id=allow|deny>...',
   '  sv-playbook execution-profile clone --from <id> --id <id> --role <role> --agent <id> [--provider <id>] [--model <id>] [--variant <id>] [--tool <id=allow|deny>]...',
@@ -130,6 +130,7 @@ function cloneProfile(args: string[], io: Io): number {
 export const command: Command = {
   name: 'execution-profile',
   summary: 'Manage provider-neutral execution profiles and adapter-specific projections',
+  usage: USAGE,
   run(args, io): Promise<number> {
     try {
       const [subcommand, ...rest] = args;

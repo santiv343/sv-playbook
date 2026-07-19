@@ -26,6 +26,12 @@ async function inTempRepo<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+test('config command declares a non-empty usage string', () => {
+  assert.notEqual(configCommand.usage.trim(), '');
+  assert.match(configCommand.usage, /^Usage:/);
+  assert.match(configCommand.usage, /sv-playbook config/);
+});
+
 test('config get reads a nested key', async () => {
   await inTempRepo(async () => {
     const io = fakeIo();

@@ -416,7 +416,7 @@ Full guide: `sv-playbook docs cli`. Implemented today:
 | `rebuild` | Reconstruct operational DB from git packet exports |
 | `reconcile` | Compute and apply convergence actions between the board and the world |
 | `restore` | Restore local SQLite state from a snapshot |
-| `review` | Review preflight: mechanical checks for packets before reviewer dispatch |
+| `review` | Review preflight and candidate inspection |
 | `role` | Manage structured role authority, contracts, handoffs, and escalations |
 | `serve` | Start the local workflow runtime and real-time operations console |
 | `sprint` | Manage sprints: planning unit between milestone and task |

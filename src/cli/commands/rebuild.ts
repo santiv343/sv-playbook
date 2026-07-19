@@ -151,15 +151,18 @@ function replaceLiveDb(candidatePath: string, livePath: string): void {
   renameSync(swapPath, livePath);
 }
 
+const USAGE = 'Usage: sv-playbook rebuild [--force]';
+
 export const command: Command = {
   name: 'rebuild',
   summary: 'Reconstruct operational DB from git packet exports',
+  usage: USAGE,
   destructive: true,
   run(args, io): Promise<number> {
     const repoRoot = commonRoot(getCwd());
     const parsed = parseArgs({ args, allowPositionals: true, options: { force: { type: 'boolean' } } });
-    if (parsed.positionals.length > 0) {
-      io.err('Usage: sv-playbook rebuild [--force]');
+    if (parsed.positionals.length) {
+      io.err(USAGE);
       return Promise.resolve(EXIT.USAGE);
     }
 
