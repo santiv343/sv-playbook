@@ -10,16 +10,8 @@ import { checkRoleCatalog } from './catalog.js';
 import type { RoleCatalogCheck } from './catalog.types.js';
 import { checkActiveRoleCatalog } from './catalog-activation.js';
 import { EMPTY_SIZE } from '../platform.constants.js';
-import { inspectRoleCharterProjection, compileRoleCharterProjection } from './charter-projection.js';
+import { inspectRoleCharterProjection } from './charter-projection.js';
 import { bootstrapBundledRoleCatalog, roleCatalogStoreIsVirgin } from './bundled-profile-bootstrap.js';
-import { promoteRoleProjections } from '../gateway/adapters/role-projection-registry.js';
-
-function ensureCharterProjection(store: Store, repoRoot: string): void {
-  const check = inspectRoleCharterProjection(store, repoRoot);
-  if (check.valid) return;
-  const candidate = compileRoleCharterProjection(store, repoRoot);
-  promoteRoleProjections(store, [candidate]);
-}
 
 export async function checkRoleSystem(store: Store, repoRoot: string): Promise<RoleCatalogCheck> {
   const virgin = roleCatalogStoreIsVirgin(store);
@@ -27,7 +19,6 @@ export async function checkRoleSystem(store: Store, repoRoot: string): Promise<R
   const catalog = checkRoleCatalog(store);
   const activation = checkActiveRoleCatalog(store);
   if (virgin) {
-    ensureCharterProjection(store, repoRoot);
     const seededViolations = [...new Set([...catalog.violations, ...activation.violations])].sort();
     return { valid: seededViolations.length === EMPTY_SIZE, violations: seededViolations };
   }
@@ -40,7 +31,6 @@ export async function checkRoleSystem(store: Store, repoRoot: string): Promise<R
   const effectiveClosure = profileCount > EMPTY_SIZE
     ? checkCatalogClosure(store, effectiveProjections)
     : { valid: false, violations: [] } as const;
-  ensureCharterProjection(store, repoRoot);
   const charters = inspectRoleCharterProjection(store, repoRoot);
   const violations = [...new Set([
     ...catalog.violations,
