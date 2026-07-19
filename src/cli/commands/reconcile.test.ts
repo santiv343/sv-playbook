@@ -4,6 +4,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../main.js';
+import { command as reconcileCommand } from './reconcile.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import { initTestRepo } from '../../testkit.js';
@@ -46,4 +47,9 @@ test('reconcile rejects positional arguments', async () => {
   const io = fakeIo();
   assert.equal(await main(['reconcile', 'extra'], io), EXIT.USAGE);
   assert.ok(io.errLines.join('\n').includes('Usage:'));
+});
+
+test('reconcile command declares a non-empty usage string', () => {
+  assert.notEqual(reconcileCommand.usage.trim(), '');
+  assert.match(reconcileCommand.usage, /^Usage: sv-playbook reconcile/);
 });

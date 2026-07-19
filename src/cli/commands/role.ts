@@ -331,6 +331,7 @@ const SUBCOMMANDS: Readonly<Record<string, RoleCommandHandler>> = {
 export const command: Command = {
   name: 'role',
   summary: 'Manage structured role authority, contracts, handoffs, and escalations',
+  usage: USAGE,
   async run(args, io): Promise<number> {
     try {
       const [subcommand, ...rest] = args;

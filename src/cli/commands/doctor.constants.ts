@@ -1,4 +1,4 @@
-export const DOCTOR_USAGE = 'Usage: sv-playbook doctor';
+export const DOCTOR_USAGE = 'Usage: sv-playbook doctor [--json]';
 export const MIN_NODE_MAJOR = 22;
 export const MIN_NODE_MINOR = 13;
 

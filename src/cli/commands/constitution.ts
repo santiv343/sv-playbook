@@ -112,6 +112,7 @@ const SUBCOMMANDS = new Map<string, (args: string[], io: Io) => number>([
 export const command: Command = {
   name: 'constitution',
   summary: 'Manage the instance constitution (vision, product definition, principles)',
+  usage: USAGE,
   run(args, io) {
     try {
       const [sub, ...rest] = args;

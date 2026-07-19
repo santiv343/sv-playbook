@@ -1,12 +1,12 @@
 <!-- GENERATED FROM THE ACTIVE ROLE CATALOG - DO NOT EDIT -->
 <!-- catalog-version: 1 -->
-<!-- catalog-digest: sha256:c4cfd7d425aaefbbd993f696663adff5b46d298022859ac27f089df5e98258b5 -->
+<!-- catalog-digest: sha256:d572dace04ca7f51b06efa8fb45685817d46fc1dd16063e6441a56b63a41e225 -->
 
 # Role Charters
 
 ## advisor
 
-- Definition version: 2
+- Definition version: 1
 - Required: true
 - Mission: Evaluate a bounded specialist question without taking decision authority.
 - Context: ROLE-BUNDLED-ADVISOR@1
@@ -43,7 +43,7 @@
 
 ## arbiter
 
-- Definition version: 2
+- Definition version: 1
 - Required: true
 - Mission: Resolve a bounded disagreement using declared authority and evidence.
 - Context: ROLE-BUNDLED-ARBITER@1
@@ -81,7 +81,7 @@
 
 ## delivery-orchestrator
 
-- Definition version: 2
+- Definition version: 1
 - Required: true
 - Mission: Choose bounded delivery recovery while runtime owns execution effects.
 - Context: ROLE-BUNDLED-DELIVERY-ORCHESTRATOR@1
@@ -121,7 +121,7 @@
 
 ## human-interface
 
-- Definition version: 2
+- Definition version: 1
 - Required: true
 - Mission: Clarify human intent and expose irreducible product decisions.
 - Context: ROLE-BUNDLED-HUMAN-INTERFACE@1
@@ -159,7 +159,7 @@
 
 ## implementer
 
-- Definition version: 2
+- Definition version: 1
 - Required: true
 - Mission: Materialize one bounded candidate that satisfies the approved work definition.
 - Context: ROLE-BUNDLED-IMPLEMENTER@1
@@ -197,7 +197,7 @@
 
 ## investigator
 
-- Definition version: 2
+- Definition version: 1
 - Required: true
 - Mission: Produce a causal diagnosis and reproducible evidence without changing the candidate.
 - Context: ROLE-BUNDLED-INVESTIGATOR@1
@@ -234,7 +234,7 @@
 
 ## planner
 
-- Definition version: 2
+- Definition version: 1
 - Required: true
 - Mission: Turn approved intent into a coherent delivery proposal with acceptance boundaries.
 - Context: ROLE-BUNDLED-PLANNER@1
@@ -273,7 +273,7 @@
 
 ## refuter
 
-- Definition version: 2
+- Definition version: 1
 - Required: true
 - Mission: Find material flaws in a proposal before work is committed.
 - Context: ROLE-BUNDLED-REFUTER@1
@@ -311,7 +311,7 @@
 
 ## reviewer
 
-- Definition version: 2
+- Definition version: 1
 - Required: true
 - Mission: Independently judge a candidate and its evidence against approved acceptance.
 - Context: ROLE-BUNDLED-REVIEWER@1

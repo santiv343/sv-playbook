@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
+import { packets } from './schema.constants.js';
 import {
   amendPacket,
   createPacket,
@@ -57,6 +59,28 @@ test('amend in active state rejects updates to fields other than write_set', asy
     /only write_set can be amended in active/,
   );
 });
+
+for (const { status, pid } of [{ status: STATUS.DONE, pid: 'AMD-DONE-001' }, { status: STATUS.DROPPED, pid: 'AMD-DROPPED-001' }, { status: STATUS.BLOCKED, pid: 'AMD-BLOCKED-001' }]) {
+  test(`amend rejects packets in ${status}`, async () => {
+    const { root, store } = await setup();
+    createPacket(store, root, def(pid), 'a');
+    if (status === STATUS.DROPPED) {
+      movePacket(store, undefined, pid, STATUS.DROPPED);
+    } else if (status === STATUS.BLOCKED) {
+      movePacket(store, undefined, pid, STATUS.READY);
+      const s = ensureSession(store, root);
+      startPacket(store, s, root, pid);
+      movePacket(store, s, pid, STATUS.BLOCKED);
+    } else {
+      movePacket(store, undefined, pid, STATUS.READY);
+      store.orm.update(packets).set({ status: STATUS.DONE }).where(eq(packets.id, pid)).run();
+    }
+    assert.throws(
+      () => { amendPacket(store, root, pid, { body: 'x' }); },
+      /cannot amend packet/,
+    );
+  });
+}
 
 test('amendPacket does not write a .md file to disk', async () => {
   const { root, store } = await setup();

@@ -202,6 +202,7 @@ const SUBCOMMANDS: Readonly<Record<string, (args: string[], io: Io) => number>> 
 export const command: Command = {
   name: 'contract',
   summary: 'Manage authoritative JSON Schema contracts for typed role handoffs',
+  usage: USAGE,
   run(args, io): Promise<number> {
     try {
       const [subcommand, ...rest] = args;

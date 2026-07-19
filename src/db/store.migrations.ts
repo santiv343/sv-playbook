@@ -100,8 +100,8 @@ function migrateSprintsTables(db: Database.Database): void {
   }
 }
 
-function migrateEventsTable(db: Database.Database): void {
-  const eventCheck = `command TEXT NOT NULL CHECK (command IN (${sqlInList(EVENT_COMMANDS)}))`;
+function migrateEventsTable(db: Database.Database): void { const eventCheck = `command TEXT NOT NULL CHECK (command IN (${sqlInList(EVENT_COMMANDS)}))`;
+
   db.exec(`CREATE TABLE events_new (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT,
@@ -236,6 +236,7 @@ const migrations = {
   'event-commands-2': migrateEventsTable,
   'event-commands-3': migrateEventsTable,
   'event-commands-4': migrateEventsTable,
+  'event-commands-5': migrateEventsTable,
   'schema-11': noVersionSpecificMigration,
   'schema-12': noVersionSpecificMigration,
   'schema-13': noVersionSpecificMigration,

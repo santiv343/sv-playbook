@@ -37,6 +37,7 @@ import type {
   ManualInputBinding,
   PendingReviewCandidate,
   ReviewCandidateNote,
+  ReviewCandidateSummary,
   ReviewCandidateValue,
   ReviewProjectionEvidence,
 } from './review-candidate.types.js';
@@ -324,6 +325,33 @@ function candidateArtifactId(store: Store, definition: StoredWorkDefinition): st
     throw new ContextError(REVIEW_CANDIDATE_ERROR.CANDIDATE_MISSING, definition.packetId);
   }
   return candidate.artifactId;
+}
+
+function selectReviewCandidateSummary() {
+  return {
+    id: reviewCandidates.id,
+    packetId: reviewCandidates.packetId,
+    workDefinitionVersion: reviewCandidates.workDefinitionVersion,
+    candidateSha: reviewCandidates.candidateSha,
+    branch: reviewCandidates.branch,
+    createdAt: reviewCandidates.createdAt,
+  };
+}
+
+export function listReviewCandidates(store: Store, packetId?: string): readonly ReviewCandidateSummary[] {
+  const columns = selectReviewCandidateSummary();
+  if (packetId === undefined) {
+    return store.orm.select(columns).from(reviewCandidates)
+      .orderBy(desc(reviewCandidates.createdAt)).all();
+  }
+  return store.orm.select(columns).from(reviewCandidates)
+    .where(eq(reviewCandidates.packetId, packetId))
+    .orderBy(desc(reviewCandidates.createdAt)).all();
+}
+
+export function getReviewCandidate(store: Store, id: string): ReviewCandidateSummary | undefined {
+  return store.orm.select(selectReviewCandidateSummary()).from(reviewCandidates)
+    .where(eq(reviewCandidates.id, id)).get();
 }
 
 export function resolveManualInput(

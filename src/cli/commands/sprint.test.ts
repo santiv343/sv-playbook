@@ -94,3 +94,8 @@ test('sprint unknown subcommand exits 2 with usage', async () => {
   assert.equal(await sprintCommand.run(['frobnicate'], io), 2);
   assert.ok(io.errLines.some((l) => l.includes('Usage')));
 });
+
+test('sprint command declares a non-empty usage string', () => {
+  assert.notEqual(sprintCommand.usage.trim(), '');
+  assert.match(sprintCommand.usage, /^Usage:\n\s+sv-playbook sprint/);
+});
