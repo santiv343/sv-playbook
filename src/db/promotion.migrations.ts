@@ -8,23 +8,47 @@ import { PROMOTION_STORE_SCHEMA } from './store.constants.js';
 import { SQLITE_COLUMN_TYPE } from './schema-vocabulary.constants.js';
 import { migrateTableColumn } from './store.migration-helpers.js';
 
-const CANDIDATE_TABLE_PATTERN = /CREATE TABLE IF NOT EXISTS promotion_candidates\s*\(([\s\S]*?)\);/i;
-const CANDIDATE_COLUMN_PATTERN = /^\s*([a-z_]+)\s+(INTEGER|TEXT)\b/img;
+interface BackfillColumn {
+  name: string;
+  type: string;
+  notNull: boolean;
+}
+
+const BACKFILL_COLUMNS: readonly BackfillColumn[] = [
+  { name: 'review_candidate_id', type: 'TEXT', notNull: true },
+  { name: 'work_definition_version', type: 'INTEGER', notNull: true },
+  { name: 'work_definition_digest', type: 'TEXT', notNull: true },
+  { name: 'config_digest', type: 'TEXT', notNull: true },
+  { name: 'contract_digest', type: 'TEXT', notNull: true },
+];
 
 export function addPromotionTables(db: Database.Database): void {
   db.exec(PROMOTION_STORE_SCHEMA);
-  const schemaMatch = PROMOTION_STORE_SCHEMA.match(CANDIDATE_TABLE_PATTERN);
-  if (schemaMatch === null) return;
-  const tableBody = schemaMatch[1];
-  if (tableBody === undefined) return;
   const existingColumns = new Set(
     db.prepare(`SELECT name FROM pragma_table_info('${PROMOTION_TABLE.CANDIDATES}')`).pluck(true).all().map(String),
   );
-  for (const match of tableBody.matchAll(CANDIDATE_COLUMN_PATTERN)) {
-    const [, name, type] = match;
-    if (name !== undefined && type !== undefined && !existingColumns.has(name)) {
-      migrateTableColumn(db, PROMOTION_TABLE.CANDIDATES, name, type, false);
+  const missing = BACKFILL_COLUMNS.filter(col => !existingColumns.has(col.name));
+  if (missing.length === 0) return;
+
+  if (!existingColumns.has('review_candidate_id')) {
+    const rows = db.prepare(`SELECT * FROM ${PROMOTION_TABLE.CANDIDATES}`).all();
+    const oldCols = [...existingColumns];
+    db.exec(`DROP TABLE ${PROMOTION_TABLE.CANDIDATES}`);
+    db.exec(PROMOTION_STORE_SCHEMA);
+    if (rows.length > 0) {
+      const placeholders = oldCols.map(() => '?').join(', ');
+      const insert = db.prepare(
+        `INSERT INTO ${PROMOTION_TABLE.CANDIDATES} (${oldCols.join(', ')}) VALUES (${placeholders})`,
+      );
+      for (const row of rows) {
+        insert.run(...oldCols.map(col => (row as Record<string, unknown>)[col]));
+      }
     }
+    return;
+  }
+
+  for (const col of missing) {
+    migrateTableColumn(db, PROMOTION_TABLE.CANDIDATES, col.name, col.type, col.notNull);
   }
 }
 
