@@ -36,6 +36,7 @@ import type {
   ManualInputBinding,
   PendingReviewCandidate,
   ReviewCandidateNote,
+  ReviewCandidateSummary,
   ReviewCandidateValue,
   ReviewProjectionEvidence,
 } from './review-candidate.types.js';
@@ -311,15 +312,6 @@ function candidateArtifactId(store: Store, definition: StoredWorkDefinition): st
     throw new ContextError(REVIEW_CANDIDATE_ERROR.CANDIDATE_MISSING, definition.packetId);
   }
   return candidate.artifactId;
-}
-
-export interface ReviewCandidateSummary {
-  readonly id: string;
-  readonly packetId: string;
-  readonly workDefinitionVersion: number;
-  readonly candidateSha: string;
-  readonly branch: string;
-  readonly createdAt: string;
 }
 
 function selectReviewCandidateSummary() {
