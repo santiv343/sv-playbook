@@ -175,9 +175,9 @@ async function runTarget(root: string, target: string, io: Io): Promise<number |
 
 export const command: Command = {
   name: 'check',
-    summary: 'Validate authored artifacts (structure, instructions drift)',
-    usage: 'Usage: sv-playbook check [target...]',
-    async run(args, io) {
+  summary: 'Validate authored artifacts (structure, instructions drift)',
+  usage: 'Usage: sv-playbook check [target...]',
+  async run(args, io) {
       const root = getCwd();
       const targets = args.length === 0 ? Object.keys(TARGETS) : args;
       let hasViolations = false;
