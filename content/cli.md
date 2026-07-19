@@ -80,7 +80,7 @@ Run `sv-playbook describe` for the exact, always-current argument syntax.
 ### `sv-playbook describe`
 
 When: produce a machine-readable JSON catalog of all registered CLI
-commands. Each entry has `name` and `summary` fields. Takes no arguments.
+commands. Each entry has `name`, `summary`, and `usage` fields. Takes no arguments.
 
 Why: the JSON output feeds the MCP wrapper and harness skills so they
 can discover available commands programmatically.

@@ -86,7 +86,7 @@ test('check structure distinguishes historical baselined packet violations from 
     const frontmatter = [
       '---',
       'id: FOO-001',
-      'title: 'test',
+      'title: test',
       'depends_on: []',
       'write_set: ["src/x.ts"]',
       'requirements: []',
