@@ -5,20 +5,33 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { openStore } from '../db/store.js';
 import { addExecutionProfile } from '../gateway/profiles.js';
-import { executionProfiles } from '../gateway/schema.constants.js';
+import { executionProfiles, roleProjectionReceipts } from '../gateway/schema.constants.js';
 import { bootstrapBundledRoleCatalog } from './bundled-profile-bootstrap.js';
 import { checkRoleSystem } from './system-check.js';
 
-test('checkRoleSystem passes when no execution profiles exist', async () => {
+test('checkRoleSystem passes when no execution profiles exist (virgin path)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-system-check-no-profiles-'));
   const store = openStore(root);
-  bootstrapBundledRoleCatalog(store);
 
   const result = await checkRoleSystem(store, root);
 
   assert.equal(result.valid, true);
   assert.deepEqual(result.violations, []);
   assert.equal(store.orm.select().from(executionProfiles).all().length, 0);
+  assert.equal(store.orm.select().from(roleProjectionReceipts).all().length, 0);
+  store.close();
+});
+
+test('checkRoleSystem returns charter/receipt violation when projection was never generated', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-system-check-no-projection-'));
+  const store = openStore(root);
+  bootstrapBundledRoleCatalog(store);
+
+  const result = await checkRoleSystem(store, root);
+
+  assert.equal(result.valid, false);
+  assert.ok(result.violations.some((v) => v.includes('ROLE_PROJECTION_RECEIPT_MISSING')));
+  assert.equal(store.orm.select().from(roleProjectionReceipts).all().length, 0);
   store.close();
 });
 
