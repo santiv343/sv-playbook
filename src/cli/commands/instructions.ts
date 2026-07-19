@@ -69,16 +69,17 @@ export async function renderInstructions(opts: RenderOptions): Promise<void> {
 
 export const command: Command = {
   name: 'instructions',
-    summary: 'Generate cold-start agent instructions from a single source',
-    async run(args, io) {
-      const parsed = parseArgs({
-        args,
-        options: {
-          write: { type: 'boolean' },
-        },
-      });
-      const root = getCwd();
-      await renderInstructions({ root, io, write: !!parsed.values.write });
-      return EXIT.OK;
-    },
+  summary: 'Generate cold-start agent instructions from a single source',
+  usage: 'Usage: sv-playbook instructions [--write]',
+  async run(args, io) {
+    const parsed = parseArgs({
+      args,
+      options: {
+        write: { type: 'boolean' },
+      },
+    });
+    const root = getCwd();
+    await renderInstructions({ root, io, write: !!parsed.values.write });
+    return EXIT.OK;
+  },
 };

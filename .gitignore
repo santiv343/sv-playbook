@@ -9,6 +9,10 @@ dist/
 scripts/*
 !scripts/clean-dist.mjs
 !scripts/copy-serve-assets.mjs
+!scripts/stamp-build-digest.mjs
 !scripts/bootstrap-*.mjs
 !scripts/regenerate-context-content.mjs
 *.tgz
+
+# Superpowers scratch workspace
+.superpowers/

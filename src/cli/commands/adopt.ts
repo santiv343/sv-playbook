@@ -13,6 +13,8 @@ import type { GapReport } from '../../adopt/gap.types.js';
 import { GAP_STATUS } from '../../adopt/gap.types.js';
 import type { Io } from '../command.types.js';
 
+const USAGE = 'Usage: sv-playbook adopt [target-dir] [--force] [--tier <TIER>]';
+
 function printInventory(io: Io, targetDir: string, inventory: InventoryReport): void {
   io.out(`Target: ${targetDir}`);
   io.out(`Stack: ${inventory.stack.length > 0 ? inventory.stack.join(', ') : 'unknown'}`);
@@ -41,8 +43,9 @@ function resolveTargetDir(positionals: (string | undefined)[]): string {
 
 export const command: Command = {
   name: 'adopt',
-    summary: 'Analyze a repo and scaffold playbook artifacts (inventory+gap only by default; --force to scaffold)',
-    run(args, io): Promise<number> {
+  summary: 'Analyze a repo and scaffold playbook artifacts (inventory+gap only by default; --force to scaffold)',
+  usage: USAGE,
+  run(args, io): Promise<number> {
       const parsed = parseArgs({
         args,
         allowPositionals: true,
@@ -52,7 +55,7 @@ export const command: Command = {
         },
       });
       if (parsed.positionals.length > 1) {
-        io.err('Usage: sv-playbook adopt [target-dir] [--force] [--tier <TIER>]');
+        io.err(USAGE);
         return Promise.resolve(EXIT.USAGE);
       }
       const targetDir = resolveTargetDir(parsed.positionals);

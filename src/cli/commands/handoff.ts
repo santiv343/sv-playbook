@@ -88,55 +88,56 @@ function renderPrs(): string[] {
 
 export const command: Command = {
   name: 'handoff',
-    summary: 'Generate a deterministic continuation prompt from live state',
-    run(args, io: Io): Promise<number> {
-      const parsed = parseArgs({
-        args,
-        strict: false,
-        options: {
-          role: { type: 'string', default: HANDOFF_ROLE_DEFAULT },
-          force: { type: 'boolean', default: false },
-        },
-      });
+  summary: 'Generate a deterministic continuation prompt from live state',
+  usage: 'Usage: sv-playbook handoff [--role <role>] [--force]',
+  run(args, io: Io): Promise<number> {
+    const parsed = parseArgs({
+      args,
+      strict: false,
+      options: {
+        role: { type: 'string', default: HANDOFF_ROLE_DEFAULT },
+        force: { type: 'boolean', default: false },
+      },
+    });
 
-      const repoRoot = commonRoot(getCwd());
-      const store = openStore(repoRoot);
-      try {
-        const stale = staleActivePackets(store);
-        if (stale.length > 0 && !parsed.values.force) {
-          io.err(
-            '⚠ The following active/blocked packets have stale notes (state changed without a follow-up note):',
-          );
-          for (const id of stale) {
-            io.err(`  - ${id}`);
-          }
-          io.err(
-            'Run `sv-playbook task note <id> "<where I left off>"` for each, then re-run handoff. Or use --force to skip.',
-          );
-          return Promise.resolve(EXIT.GATE_FAIL);
+    const repoRoot = commonRoot(getCwd());
+    const store = openStore(repoRoot);
+    try {
+      const stale = staleActivePackets(store);
+      if (stale.length > 0 && !parsed.values.force) {
+        io.err(
+          '⚠ The following active/blocked packets have stale notes (state changed without a follow-up note):',
+        );
+        for (const id of stale) {
+          io.err(`  - ${id}`);
         }
-
-        const status = readBoardStatus(store, repoRoot);
-        const role = String(parsed.values.role);
-
-        const output: string[] = [];
-        output.push(rolePointers(role));
-        output.push('');
-        output.push(...renderBoardSnapshot(status));
-        output.push('');
-        output.push(...renderPrs());
-        output.push('');
-
-        const packetsByStatus = new Map<string, string[]>();
-        for (const [state] of Object.entries(status.counts)) {
-          packetsByStatus.set(state, status.packets.filter((p) => p.status === state).map((p) => p.id));
-        }
-        output.push(nextActionAndCounts(packetsByStatus));
-
-        for (const line of output) io.out(line);
-        return Promise.resolve(EXIT.OK);
-      } finally {
-        store.close();
+        io.err(
+          'Run `sv-playbook task note <id> "<where I left off>"` for each, then re-run handoff. Or use --force to skip.',
+        );
+        return Promise.resolve(EXIT.GATE_FAIL);
       }
-    },
+
+      const status = readBoardStatus(store, repoRoot);
+      const role = String(parsed.values.role);
+
+      const output: string[] = [];
+      output.push(rolePointers(role));
+      output.push('');
+      output.push(...renderBoardSnapshot(status));
+      output.push('');
+      output.push(...renderPrs());
+      output.push('');
+
+      const packetsByStatus = new Map<string, string[]>();
+      for (const [state] of Object.entries(status.counts)) {
+        packetsByStatus.set(state, status.packets.filter((p) => p.status === state).map((p) => p.id));
+      }
+      output.push(nextActionAndCounts(packetsByStatus));
+
+      for (const line of output) io.out(line);
+      return Promise.resolve(EXIT.OK);
+    } finally {
+      store.close();
+    }
+  },
 };
