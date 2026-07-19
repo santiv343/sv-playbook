@@ -13,6 +13,7 @@ import {
   startPacket,
 } from './service.js';
 import { STATUS } from './service.constants.js';
+import { writeServiceTestConfig } from './service.test.support.js';
 
 const DEPENDENCY_ID = {
   START: 'DEP-001',
@@ -39,6 +40,7 @@ function definition(id: string, dependsOn: readonly string[] = []) {
 
 async function setup() {
   const root = await mkdtemp(join(tmpdir(), 'svp-dependencies-'));
+  await writeServiceTestConfig(root);
   return { root, store: openStore(root) };
 }
 

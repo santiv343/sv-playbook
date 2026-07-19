@@ -2,8 +2,9 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from '../db/store.types.js';
-import { numberColumn, stringColumn } from '../db/rows.js';
-import { generatePacketDocument, parsePacketDocument } from '../packets/document.js';
+
+import { nullableStringColumn, numberColumn, stringColumn } from '../db/rows.js';
+import { parsePacketDocument } from '../packets/document.js';
 import type { PacketDefinition } from '../packets/document.types.js';
 import { LifecycleError } from './service.errors.js';
 import { contentDir } from '../content.js';
@@ -39,6 +40,7 @@ import { loadWorkDefinition, recordWorkDefinition, workDefinitionValue } from '.
 import { eq } from 'drizzle-orm';
 import { packets } from './schema.constants.js';
 import { overlaps } from './write-set.js';
+import { assertCheckpointClear } from './checkpoint-gate.js';
 import { captureLegacyReviewEvidence } from './legacy-review-evidence.js';
 import {
   persistReviewCandidate,
@@ -63,15 +65,11 @@ function recordTransition(store: Store, packetId: string, from: string, to: stri
   store.db.prepare(INSERT_EVENT_SQL).run(sessionId ?? null, packetId, EVENT_TRANSITION, `${from}->${to}`, now());
 }
 
-export function createPacket(store: Store, docRoot: string, def: PacketDefinition, body: string, type?: string): void {
+export function createPacket(store: Store, _docRoot: string, def: PacketDefinition, body: string, type?: string): void {
   const exists = store.db.prepare(EXISTS_SQL).get(def.id);
   if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`, 'existing packet file? use task import <path>');
-  const dir = join(docRoot, PACKETS_DOCS_DIR, PACKETS_DIR);
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${def.id}.md`);
-  writeFileSync(path, generatePacketDocument(def, body), 'utf8');
   transact(store, () => {
-    store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, path, STATUS.DRAFT, body, JSON.stringify(def.writeSet), type ?? '', now(), now());
+    store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, null, STATUS.DRAFT, body, JSON.stringify(def.writeSet), type ?? '', now(), now());
     for (const depId of def.dependsOn) {
       store.db.prepare('INSERT INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);
     }
@@ -148,7 +146,7 @@ export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
   const row = store.db.prepare('SELECT session_id, worktree, acquired_at, heartbeat_at FROM leases WHERE packet_id = ?').get(packetId);
   if (row === undefined) return undefined;
   const heartbeatAt = stringColumn(row, 'heartbeat_at');
-  const leaseTtlMs = loadConfig(dirname(store.dir)).tasks.leaseTtlMs;
+  const leaseTtlMs = loadConfig(store.repoRoot).tasks.leaseTtlMs;
   return { sessionId: stringColumn(row, 'session_id'), worktree: stringColumn(row, 'worktree'),
     acquiredAt: stringColumn(row, 'acquired_at'), heartbeatAt,
     stale: Date.now() - Date.parse(heartbeatAt) > leaseTtlMs };
@@ -196,9 +194,7 @@ export function releaseLease(store: Store, sessionId: string, packetId: string):
   refreshHeartbeat(store, sessionId);
   transact(store, () => { store.db.prepare(DELETE_LEASE_SQL).run(packetId); });
 }
-function parseGlobs(raw: string): string[] {
-  const parsed: unknown = JSON.parse(raw); return Array.isArray(parsed) ? parsed.filter((s) => typeof s === 'string') : [];
-}
+function parseGlobs(raw: string): string[] { const parsed: unknown = JSON.parse(raw); return Array.isArray(parsed) ? parsed.filter((s) => typeof s === 'string') : []; }
 function ourGlobs(store: Store, packetId: string): string[] {
   const row = store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get(packetId);
   return row === undefined ? [] : parseGlobs(stringColumn(row, 'write_set'));
@@ -222,7 +218,7 @@ function gateReview(store: Store, packetId: string, from: string, to: string): v
   if (glbs.length === 0) return;
   let changed: readonly string[];
   try {
-    const baseReference = loadConfig(dirname(store.dir)).reviewPreflight.baseReference;
+    const baseReference = loadConfig(store.repoRoot).reviewPreflight.baseReference;
     changed = changedFilesForBase(lease.worktree, baseReference);
   } catch (error: unknown) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -234,8 +230,7 @@ function gateReview(store: Store, packetId: string, from: string, to: string): v
 const gateEvidence = (store: Store, packetId: string, to: string): void => {
   if (to !== STATUS.DONE) return;
   const { evidenceRequired } = loadWorkDefinition(store, packetId).value;
-  if (evidenceRequired.length > 0 && store.db.prepare("SELECT 1 FROM events WHERE packet_id = ? AND command = ? LIMIT 1").all(packetId, EVENT_EVIDENCE).length === 0)
-    throw new LifecycleError(`missing required evidence: ${evidenceRequired.join(', ')}`);
+  if (evidenceRequired.length > 0 && store.db.prepare("SELECT 1 FROM events WHERE packet_id = ? AND command = ? LIMIT 1").all(packetId, EVENT_EVIDENCE).length === 0) throw new LifecycleError(`missing required evidence: ${evidenceRequired.join(', ')}`);
 };
 function gateVerify(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
@@ -255,6 +250,7 @@ export function validateMove(
   if (to === STATUS.ACTIVE) throw new LifecycleError('use task start to activate a packet');
   const allowed = ALLOWED.get(from) ?? [];
   if (!allowed.includes(to)) throw new LifecycleError(`illegal transition ${from} -> ${to}`);
+  if (to === STATUS.READY || to === STATUS.REVIEW) assertCheckpointClear(store, packetId);
   if (to === STATUS.READY) checkWriteSetConflict(store, packetId);
   if (from === STATUS.ACTIVE) assertLeaseForActive(store, sessionId, packetId);
   gateReview(store, packetId, from, to);
@@ -329,20 +325,22 @@ function getDeps(store: Store, packetId: string): string[] {
   const rows = store.db.prepare('SELECT depends_on_id FROM packet_deps WHERE packet_id = ? ORDER BY depends_on_id').all(packetId);
   return rows.map((row) => stringColumn(row, 'depends_on_id'));
 }
+function resolveBody(body: string, path: string | null, packetId: string): string {
+  if (body !== '') return body;
+  if (path === null) throw new LifecycleError(`packet body missing and no file path for: ${packetId}`);
+  if (!existsSync(path)) throw new LifecycleError(`packet file missing: ${path}`);
+  const text = readFileSync(path, 'utf8');
+  return parsePacketDocument(text).body;
+}
+
 export function briefPacket(store: Store, packetId: string): string {
   const row = store.db.prepare('SELECT id, title, path, status, body FROM packets WHERE id = ?').get(packetId);
   if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
   const id = stringColumn(row, 'id');
   const title = stringColumn(row, 'title');
-  const path = stringColumn(row, 'path');
+  const path = nullableStringColumn(row, 'path');
   const status = stringColumn(row, 'status');
-  let body = stringColumn(row, 'body');
-  if (body === '') {
-    if (!existsSync(path)) throw new LifecycleError(`packet file missing: ${path}`);
-    const text = readFileSync(path, 'utf8');
-    const parsed = parsePacketDocument(text);
-    body = parsed.body;
-  }
+  const body = resolveBody(stringColumn(row, 'body'), path, id);
   const deps = getDeps(store, packetId);
   const depLine = deps.length > 0 ? deps.join(', ') : 'none';
   const lease = leaseOf(store, packetId);

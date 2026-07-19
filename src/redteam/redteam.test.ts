@@ -5,9 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openStore } from '../db/store.js';
+import { openStore, resolveStoreDir } from '../db/store.js';
 import { stringColumn, numberColumn } from '../db/rows.js';
-import { DB_FILE, SVP_DIR } from '../db/store.constants.js';
+import { DB_FILE } from '../db/store.constants.js';
 import {
   createPacket,
   ensureSession,
@@ -20,6 +20,7 @@ import {
 import { STATUS } from '../tasks/service.constants.js';
 import { setupServiceTest } from '../tasks/service.test.support.js';
 import { initTestRepo } from '../testkit.js';
+import { generatePacketDocument } from '../packets/document.js';
 
 const def = (id: string, deps: string[] = [], ws: string[] = ['src/redteam/**']) => ({
   id,
@@ -114,10 +115,10 @@ test('red team: deleting .svp DB is recoverable via rebuild', async () => {
   const { root, store } = await setupStore();
   createPacket(store, root, def('RT-RECOVER-001'), 'a');
   store.close();
-  const dbPath = join(root, SVP_DIR, DB_FILE);
-  assert.ok(existsSync(dbPath), '.svp DB should exist');
+  const dbPath = join(resolveStoreDir(root), DB_FILE);
+  assert.ok(existsSync(dbPath), 'store DB should exist');
   rmSync(dbPath);
-  assert.ok(!existsSync(dbPath), '.svp DB should be deleted');
+  assert.ok(!existsSync(dbPath), 'store DB should be deleted');
   const store2 = openStore(root);
   assert.ok(store2.db, 'store re-opens after deletion');
   const rows = store2.db.prepare('SELECT COUNT(*) AS cnt FROM packets').all();
@@ -240,8 +241,11 @@ test('red team: fabricated SHA in evidence events does not match git HEAD', asyn
 // ---- CHEAT 9: Export drift detection ----
 test('red team: hand-editing a generated .md export is detected and synced by importPackets', async () => {
   const { root, store } = await setupStore();
-  createPacket(store, root, def('RT-DRIFT-001'), 'Original body.\n');
+  const definition = def('RT-DRIFT-001');
+  createPacket(store, root, definition, 'Original body.\n');
   const mdPath = join(root, 'docs', 'packets', 'RT-DRIFT-001.md');
+  await mkdir(join(root, 'docs', 'packets'), { recursive: true });
+  await writeFile(mdPath, generatePacketDocument(definition, 'Original body.\n'), 'utf8');
   const original = await readFile(mdPath, 'utf8');
   assert.ok(original.includes('Original body.'), 'original export has the body');
   assert.ok(original.includes('<!-- GENERATED FROM THE BOARD'), 'original export has GENERATED banner');
@@ -299,7 +303,7 @@ test('red team: moving to review when verify command fails is refused by the ver
   await writeFile(join(root, 'src', 'redteam', 'file.ts'), ' ', 'utf8');
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-m', 'x'], { cwd: root });
-  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node -e process.exit(1)' }), 'utf8');
+  await writeFile(join(root, 'playbook.config.json'), JSON.stringify({ verifyCommand: 'node -e process.exit(1)', tasks: { complexityCheckpoint: { enabled: false, requireDecisionForTypes: [], requireDecisionForPaths: [] } } }), 'utf8');
   const store = openStore(root);
   createPacket(store, root, def('RT-VERIFY-001'), 'a');
   const session = ensureSession(store, root);
@@ -325,15 +329,15 @@ test('red team: starting a draft packet is refused with the current status name'
 });
 
 // ---- SAFETY: Store migration always uses fixture DBs, never the shared .svp ----
-test('red team: store fixture DB is used during migration, never the shared .svp', async () => {
+test('red team: store fixture DB lives outside the fixture root after relocation', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rt-mig-'));
   initTestRepo(root);
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: root });
 
   const store = openStore(root);
-  const fixturePath = join(root, SVP_DIR, DB_FILE);
-  assert.ok(existsSync(fixturePath), 'fixture DB must exist under fixture root');
-  assert.ok(fixturePath.startsWith(root), 'fixture DB path must be under the test root');
+  const fixturePath = join(resolveStoreDir(root), DB_FILE);
+  assert.ok(existsSync(fixturePath), 'fixture DB must exist at the resolved external location');
+  assert.ok(!fixturePath.startsWith(root), 'fixture DB path must be outside the test root');
   store.close();
 });
 

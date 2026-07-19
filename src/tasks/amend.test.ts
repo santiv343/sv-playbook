@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   amendPacket,
   createPacket,
@@ -54,4 +56,14 @@ test('amend in active state rejects updates to fields other than write_set', asy
     () => { amendPacket(store, root, 'AMD-ACTIVE-003', { body: 'new body' }); },
     /only write_set can be amended in active/,
   );
+});
+
+test('amendPacket does not write a .md file to disk', async () => {
+  const { root, store } = await setup();
+  createPacket(store, root, def('AMD-NO-MD-001'), 'a');
+  movePacket(store, undefined, 'AMD-NO-MD-001', STATUS.READY);
+  const s1 = ensureSession(store, root);
+  startPacket(store, s1, root, 'AMD-NO-MD-001');
+  amendPacket(store, root, 'AMD-NO-MD-001', { writeSet: ['src/**', 'docs/**'] });
+  assert.equal(existsSync(join(root, 'docs', 'packets', 'AMD-NO-MD-001.md')), false);
 });

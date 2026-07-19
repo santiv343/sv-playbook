@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { loadConfig } from '../config.js';
 import { PLAYBOOK_CONFIG_FILE_NAME } from '../config.constants.js';
 import type { Store } from '../db/store.types.js';
@@ -276,7 +276,7 @@ export async function runPreflight(
 
   const definition = loadWorkDefinition(store, packetId);
   const writeSet = definition.value.writeSet;
-  const configurationRoot = dirname(store.dir);
+  const configurationRoot = store.repoRoot;
   const config = loadConfig(configurationRoot);
   const baseReference = config.reviewPreflight.baseReference;
   const mergeBase = findMergeBase(worktree, baseReference);

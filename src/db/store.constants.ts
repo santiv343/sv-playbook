@@ -145,7 +145,7 @@ export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS packets (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
-  path TEXT NOT NULL,
+  path TEXT,
   status TEXT NOT NULL DEFAULT '${STATUS.DRAFT}' CHECK (status IN (${sqlInList(PACKET_STATUSES)})),
   body TEXT NOT NULL DEFAULT '',
   write_set TEXT NOT NULL DEFAULT '[]',
@@ -206,6 +206,8 @@ CREATE TABLE IF NOT EXISTS decisions (
   id TEXT PRIMARY KEY,
   question TEXT NOT NULL,
   answer TEXT,
+  packet_id TEXT REFERENCES packets(id),
+  answered_against_version INTEGER,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

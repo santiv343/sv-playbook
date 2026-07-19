@@ -10,6 +10,14 @@
     "noOutputTimeoutMs": 600000
   },
   "autonomy": "strict",
+  "tasks": {
+    "leaseTtlMs": 1800000,
+    "complexityCheckpoint": {
+      "enabled": false,
+      "requireDecisionForTypes": [],
+      "requireDecisionForPaths": []
+    }
+  },
   "backup": {
     "enabled": true,
     "retention": 3,
@@ -30,16 +38,16 @@
   },
   "baseline": {
     "ormApplicationSql": {
-      "count": 278,
-      "digest": "f3108cee2fbd38377d0d7c65b406f919ffa41801f2f1aa39c3e19bc4dccb2dcd"
+      "count": 281,
+      "digest": "55744a6ce6d41136e060a2f5da8cf2387c1c0ef00c75e16ef740deffddbf4a31"
     },
     "literalComparisons": {
-      "count": 276,
-      "digest": "ee08dd851bdd1b253d5197b116d1f84cc5eddc2f446d3acea6c15b51cb100f59"
+      "count": 278,
+      "digest": "8995bc81c45074e37f57b6af7bc81dc1d1a70909aff4f26448d18c4b09c8ef75"
     },
     "duplicateStrings": {
-      "count": 1313,
-      "digest": "e2abf31d3a0fe29ff0fb326e0ad760a7a9a73b621d76850615f3faf526b94165"
+      "count": 1308,
+      "digest": "7db3d1a12878df639027206ea8d8c97ef6fb35cbae52339699ccd138ac8c10b8"
     },
     "fingerprints": [
       "docs/packets/ADOPT-AURORA-001.md",

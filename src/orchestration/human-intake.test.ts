@@ -15,7 +15,7 @@ import { readWorkflowDashboard } from './observability.js';
 import { WORKFLOW_EXECUTOR, WORKFLOW_STATUS } from './orchestration.constants.js';
 import { claimWorkflowEffect, registerWorkflowDefinition } from './service.js';
 
-const TEST_ENTRY_ROLE = 'custom-intake-interface';
+const TEST_ENTRY_ROLE = 'human-interface';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -71,7 +71,7 @@ async function fixture() {
   return store;
 }
 
-test('human intake uses the active typed entry workflow without a bundled role id', async () => {
+test('human intake uses the active typed entry workflow for the human-interface role', async () => {
   const store = await fixture();
   const observedAt = '2026-07-14T10:00:00.000Z';
   const started = startHumanIntake(store, { message: '  Continue the project  ', requestedBy: 'human:test' }, {

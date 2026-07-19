@@ -5,6 +5,7 @@ import { ARTIFACT_CONTRACT_STATUS } from '../contracts/artifact.constants.js';
 import { addArtifactContract } from '../contracts/artifacts.js';
 import { CAPABILITY_EFFECT, CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from '../context/context.constants.js';
 import { addContextItem, replaceContextPrecedence } from '../context/repository.js';
+import { BUNDLED_ROLE_ID } from '../roles/bundled-profile.constants.js';
 import { openStore } from '../db/store.js';
 import type { Store } from '../db/store.types.js';
 import {
@@ -43,7 +44,7 @@ const CONSUME_RESPONSIBILITY_ID = 'candidate.consume';
 const JSON_SCHEMA_DRAFT = 'https://json-schema.org/draft/2020-12/schema';
 const TEST_WORKFLOW_STEP = 'agent';
 const TEST_ROLE_ID = 'implementer';
-const TEST_CONSUMER_ROLE_ID = 'result-consumer';
+const TEST_CONSUMER_ROLE_ID = BUNDLED_ROLE_ID.REVIEWER;
 const TEST_MODEL_EVIDENCE_DIGEST = `sha256:${'a'.repeat(64)}`;
 const TEST_MODEL_EVIDENCE_ASSESSED_AT = '2026-01-01T00:00:00.000Z';
 const TEST_MODEL_EVIDENCE_EXPIRES_AT = '2100-01-01T00:00:00.000Z';

@@ -23,7 +23,7 @@
     "lint": "npm run build && eslint . && node dist/check/source-policy-cli.js",
     "test": "npm run build && node --test \"dist/**/*.test.js\"",
     "test:quiet": "npm run build && node --test --test-reporter dot \"dist/**/*.test.js\"",
-    "verify": "npm run build && node dist/verification/cli.js"
+    "verify": "npm run build && node scripts/bootstrap-context.mjs && node dist/verification/cli.js"
   },
   "dependencies": {
     "ajv": "^8.17.1"

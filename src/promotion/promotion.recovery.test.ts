@@ -41,6 +41,7 @@ test('post-effect adapter failure is recovered by observing the exact target SHA
     reviewCandidateId: fixture.reviewCandidateId,
     reviewerRunSpecId: fixture.reviewerRunSpecId,
   });
+  const store = controller.getStore();
   assert.equal(receipt.resultSha, fixture.candidateSha);
   assert.equal(effectCount, 1);
   assert.deepEqual(await controller.promote({
@@ -48,7 +49,7 @@ test('post-effect adapter failure is recovered by observing the exact target SHA
     reviewerRunSpecId: fixture.reviewerRunSpecId,
   }), receipt);
   assert.equal(effectCount, 1);
-  fixture.store.close();
+  store.close();
 });
 
 test('failed integration remains review and cannot close', async () => {
@@ -59,18 +60,19 @@ test('failed integration remains review and cannot close', async () => {
     isAncestor: () => true,
     fastForwardRef: () => { throw new Error('effect rejected'); },
   };
+  const controller = new PromotionController(fixture.store, fixture.root, {
+    git,
+    verifyClean: () => Promise.resolve(cleanReceipt(fixture.candidateSha)),
+  });
   await assert.rejects(
-    new PromotionController(fixture.store, fixture.root, {
-      git,
-      verifyClean: () => Promise.resolve(cleanReceipt(fixture.candidateSha)),
-    }).promote({
+    controller.promote({
       reviewCandidateId: fixture.reviewCandidateId,
       reviewerRunSpecId: fixture.reviewerRunSpecId,
     }),
     (error: unknown) => error instanceof PromotionError && error.code === PROMOTION_ERROR.INTEGRATION_FAILED,
   );
-  assert.equal(fixture.store.orm.select({ status: packets.status }).from(packets).get()?.status, STATUS.REVIEW);
-  fixture.store.close();
+  assert.equal(controller.getStore().orm.select({ status: packets.status }).from(packets).get()?.status, STATUS.REVIEW);
+  controller.getStore().close();
 });
 
 test('diverged observation becomes unknown and blocks close', async () => {
@@ -85,16 +87,17 @@ test('diverged observation becomes unknown and blocks close', async () => {
     isAncestor: () => true,
     fastForwardRef: () => undefined,
   };
+  const controller = new PromotionController(fixture.store, fixture.root, {
+    git,
+    verifyClean: () => Promise.resolve(cleanReceipt(fixture.candidateSha)),
+  });
   await assert.rejects(
-    new PromotionController(fixture.store, fixture.root, {
-      git,
-      verifyClean: () => Promise.resolve(cleanReceipt(fixture.candidateSha)),
-    }).promote({
+    controller.promote({
       reviewCandidateId: fixture.reviewCandidateId,
       reviewerRunSpecId: fixture.reviewerRunSpecId,
     }),
     (error: unknown) => error instanceof PromotionError && error.code === PROMOTION_ERROR.INTEGRATION_UNKNOWN,
   );
-  assert.equal(fixture.store.orm.select({ status: packets.status }).from(packets).get()?.status, STATUS.REVIEW);
-  fixture.store.close();
+  assert.equal(controller.getStore().orm.select({ status: packets.status }).from(packets).get()?.status, STATUS.REVIEW);
+  controller.getStore().close();
 });

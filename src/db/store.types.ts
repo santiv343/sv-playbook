@@ -5,6 +5,7 @@ export interface Store {
   readonly db: Database.Database;
   readonly orm: StoreOrm;
   readonly dir: string;
+  readonly repoRoot: string;
   close(): void;
 }
 

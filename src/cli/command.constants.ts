@@ -10,6 +10,8 @@ export const DESTRUCTIVE_LOG_FILE = '.svp/destructive-events.log';
 export const CLI_ASSIGNMENT_SEPARATOR = '=';
 export const CLI_FORCE_FLAG = '--force';
 export const CONFIRM_DESTRUCTIVE_FLAG = '--confirm-destructive';
+export const USAGE_HEADER = 'Usage:';
+export const ERROR_PREFIX = 'error: ';
 export const CLI_OPTION_TYPE = {
   BOOLEAN: 'boolean',
 } as const;

@@ -202,27 +202,6 @@
         "websearch": "deny",
         "write": "deny"
       }
-    },
-    "build": {
-      "description": "Default interactive agent — inherits no role-based restrictions.",
-      "mode": "all",
-      "model": "deepseek/deepseek-v4-pro",
-      "permission": {
-        "*": "deny",
-        "apply_patch": "allow",
-        "bash": "allow",
-        "edit": "allow",
-        "glob": "allow",
-        "grep": "allow",
-        "question": "allow",
-        "read": "allow",
-        "skill": "allow",
-        "task": "allow",
-        "todowrite": "allow",
-        "webfetch": "allow",
-        "websearch": "allow",
-        "write": "allow"
-      }
     }
   }
 }

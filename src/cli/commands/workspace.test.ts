@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,9 +17,6 @@ function fakeIo(): Io & { readonly outLines: string[]; readonly errLines: string
 test('workspace classify exposes deterministic path ownership as json', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-workspace-command-'));
   initTestRepo(root);
-  await writeFile(join(root, '.gitignore'), '.svp/\n.svp-session\ndocs/packets/\n');
-  execFileSync('git', ['add', '.gitignore'], { cwd: root });
-  execFileSync('git', ['-c', 'user.email=test@example.com', '-c', 'user.name=Test', 'commit', '-m', 'initial'], { cwd: root });
   const previous = process.cwd();
   process.chdir(root);
 

@@ -3,3 +3,12 @@ export class LifecycleError extends Error {
     super(message);
   }
 }
+
+export class CheckpointPendingDecisionError extends LifecycleError {
+  constructor(packetId: string, newPatterns: readonly string[]) {
+    super(
+      `packet ${packetId} touches new territory: ${newPatterns.join(', ')}`,
+      'link and answer a decision for this packet before it can proceed',
+    );
+  }
+}

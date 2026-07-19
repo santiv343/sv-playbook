@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { TEXT_ENCODING } from '../../platform.constants.js';
-import { CLI_FORCE_FLAG, EXIT } from '../command.constants.js';
+import { CLI_FORCE_FLAG, ERROR_PREFIX, EXIT, USAGE_HEADER } from '../command.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { extractConfirmDestructive } from '../command.js';
 import { commonRoot, worktreeRoot } from '../../db/store.js';
@@ -11,7 +11,6 @@ import { BACKUP_EVENT, BACKUP_REASON } from '../../db/backup.constants.js';
 import type { Store } from '../../db/store.types.js';
 import type { BackupEvent, BackupReason } from '../../db/backup.types.js';
 import { loadConfig } from '../../config.js';
-import { parsePacketDocument } from '../../packets/document.js';
 import { PacketFormatError } from '../../packets/document.errors.js';
 import type { PacketDefinition } from '../../packets/document.types.js';
 import { numberColumn, stringColumn } from '../../db/rows.js';
@@ -31,12 +30,14 @@ import {
   takeoverPacket,
   amendPacket,
 } from '../../tasks/service.js';
+import { loadWorkDefinition } from '../../tasks/work-definitions.js';
 import { movePacketToReview } from '../../tasks/review-transition.js';
 import { DEFAULT_EVIDENCE, EVENT_NOTE, EVENT_TAKEOVER, PACKET_STATUSES, STATUS } from '../../tasks/service.constants.js';
 import { LifecycleError } from '../../tasks/service.errors.js';
 import type { PacketStatus, RecoveryReport } from '../../tasks/service.types.js';
 import { checkDestructiveGate, queryDestructiveCounts } from '../destructive-gate.js';
 import { withStore, withStoreAsync } from '../store.js';
+import { STRING_OPTION } from './options.constants.js';
 
 interface Subcommand {
   usage: string;
@@ -45,7 +46,6 @@ interface Subcommand {
 
 class UsageError extends Error {}
 
-const STRING_OPTION = { type: 'string' } as const;
 const STRING_LIST_OPTION = { type: STRING_OPTION.type, multiple: true } as const;
 const BODY_FILE_OPTION = 'body-file';
 
@@ -158,24 +158,16 @@ function handleList(args: string[], io: Io): number {
 }
 
 function jsonShowPayload(store: Store, packetId: string, report: RecoveryReport): unknown {
-  const row = store.db.prepare('SELECT title, type, priority, body, write_set, path FROM packets WHERE id = ?').get(packetId);
+  const row = store.db.prepare('SELECT title, type, priority, body, write_set FROM packets WHERE id = ?').get(packetId);
   if (row === undefined) return { packetId: report.packetId, status: report.status, lease: report.lease, depends_on: report.dependsOn, transitions: report.lastTransitions, notes: report.lastNotes };
-  const path = stringColumn(row, 'path');
-  let requirements: string[] = []; let evidenceRequired: string[] = [];
-  try {
-    if (existsSync(path)) {
-      const parsed = parsePacketDocument(readFileSync(path, TEXT_ENCODING.UTF8));
-      requirements = parsed.definition.requirements;
-      evidenceRequired = parsed.definition.evidenceRequired;
-    }
-  } catch { /* file missing or malformed */ }
+  const workDef = loadWorkDefinition(store, packetId).value;
   const ws: unknown = JSON.parse(stringColumn(row, 'write_set'));
   return {
     packetId: report.packetId, status: report.status, lease: report.lease,
     depends_on: report.dependsOn, transitions: report.lastTransitions, notes: report.lastNotes,
     title: stringColumn(row, 'title'), type: stringColumn(row, 'type'), priority: numberColumn(row, 'priority'),
     write_set: ws, body: stringColumn(row, 'body'),
-    requirements, evidence_required: evidenceRequired,
+    requirements: workDef.requirements, evidence_required: workDef.evidenceRequired,
   };
 }
 
@@ -315,16 +307,16 @@ const SUBCOMMANDS: ReadonlyMap<string, Subcommand> = new Map([
   ['import', { usage: 'sv-playbook task import <path|ID>', run: (rest, io) => handleImport(rest, io) }],
 ]);
 
-const USAGE = ['Usage:', ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');
+const USAGE = [USAGE_HEADER, ...Array.from(SUBCOMMANDS.values()).map((s) => `  ${s.usage}`)].join('\n');
 
 function handleTaskError(error: unknown, io: Io): number {
   if (error instanceof LifecycleError || error instanceof PacketFormatError) {
-    io.err(`error: ${error.message}`);
+    io.err(`${ERROR_PREFIX}${error.message}`);
     if (error instanceof LifecycleError && error.hint !== undefined) io.err(`hint: ${error.hint}`);
     return EXIT.GATE_FAIL;
   }
   if (error instanceof UsageError || error instanceof TypeError) {
-    io.err(USAGE); io.err(`error: ${error.message}`);
+    io.err(USAGE); io.err(`${ERROR_PREFIX}${error.message}`);
     return EXIT.USAGE;
   }
   throw error;

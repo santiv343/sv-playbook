@@ -25,15 +25,16 @@ test('real local promotion binds clean verification, review, integration, and cl
   const fixture = await promotionFixture();
   const controller = new PromotionController(fixture.store, fixture.root);
   const receipt = await controller.promote(request(fixture));
+  const store = controller.getStore();
 
   assert.equal(receipt.candidateSha, fixture.candidateSha);
   assert.equal(receipt.resultSha, fixture.candidateSha);
   assert.equal(gitSha(fixture.root, 'main'), fixture.candidateSha);
-  const task = fixture.store.orm.select({ status: packets.status }).from(packets).get();
+  const task = store.orm.select({ status: packets.status }).from(packets).get();
   assert.equal(task?.status, STATUS.DONE);
-  assert.equal(candidateStatus(fixture.store, receipt.candidateId), PROMOTION_STATUS.CLOSED);
+  assert.equal(candidateStatus(store, receipt.candidateId), PROMOTION_STATUS.CLOSED);
   assert.deepEqual(await controller.promote(request(fixture)), receipt);
-  assert.deepEqual(readPromotionDashboard(fixture.store), [{
+  assert.deepEqual(readPromotionDashboard(store), [{
     candidateId: receipt.candidateId,
     reviewCandidateId: fixture.reviewCandidateId,
     taskId: receipt.taskId,
@@ -44,45 +45,48 @@ test('real local promotion binds clean verification, review, integration, and cl
     receiptId: receipt.id,
     updatedAt: receipt.createdAt,
   }]);
-  fixture.store.close();
+  store.close();
 });
 
 test('review output bound to another SHA is rejected before integration', async () => {
   const fixture = await promotionFixture({ outputCandidateSha: '0000000000000000000000000000000000000000' });
+  const controller = new PromotionController(fixture.store, fixture.root);
   await assert.rejects(
-    new PromotionController(fixture.store, fixture.root).promote(request(fixture)),
+    controller.promote(request(fixture)),
     (error: unknown) => error instanceof PromotionError && error.code === PROMOTION_ERROR.REVIEW_INVALID,
   );
   assert.equal(gitSha(fixture.root, 'main'), fixture.baseSha);
-  assert.equal(fixture.store.orm.select({ status: packets.status }).from(packets).get()?.status, STATUS.REVIEW);
-  fixture.store.close();
+  assert.equal(controller.getStore().orm.select({ status: packets.status }).from(packets).get()?.status, STATUS.REVIEW);
+  controller.getStore().close();
 });
 
 test('reviewer rejection cannot produce done', async () => {
   const fixture = await promotionFixture({ verdict: PROMOTION_VERDICT.REQUEST_CHANGES });
+  const controller = new PromotionController(fixture.store, fixture.root);
   await assert.rejects(
-    new PromotionController(fixture.store, fixture.root).promote(request(fixture)),
+    controller.promote(request(fixture)),
     (error: unknown) => error instanceof PromotionError && error.code === PROMOTION_ERROR.REVIEW_REJECTED,
   );
   assert.equal(gitSha(fixture.root, 'main'), fixture.baseSha);
-  assert.equal(fixture.store.orm.select({ status: packets.status }).from(packets).get()?.status, STATUS.REVIEW);
-  fixture.store.close();
+  assert.equal(controller.getStore().orm.select({ status: packets.status }).from(packets).get()?.status, STATUS.REVIEW);
+  controller.getStore().close();
 });
 
 test('a request-changes verdict persists its rationale', async () => {
   const rationale = 'Candidate carries no machine-readable evidence.';
   const fixture = await promotionFixture({ verdict: PROMOTION_VERDICT.REQUEST_CHANGES, rationale });
+  const controller = new PromotionController(fixture.store, fixture.root);
   await assert.rejects(
-    new PromotionController(fixture.store, fixture.root).promote(request(fixture)),
+    controller.promote(request(fixture)),
     (error: unknown) => error instanceof PromotionError && error.code === PROMOTION_ERROR.REVIEW_REJECTED,
   );
-  const verdict = fixture.store.orm.select({ payloadJson: promotionReviewVerdicts.payloadJson })
+  const verdict = controller.getStore().orm.select({ payloadJson: promotionReviewVerdicts.payloadJson })
     .from(promotionReviewVerdicts).get();
   assert.ok(verdict);
   const persisted = s.json(s.object({ payload: s.object({ rationale: s.nonEmptyString() }) }))
     .parse(verdict.payloadJson);
   assert.equal(persisted.payload.rationale, rationale);
-  fixture.store.close();
+  controller.getStore().close();
 });
 
 test('direct task transition to done is mechanically unavailable', async () => {
@@ -98,16 +102,17 @@ test('already-integrated candidate closes the task without moving main', async (
   assert.equal(fixture.candidateSha, fixture.baseSha);
   const controller = new PromotionController(fixture.store, fixture.root);
   const receipt = await controller.promote(request(fixture));
+  const store = controller.getStore();
 
   assert.equal(receipt.integration, REVIEW_CANDIDATE_INTEGRATION.INTEGRATED);
   assert.equal(receipt.candidateSha, fixture.baseSha);
   assert.equal(receipt.resultSha, fixture.baseSha);
   assert.equal(gitSha(fixture.root, 'main'), fixture.baseSha);
-  const task = fixture.store.orm.select({ status: packets.status }).from(packets).get();
+  const task = store.orm.select({ status: packets.status }).from(packets).get();
   assert.equal(task?.status, STATUS.DONE);
-  assert.equal(candidateStatus(fixture.store, receipt.candidateId), PROMOTION_STATUS.CLOSED);
+  assert.equal(candidateStatus(store, receipt.candidateId), PROMOTION_STATUS.CLOSED);
   assert.deepEqual(await controller.promote(request(fixture)), receipt);
-  assert.deepEqual(readPromotionDashboard(fixture.store), [{
+  assert.deepEqual(readPromotionDashboard(store), [{
     candidateId: receipt.candidateId,
     reviewCandidateId: fixture.reviewCandidateId,
     taskId: receipt.taskId,
@@ -118,5 +123,5 @@ test('already-integrated candidate closes the task without moving main', async (
     receiptId: receipt.id,
     updatedAt: receipt.createdAt,
   }]);
-  fixture.store.close();
+  store.close();
 });
