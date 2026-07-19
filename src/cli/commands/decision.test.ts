@@ -27,6 +27,11 @@ async function inTempRepo<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+test('decision command declares a non-empty usage string', () => {
+  assert.notEqual(decisionCommand.usage.trim(), '');
+  assert.match(decisionCommand.usage, /^Usage: sv-playbook decision/);
+});
+
 test('decision ask then answer round-trips and start surfaces the pending question', async () => {
   await inTempRepo(async () => {
     await writeFile('body.md', 'Do it.\n');

@@ -15,6 +15,11 @@ function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   return { outLines, errLines, out: (line) => { outLines.push(line); }, err: (line) => { errLines.push(line); } };
 }
 
+test('dispatch command declares a non-empty usage string', () => {
+  assert.notEqual(command.usage.trim(), '');
+  assert.match(command.usage, /^Usage: sv-playbook dispatch/);
+});
+
 test('CLI preparation resolves the typed work definition through the shared runtime capability', async () => {
   const { root, store } = await gatewayFixture();
   initTestRepo(root);

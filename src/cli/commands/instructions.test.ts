@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, readFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { renderInstructions } from './instructions.js';
+import { command as instructionsCommand } from './instructions.js';
 import type { Io } from '../command.types.js';
 import { initTestRepo } from '../../testkit.js';
 import { openStore } from '../../db/store.js';
@@ -23,6 +24,11 @@ function captureIo(): Io & { output: string[] } {
     err(line: string) { output.push(line); },
   };
 }
+
+test('instructions command declares a non-empty usage string', () => {
+  assert.notEqual(instructionsCommand.usage.trim(), '');
+  assert.match(instructionsCommand.usage, /^Usage: sv-playbook instructions/);
+});
 
 async function tempRepo(prefix: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), prefix));

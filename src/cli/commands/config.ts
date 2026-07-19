@@ -124,6 +124,7 @@ const USAGE = [USAGE_HEADER, ...Array.from(SUBCOMMANDS.values()).map((s) => `  $
 export const command: Command = {
   name: 'config',
   summary: 'Read and write playbook configuration',
+  usage: USAGE,
   run(args, io) {
     try {
       const [sub, ...rest] = args;

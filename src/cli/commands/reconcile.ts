@@ -165,6 +165,7 @@ function renderResult(result: ReconcilerResult, io: Io): void {
 export const command: Command = {
   name: 'reconcile',
   summary: 'Compute and apply convergence actions between the board and the world',
+  usage: RECONCILE_USAGE,
   run(args, io): Promise<number> {
     try {
       const parsed = parseArgs({

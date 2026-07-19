@@ -4,6 +4,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../main.js';
+import { command } from './handoff.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import { initTestRepo } from '../../testkit.js';
@@ -25,6 +26,11 @@ async function inTempRepo<T>(fn: () => Promise<T>): Promise<T> {
     process.chdir(previous);
   }
 }
+
+test('handoff command declares a non-empty usage string', () => {
+  assert.notEqual(command.usage.trim(), '');
+  assert.match(command.usage, /^Usage: sv-playbook handoff/);
+});
 
 test('handoff prompt includes the role pointer and the live board snapshot', async () => {
   await inTempRepo(async () => {

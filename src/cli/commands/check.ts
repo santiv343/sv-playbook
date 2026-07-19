@@ -15,6 +15,8 @@ import { scanForSecrets } from '../../check/secrets.js';
 import { readCheckedSources } from '../../check/source-tree.js';
 import { TEST_FILE_MARKER } from '../../check/duplicate-string.constants.js';
 import { renderInstructionsContent } from './instructions.js';
+import { inspectCommandUsage } from '../../check/command-usage.js';
+import { commands } from '../registry.js';
 
 const PACKETS_DIR = 'docs/packets';
 
@@ -78,6 +80,14 @@ async function checkStructure(root: string, io: Io): Promise<boolean> {
   return results.some(Boolean);
 }
 
+function checkCommandUsage(_root: string, io: Io): Promise<boolean> {
+  const violations = inspectCommandUsage(commands());
+  for (const violation of violations) {
+    io.out(`command-usage: ${violation.commandName} is missing usage`);
+  }
+  return Promise.resolve(Boolean(violations.length));
+}
+
 async function checkInstructions(root: string, io: Io): Promise<boolean> {
   let hasDrift = false;
 
@@ -114,6 +124,7 @@ const TARGETS: Record<string, (root: string, io: Io) => Promise<boolean>> = {
   instructions: checkInstructions,
   roles: checkRolesTarget,
   secrets: checkSecretsTarget,
+  'command-usage': checkCommandUsage,
 };
 
 function isTestSource(path: string): boolean {
@@ -164,8 +175,9 @@ async function runTarget(root: string, target: string, io: Io): Promise<number |
 
 export const command: Command = {
   name: 'check',
-    summary: 'Validate authored artifacts (structure, instructions drift)',
-    async run(args, io) {
+  summary: 'Validate authored artifacts (structure, instructions drift)',
+  usage: 'Usage: sv-playbook check [target...]',
+  async run(args, io) {
       const root = getCwd();
       const targets = args.length === 0 ? Object.keys(TARGETS) : args;
       let hasViolations = false;

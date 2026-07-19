@@ -10,6 +10,7 @@ import { loadConfig } from '../../config.js';
 export const command: Command = {
   name: 'restore',
   summary: 'Restore local SQLite state from a snapshot',
+  usage: RESTORE_USAGE,
   destructive: true,
   run(args, io): Promise<number> {
     const repoRoot = commonRoot(getCwd());
