@@ -186,3 +186,28 @@ test('daemon forwarded task note is persisted to the store (STORE-003)', async (
     }
   });
 });
+
+
+test('health endpoint reports the running build digest', async () => {
+  await inTempRepo(async (root) => {
+    openStore(root).close();
+    const port = await freePort();
+    const daemon = await startDaemon(root, port);
+    try {
+      const http = await import('node:http');
+      const healthBody = await new Promise<string>((resolve, reject) => {
+        http.get(`http://127.0.0.1:${port}/api/v1/health`, (res) => {
+          let data = '';
+          res.on('data', (c: string) => { data += c; });
+          res.on('end', () => { resolve(data); });
+        }).on('error', reject);
+      });
+      const health: unknown = JSON.parse(healthBody);
+      assert.ok(typeof health === 'object' && health !== null);
+      const buildDigest: unknown = Reflect.get(health, 'buildDigest');
+      assert.ok(buildDigest === null || typeof buildDigest === 'string');
+    } finally {
+      await daemon.stop();
+    }
+  });
+});

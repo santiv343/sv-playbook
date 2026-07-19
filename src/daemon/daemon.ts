@@ -3,9 +3,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting } from '../db/store.js';
+import { readBuildDigest, BUILD_DIGEST_FIELD } from '../db/build-digest.js';
 import { assertExclusiveStoreLock } from '../db/inspection.js';
 import { DAEMON_LOCK_FILE, DAEMON_ROUTE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
-import { HTTP_METHOD, NODE_ERROR_CODE, PROCESS_EVENT } from '../platform.constants.js';
+import { HTTP_METHOD, NODE_ERROR_CODE, PROCESS_EVENT, TEXT_ENCODING } from '../platform.constants.js';
 import { nodeErrorCode } from '../platform.js';
 import { SVP_DIR } from '../db/store.constants.js';
 import { runWithContext, createContext } from '../runtime/context.js';
@@ -35,16 +36,6 @@ function generateToken(): string {
   return createHash('sha256').update(randomUUID()).digest('hex').slice(0, 32);
 }
 
-function writeTokenFileOwnerOnly(tokenPath: string, token: string): void {
-  try { unlinkSync(tokenPath); } catch { /* did not exist */ }
-  const fd = openSync(tokenPath, 'wx', 0o600);
-  try {
-    writeSync(fd, `${token}\n`);
-  } finally {
-    closeSync(fd);
-  }
-}
-
 function writeLockFileAtomically(lockPath: string, pid: number, port: number): void {
   const fd = openSync(lockPath, 'wx', 0o600);
   try {
@@ -58,7 +49,7 @@ function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     req.on(PROCESS_EVENT.DATA, (chunk: Buffer) => { chunks.push(chunk); });
-    req.on('end', () => { resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('end', () => { resolve(Buffer.concat(chunks).toString(TEXT_ENCODING.UTF8)); });
     req.on(PROCESS_EVENT.ERROR, reject);
   });
 }
@@ -66,6 +57,28 @@ function readBody(req: IncomingMessage): Promise<string> {
 function jsonResponse(res: ServerResponse, code: number, body: unknown): void {
   res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
+}
+
+function methodNotAllowed(res: ServerResponse): void {
+  jsonResponse(res, 405, { error: ERR_METHOD_NOT_ALLOWED });
+}
+
+function handleHealth(req: IncomingMessage, res: ServerResponse): void {
+  if (req.method !== HTTP_METHOD.GET) {
+    methodNotAllowed(res);
+    return;
+  }
+  jsonResponse(res, 200, {
+    status: 'ok',
+    version: DAEMON_VERSION,
+    pid: process.pid,
+    storeLock: 'exclusive',
+    [BUILD_DIGEST_FIELD]: readBuildDigest(),
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Object(value) === value && !Array.isArray(value);
 }
 
 function buildExecIo(): { out: (l: string) => void; err: (l: string) => void; outLines: string[]; errLines: string[] } {
@@ -79,14 +92,10 @@ function buildExecIo(): { out: (l: string) => void; err: (l: string) => void; ou
   };
 }
 
-function redactError(): string {
-  return ERR_INTERNAL;
-}
-
 function parseExecRequest(raw: string, token: string, res: ServerResponse): { argv: string[]; ctx: ReturnType<typeof createContext> } | null {
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
-  if (typeof parsed !== 'object' || parsed === null) { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
+  if (!isRecord(parsed)) { jsonResponse(res, 400, { error: ERR_INVALID_JSON }); return null; }
 
   const parsedToken: unknown = Reflect.get(parsed, 'token');
   if (parsedToken !== token) { jsonResponse(res, 403, { error: ERR_INVALID_TOKEN }); return null; }
@@ -99,30 +108,6 @@ function parseExecRequest(raw: string, token: string, res: ServerResponse): { ar
   if (ctx === null) { jsonResponse(res, 400, { error: ERR_INVALID_CONTEXT }); return null; }
 
   return { argv, ctx };
-}
-
-function acquireLock(lockPath: string, pid: number, port: number): void {
-  try {
-    writeLockFileAtomically(lockPath, pid, port);
-  } catch (err: unknown) {
-    const isExisting = nodeErrorCode(err) === NODE_ERROR_CODE.ALREADY_EXISTS;
-    const message = isExisting
-      ? 'daemon is already running for this repo (lock file race)'
-      : `failed to create lock file: ${String(err)}`;
-    throw new Error(message);
-  }
-}
-
-function methodNotAllowed(res: ServerResponse): void {
-  jsonResponse(res, 405, { error: ERR_METHOD_NOT_ALLOWED });
-}
-
-function handleHealth(req: IncomingMessage, res: ServerResponse): void {
-  if (req.method !== HTTP_METHOD.GET) {
-    methodNotAllowed(res);
-    return;
-  }
-  jsonResponse(res, 200, { status: 'ok', version: DAEMON_VERSION, pid: process.pid, storeLock: 'exclusive' });
 }
 
 function handleExecRoute(
@@ -175,7 +160,7 @@ function handleShutdown(token: string, req: IncomingMessage, res: ServerResponse
     let parsedToken: unknown;
     try {
       const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed === 'object' && parsed !== null) {
+      if (isRecord(parsed)) {
         parsedToken = Reflect.get(parsed, 'token');
       }
     } catch {
@@ -210,7 +195,7 @@ function handleExec(token: string, state: TerminationState, commandPort: Command
 
     const store = state.store;
     if (store === null) {
-      jsonResponse(res, 500, { error: redactError(), daemonVersion: DAEMON_VERSION });
+      jsonResponse(res, 500, { error: ERR_INTERNAL, daemonVersion: DAEMON_VERSION });
       return;
     }
     try {
@@ -230,7 +215,7 @@ function handleExec(token: string, state: TerminationState, commandPort: Command
       const stderr = execIo.errLines.join('\n') + (execIo.errLines.length > 0 ? '\n' : '');
       jsonResponse(res, 200, { exitCode, stdout, stderr, daemonVersion: DAEMON_VERSION });
     }).catch(() => {
-      jsonResponse(res, 500, { error: redactError(), daemonVersion: DAEMON_VERSION });
+      jsonResponse(res, 500, { error: ERR_INTERNAL, daemonVersion: DAEMON_VERSION });
     });
   }).catch(() => {
     jsonResponse(res, 400, { error: ERR_REQ_READ_FAILED });
@@ -287,12 +272,26 @@ function initializeDaemonRuntime(repoRoot: string, port: number): DaemonRuntime 
   if (isDaemonRunning(repoRoot)) throw new Error('daemon is already running for this repo');
   const token = generateToken();
   const state = createTerminationState(lockPath, tokenPath);
-  acquireLock(lockPath, process.pid, port);
+  try {
+    writeLockFileAtomically(lockPath, process.pid, port);
+  } catch (err: unknown) {
+    const isExisting = nodeErrorCode(err) === NODE_ERROR_CODE.ALREADY_EXISTS;
+    const message = isExisting
+      ? 'daemon is already running for this repo (lock file race)'
+      : `failed to create lock file: ${String(err)}`;
+    throw new Error(message);
+  }
   const store = openDaemonStore(repoRoot, lockPath);
   setDaemonStore(store);
   state.store = store;
   verifyDaemonStore(store, join(svpDir, 'playbook.sqlite'), lockPath);
-  writeTokenFileOwnerOnly(tokenPath, token);
+  try { unlinkSync(tokenPath); } catch { /* did not exist */ }
+  const tokenFd = openSync(tokenPath, 'wx', 0o600);
+  try {
+    writeSync(tokenFd, `${token}\n`);
+  } finally {
+    closeSync(tokenFd);
+  }
   return { token, state };
 }
 

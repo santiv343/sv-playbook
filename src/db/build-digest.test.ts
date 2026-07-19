@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TEXT_ENCODING } from '../platform.constants.js';
 import { readBuildDigest } from './build-digest.js';
 import { BUILD_DIGEST_FIELD, BUILD_DIGEST_FILE_NAME } from './build-digest.constants.js';
 
@@ -32,10 +33,10 @@ test('readBuildDigest returns null when build-digest.json does not exist', () =>
 
 test('readBuildDigest returns the digest string when the file exists', () => {
   const backup = backupPath();
-  const original = readFileSync(DIGEST_PATH, 'utf8');
+  const original = readFileSync(DIGEST_PATH, TEXT_ENCODING.UTF8);
   renameSync(DIGEST_PATH, backup);
   try {
-    writeFileSync(DIGEST_PATH, JSON.stringify({ [BUILD_DIGEST_FIELD]: 'abc123' }), 'utf8');
+    writeFileSync(DIGEST_PATH, JSON.stringify({ [BUILD_DIGEST_FIELD]: 'abc123' }), TEXT_ENCODING.UTF8);
     assert.equal(readBuildDigest(), 'abc123');
   } finally {
     renameSync(backup, DIGEST_PATH);
