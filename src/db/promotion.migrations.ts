@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { PROMOTION_TABLE } from '../promotion/promotion.schema.constants.js';
+import { PROMOTION_CANDIDATE_COLUMN, PROMOTION_TABLE } from '../promotion/promotion.schema.constants.js';
 import {
   REVIEW_CANDIDATE_INTEGRATION,
   REVIEW_CANDIDATE_INTEGRATION_FIELD,
@@ -8,6 +8,7 @@ import { PROMOTION_STORE_SCHEMA } from './store.constants.js';
 import { SQLITE_COLUMN_TYPE } from './schema-vocabulary.constants.js';
 import { column } from './rows.js';
 import { migrateTableColumn } from './store.migration-helpers.js';
+import { EMPTY_SIZE } from '../platform.constants.js';
 
 interface BackfillColumn {
   name: string;
@@ -16,18 +17,17 @@ interface BackfillColumn {
 }
 
 const BACKFILL_COLUMNS: readonly BackfillColumn[] = [
-  { name: 'review_candidate_id', type: 'TEXT', notNull: true },
-  { name: 'work_definition_version', type: 'INTEGER', notNull: true },
-  { name: 'work_definition_digest', type: 'TEXT', notNull: true },
-  { name: 'config_digest', type: 'TEXT', notNull: true },
-  { name: 'contract_digest', type: 'TEXT', notNull: true },
+  { name: PROMOTION_CANDIDATE_COLUMN.REVIEW_CANDIDATE_ID, type: SQLITE_COLUMN_TYPE.TEXT, notNull: true },
+  { name: PROMOTION_CANDIDATE_COLUMN.WORK_DEFINITION_VERSION, type: SQLITE_COLUMN_TYPE.INTEGER, notNull: true },
+  { name: PROMOTION_CANDIDATE_COLUMN.WORK_DEFINITION_DIGEST, type: SQLITE_COLUMN_TYPE.TEXT, notNull: true },
+  { name: PROMOTION_CANDIDATE_COLUMN.CONFIG_DIGEST, type: SQLITE_COLUMN_TYPE.TEXT, notNull: true },
+  { name: PROMOTION_CANDIDATE_COLUMN.CONTRACT_DIGEST, type: SQLITE_COLUMN_TYPE.TEXT, notNull: true },
 ];
-const REVIEW_CANDIDATE_COLUMN = 'review_candidate_id';
 
 function hasReviewCandidateFK(db: Database.Database): boolean {
   return db.prepare(
     `SELECT id FROM pragma_foreign_key_list('${PROMOTION_TABLE.CANDIDATES}') WHERE "from" = ?`,
-  ).get(REVIEW_CANDIDATE_COLUMN) !== undefined;
+  ).get(PROMOTION_CANDIDATE_COLUMN.REVIEW_CANDIDATE_ID) !== undefined;
 }
 
 function reinsertRows(db: Database.Database, rows: unknown[], oldCols: string[]): void {
@@ -53,7 +53,7 @@ function rebuildWithConstraints(db: Database.Database, existingColumns: Set<stri
   const oldCols = [...existingColumns];
   db.exec(`DROP TABLE ${PROMOTION_TABLE.CANDIDATES}`);
   db.exec(PROMOTION_STORE_SCHEMA);
-  if (rows.length > 0) {
+  if (rows.length > EMPTY_SIZE) {
     reinsertRows(db, rows, oldCols);
   }
 }
@@ -66,9 +66,9 @@ export function addPromotionTables(db: Database.Database): void {
   const missing = BACKFILL_COLUMNS.filter(col => !existingColumns.has(col.name));
   const hasReviewFK = hasReviewCandidateFK(db);
 
-  if (missing.length === 0 && hasReviewFK) return;
+  if (missing.length === EMPTY_SIZE && hasReviewFK) return;
 
-  if (!existingColumns.has(REVIEW_CANDIDATE_COLUMN) || !hasReviewFK) {
+  if (!existingColumns.has(PROMOTION_CANDIDATE_COLUMN.REVIEW_CANDIDATE_ID) || !hasReviewFK) {
     rebuildWithConstraints(db, existingColumns);
     return;
   }
