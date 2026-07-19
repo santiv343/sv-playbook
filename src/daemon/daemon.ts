@@ -45,10 +45,10 @@ function writeTokenFileOwnerOnly(tokenPath: string, token: string): void {
   }
 }
 
-function writeLockFileAtomically(lockPath: string, pid: number, port: number): void {
+function writeLockFileAtomically(lockPath: string, pid: number, port: number, nonce: string): void {
   const fd = openSync(lockPath, 'wx', 0o600);
   try {
-    writeSync(fd, `${pid}\n${port}\n${new Date().toISOString()}\n`);
+    writeSync(fd, `${pid}\n${port}\n${new Date().toISOString()}\n${nonce}\n`);
   } finally {
     closeSync(fd);
   }
@@ -101,9 +101,9 @@ function parseExecRequest(raw: string, token: string, res: ServerResponse): { ar
   return { argv, ctx };
 }
 
-function acquireLock(lockPath: string, pid: number, port: number): void {
+function acquireLock(lockPath: string, pid: number, port: number, nonce: string): void {
   try {
-    writeLockFileAtomically(lockPath, pid, port);
+    writeLockFileAtomically(lockPath, pid, port, nonce);
   } catch (err: unknown) {
     const isExisting = nodeErrorCode(err) === NODE_ERROR_CODE.ALREADY_EXISTS;
     const message = isExisting
@@ -287,7 +287,7 @@ function initializeDaemonRuntime(repoRoot: string, port: number): DaemonRuntime 
   if (isDaemonRunning(repoRoot)) throw new Error('daemon is already running for this repo');
   const token = generateToken();
   const state = createTerminationState(lockPath, tokenPath);
-  acquireLock(lockPath, process.pid, port);
+  acquireLock(lockPath, process.pid, port, token);
   const store = openDaemonStore(repoRoot, lockPath);
   setDaemonStore(store);
   state.store = store;
