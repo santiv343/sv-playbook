@@ -3,7 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync as fsRealpathSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { stringColumn } from './rows.js';
-import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
+import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
+import { resolveStoreRoot } from './store-location.js';
 import { GIT_ARGUMENT } from '../git.constants.js';
 import { OS_PLATFORM } from '../platform.constants.js';
 import { getCwd } from '../runtime/context.js';
@@ -29,6 +30,14 @@ export function commonRoot(startDir: string): string {
 
 export function worktreeRoot(startDir: string): string {
   return execFileSync('git', GIT_TOPLEVEL_ARGS, { cwd: startDir, encoding: 'utf8' }).trim();
+}
+
+export function resolveStoreDir(repoRoot: string): string {
+  try {
+    return resolveStoreRoot(commonRoot(repoRoot));
+  } catch {
+    return resolveStoreRoot(repoRoot);
+  }
 }
 
 // ── Daemon client (worktree → daemon forwarding) ──
@@ -75,9 +84,8 @@ export function isWorktree(s: string): boolean {
   try { return normalizePathForCompare(dirname(resolve(s, execGitCommonDir(s)))) !== normalizePathForCompare(execGitTopLevel(s)); }
   catch { return false; }
 }
-
 export function isDaemonRunning(repoRoot: string): boolean {
-  const lockPath = join(repoRoot, SVP_DIR, DAEMON_LOCK_FILE);
+  const lockPath = join(resolveStoreDir(repoRoot), DAEMON_LOCK_FILE);
   if (!existsSync(lockPath)) return false;
   try {
     const pid = Number(readFileSync(lockPath, 'utf8').trim().split('\n')[0]);
@@ -88,7 +96,7 @@ export function isDaemonRunning(repoRoot: string): boolean {
 }
 
 export function readDaemonToken(repoRoot: string): string | null {
-  const p = join(repoRoot, SVP_DIR, DAEMON_TOKEN_FILE);
+  const p = join(resolveStoreDir(repoRoot), DAEMON_TOKEN_FILE);
   if (!existsSync(p)) return null;
   try { return readFileSync(p, 'utf8').trim().split('\n')[0] ?? null; }
   catch { return null; }
@@ -106,7 +114,7 @@ export function blessedRoot(s: string): string | null {
 // The daemon lock file records `pid\nport\nstarted_at` — honor the port the
 // daemon actually bound (daemon --port N), falling back to the default.
 export function readDaemonPort(repoRoot: string): number {
-  const lockPath = join(repoRoot, SVP_DIR, DAEMON_LOCK_FILE);
+  const lockPath = join(resolveStoreDir(repoRoot), DAEMON_LOCK_FILE);
   try {
     const port = Number(readFileSync(lockPath, 'utf8').split('\n')[1]?.trim());
     if (Number.isInteger(port) && port > 0 && port <= 65535) return port;
@@ -273,12 +281,8 @@ function createStore(db: Database.Database, dir: string): Store {
   };
 }
 
-export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
-  if (daemonStore !== null) {
-    return daemonStore;
-  }
-  assertStoreNotHeldByDaemon(repoRoot);
-  const dir = join(repoRoot, SVP_DIR); mkdirSync(dir, { recursive: true });
+function openStoreAt(dir: string, repoRoot: string, options?: OpenStoreOptions): Store {
+  mkdirSync(dir, { recursive: true });
   const dbPath = join(dir, DB_FILE);
   const isNew = !existsSync(dbPath);
   const db = new Database(dbPath);
@@ -292,12 +296,19 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   migratePacketColumn(db, 'pr', SQLITE_COLUMN_TYPE.TEXT, false);
   return createStore(db, dir);
 }
-export function openStoreReadOnly(repoRoot: string): Store {
-  if (daemonStore !== null) return daemonStore;
+
+export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
+  if (daemonStore !== null) {
+    return daemonStore;
+  }
   assertStoreNotHeldByDaemon(repoRoot);
-  const dir = join(repoRoot, SVP_DIR);
+  return openStoreAt(resolveStoreDir(repoRoot), repoRoot, options);
+}
+
+function openStoreReadOnlyAt(dir: string, repoRoot: string): Store {
   const path = join(dir, DB_FILE);
   if (!existsSync(path)) openStore(repoRoot).close();
+
   const db = new Database(path, { readonly: true, fileMustExist: true });
   applyReadOnlyStorePragmas(db);
   const version = readStoreSchemaVersion(db);
@@ -306,4 +317,14 @@ export function openStoreReadOnly(repoRoot: string): Store {
     throw new StoreVersionError(`store schema version ${String(version)} does not match runtime version ${SCHEMA_VERSION}`);
   }
   return createStore(db, dir);
+}
+
+export function openStoreReadOnly(repoRoot: string): Store {
+  if (daemonStore !== null) return daemonStore;
+  assertStoreNotHeldByDaemon(repoRoot);
+  return openStoreReadOnlyAt(resolveStoreDir(repoRoot), repoRoot);
+}
+
+export function openStoreInTree(repoRoot: string, dir: string, options?: OpenStoreOptions): Store {
+  return openStoreAt(dir, repoRoot, options);
 }

@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { generatePacketDocument } from '../packets/document.js';
 import { WORK_DEFINITION_INITIAL_VERSION } from '../tasks/work-definition.constants.js';
 import { parseWorkDefinitionReference, resolveWorkDefinition } from '../tasks/work-definitions.js';
-import { openStore } from './store.js';
+import { openStore, resolveStoreDir } from './store.js';
 import {
   STORE_INITIAL_SCHEMA_VERSION,
   STORE_MIGRATION_ID,
@@ -31,7 +31,7 @@ test('the schema migration backfills version one from the legacy packet export',
     .run('BUG-003', 'Legacy task', mdPath, body, JSON.stringify(['src/**']));
   store.close();
 
-  const database = new DatabaseSync(join(root, '.svp', 'playbook.sqlite'));
+  const database = new DatabaseSync(join(resolveStoreDir(root), 'playbook.sqlite'));
   const migrationIndex = STORE_MIGRATION_IDS.indexOf(STORE_MIGRATION_ID.VERSIONED_WORK_DEFINITIONS);
   const versionBeforeWorkDefinitions = STORE_INITIAL_SCHEMA_VERSION + migrationIndex;
   database.exec(`DELETE FROM packet_definitions; PRAGMA user_version = ${versionBeforeWorkDefinitions}`);

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createServer as createNetServer } from 'node:net';
-import { openStore, migrateStore, readDaemonPort, worktreeRoot } from './store.js';
+import { openStore, migrateStore, readDaemonPort, worktreeRoot, resolveStoreDir } from './store.js';
 import { DAEMON_DEFAULT_PORT } from '../daemon/daemon.constants.js';
 import { EVENT_SCHEMA_MIGRATED, SCHEMA_VERSION } from './store.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
@@ -17,7 +17,7 @@ import { initTestRepo } from '../testkit.js';
 test('openStore creates .svp/playbook.sqlite and the schema tables', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-store-'));
   const store = openStore(root);
-  assert.ok(existsSync(join(root, '.svp', 'playbook.sqlite')));
+  assert.ok(existsSync(join(resolveStoreDir(root), 'playbook.sqlite')));
   const tables = store.db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     .all()
@@ -45,7 +45,7 @@ test('worktreeRoot resolves the git working tree top-level', async () => {
 test('schema version mismatch refuses with the restore recovery message', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-ver-'));
   openStore(root).close();
-  const db = new DatabaseSync(join(root, '.svp', 'playbook.sqlite'));
+  const db = new DatabaseSync(join(resolveStoreDir(root), 'playbook.sqlite'));
   db.exec('PRAGMA user_version = 1');
   db.close();
   assert.throws(() => openStore(root), /store unusable.*restore state.*rebuild/s);
@@ -60,7 +60,7 @@ test('schema version mismatch refuses with the restore recovery message', async 
 test('a version mismatch refuses with a named non-destructive recovery and never deletes .svp', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-rec-'));
   openStore(root).close();
-  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA user_version = 99');
   db.close();
@@ -117,7 +117,7 @@ test('the store runs in WAL mode with EXCLUSIVE locking (single-writer enforceme
   // connection would always acquire the lock.
   store.db.exec(`INSERT INTO sessions (id, worktree, started_at) VALUES ('${randomUUID()}', '/tmp/wt1', datetime('now'))`);
 
-  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
   const result = spawnSync(process.execPath, ['-e', `
     const { DatabaseSync } = require('node:sqlite');
     const db = new DatabaseSync(${JSON.stringify(dbPath)});
@@ -135,7 +135,7 @@ test('red team: a cross-process writer is rejected when the store holds the excl
   initTestRepo(root);
   const store = openStore(root);
 
-  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
   try {
     const result = spawnSync(process.execPath, ['-e', `
       const { DatabaseSync } = require('node:sqlite');
@@ -170,7 +170,7 @@ test('schema v6 includes constitution_sections and constitution_principles table
 test('schema migration from v5 creates constitution tables', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-mig5-'));
   openStore(root).close();
-  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA user_version = 5');
   db.exec('DROP TABLE IF EXISTS constitution_sections');
@@ -196,7 +196,7 @@ test('schema migration from v5 creates constitution tables', async () => {
 test('schema migration rebuilds events with every current event command', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-mig7-'));
   openStore(root).close();
-  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA user_version = 7');
   db.exec('DROP TABLE IF EXISTS events');
@@ -236,7 +236,7 @@ test('schema migration refuses while a foreign live lease exists', async () => {
   initTestRepo(root);
 
   openStore(root).close();
-  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA user_version = 1');
   db.exec("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('p1', 'test', '/tmp/test', 'ready', '[]', '2025-01-01T00:00:00.000Z', '2025-01-01T00:00:00.000Z')");
@@ -261,7 +261,7 @@ test('auto-migration of an older live store is refused off the default branch wi
   execFileSync('git', ['checkout', '-b', 'feature/test-mig'], { cwd: root });
 
   openStore(root).close();
-  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA user_version = 7');
   db.close();
@@ -299,7 +299,7 @@ test('bypass via migrateLive is evented (writes a schema-migrated event)', async
   execFileSync('git', ['checkout', '-b', 'feature/bypass-test'], { cwd: root });
 
   openStore(root).close();
-  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA user_version = 7');
   db.close();
@@ -384,7 +384,7 @@ test('sync forward handles daemon dying mid-response without hanging (STORE-003)
 
 test('tryAutoForward targets the port recorded in the daemon lock file, not the default (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-lock-port-'));
-  const svpDir = join(root, '.svp');
+  const svpDir = resolveStoreDir(root);
   await mkdir(svpDir, { recursive: true });
 
   // No lock file → default port
@@ -402,3 +402,4 @@ test('tryAutoForward targets the port recorded in the daemon lock file, not the 
   await writeFile(join(svpDir, '.svp-daemon.lock'), `${process.pid}\n`);
   assert.equal(readDaemonPort(root), DAEMON_DEFAULT_PORT);
 });
+

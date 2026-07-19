@@ -5,8 +5,8 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { bindWorkspace, openStore, resolveAndBindWorkspace, workspaceWithinRepo } from './store.js';
-import { DB_FILE, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
+import { bindWorkspace, openStore, resolveAndBindWorkspace, workspaceWithinRepo, resolveStoreDir } from './store.js';
+import { DB_FILE, SCHEMA_VERSION } from './store.constants.js';
 import { STORE_INITIAL_SCHEMA_VERSION, STORE_MIGRATION_ID, STORE_MIGRATION_IDS } from './store.migration-manifest.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
 import { StoreVersionError } from './store.errors.js';
@@ -37,7 +37,7 @@ test('an aged store migrates to the workspace-bindings schema', async () => {
 
   // Simulate a live store written before the binding table existed: drop the
   // table and rewind the schema version to just before the migration.
-  const database = new DatabaseSync(join(root, SVP_DIR, DB_FILE));
+  const database = new DatabaseSync(join(resolveStoreDir(root), DB_FILE));
   database.exec('DROP TABLE IF EXISTS workspace_bindings');
   const versionBeforeBindings = STORE_INITIAL_SCHEMA_VERSION
     + STORE_MIGRATION_IDS.indexOf(STORE_MIGRATION_ID.WORKSPACE_BINDINGS);

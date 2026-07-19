@@ -7,8 +7,8 @@ import { copyFileSync, writeFileSync, existsSync, readFileSync, readdirSync, uti
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { createStateBackup, restoreStateBackup, getBackupStatus, verifyLatestBackup, needsBackup, recordBackupFailure, recordBackupSuccess, backupFailedCycles } from './backup.js';
-import { openStore } from './store.js';
-import { SVP_DIR, DB_FILE, SCHEMA_VERSION } from './store.constants.js';
+import { openStore, resolveStoreDir } from './store.js';
+import { DB_FILE, SCHEMA_VERSION } from './store.constants.js';
 import { BACKUP_REASON } from './backup.constants.js';
 import { stringColumn, numberColumn } from './rows.js';
 import { initTestRepo } from '../testkit.js';
@@ -80,7 +80,7 @@ test('restore refuses a corrupt backup and leaves the live database intact', asy
   assert.ok(packetExists(repoRoot, 'pkt-known'), 'known packet should still exist after failed restore');
 
   // Also verify the live DB file itself wasn't corrupted
-  const liveDbPath = join(repoRoot, SVP_DIR, DB_FILE);
+  const liveDbPath = join(resolveStoreDir(repoRoot), DB_FILE);
   assert.ok(existsSync(liveDbPath));
   const db = new DatabaseSync(liveDbPath);
   try {
@@ -185,7 +185,7 @@ test('backups honor a configured backup.dir outside .svp', async () => {
   assert.ok(existsSync(report.sqlitePath), 'backup sqlite should exist');
   assert.ok(report.sqlitePath.startsWith(externalDir), 'backup should land in external dir');
 
-  const svpBackupsDir = join(repoRoot, '.svp', 'backups');
+  const svpBackupsDir = join(resolveStoreDir(repoRoot), 'backups');
   const svpFiles = existsSync(svpBackupsDir) ? readdirSync(svpBackupsDir) : [];
   assert.ok(
     !svpFiles.some((name) => name === basename(report.sqlitePath)),
@@ -300,7 +300,7 @@ test('retention respects verified floor and does not drop below it', async () =>
     await new Promise((resolve) => setTimeout(resolve, 1100));
   }
 
-  const dir = join(repoRoot, '.svp', 'backups');
+  const dir = join(resolveStoreDir(repoRoot), 'backups');
   const backups = readdirSync(dir).filter((name) => name.endsWith('.sqlite'));
   assert.ok(backups.length <= 2 + 3, 'should not exceed retention + floor');
 });

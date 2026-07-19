@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Store } from '../db/store.types.js';
+
 import { nullableStringColumn, numberColumn, stringColumn } from '../db/rows.js';
 import { parsePacketDocument } from '../packets/document.js';
 import type { PacketDefinition } from '../packets/document.types.js';
