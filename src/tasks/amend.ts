@@ -1,8 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { writeFileSync } from 'node:fs';
 import type { Store } from '../db/store.types.js';
 import { canonicalJson } from '../context/digest.js';
-import { generatePacketDocument } from '../packets/document.js';
 import type { PacketDefinition } from '../packets/document.types.js';
 import { EVENT_AMEND_ACTIVE, INSERT_EVENT_SQL, STATUS } from './service.constants.js';
 import { LifecycleError } from './service.errors.js';
@@ -91,9 +89,6 @@ export function amendPacket(
       recordWorkDefinition(store, workDefinitionValue(definition, body, current.type));
       store.db.prepare(INSERT_EVENT_SQL).run(sessionId ?? null, packetId, EVENT_AMEND_ACTIVE, `write_set extended: ${current.writeSet.join(', ')} -> ${definition.writeSet.join(', ')}`, new Date().toISOString());
     });
-    const current = loadWorkDefinition(store, packetId).value;
-    const definition = amendedDefinition(packetId, current, row.title, updates);
-    writeFileSync(row.path, generatePacketDocument(definition, body), 'utf8');
     return;
   }
   const current = loadWorkDefinition(store, packetId).value;
@@ -109,5 +104,4 @@ export function amendPacket(
     replaceDependencies(store, definition);
     recordWorkDefinition(store, workDefinitionValue(definition, body, current.type));
   });
-  writeFileSync(row.path, generatePacketDocument(definition, body), 'utf8');
 }

@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -80,15 +80,15 @@ for (const { status, pid } of [{ status: STATUS.DONE, pid: 'AMD-DONE-001' }, { s
   });
 }
 
-test('amendPacket with null path does not crash', async () => {
+test('amendPacket does not crash when the packet .md file is missing', async () => {
   const { root, store } = await setup();
-  createPacket(store, root, def('AMD-NULLPATH-001'), 'a');
-  store.db.prepare('UPDATE packets SET path = NULL WHERE id = ?').run('AMD-NULLPATH-001');
-  movePacket(store, undefined, 'AMD-NULLPATH-001', STATUS.READY);
+  createPacket(store, root, def('AMD-NOPATH-001'), 'a');
+  movePacket(store, undefined, 'AMD-NOPATH-001', STATUS.READY);
   const s1 = ensureSession(store, root);
-  startPacket(store, s1, root, 'AMD-NULLPATH-001');
-  amendPacket(store, root, 'AMD-NULLPATH-001', { writeSet: ['src/**', 'docs/**'] });
-  const ws = stringColumn(store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get('AMD-NULLPATH-001'), 'write_set');
+  startPacket(store, s1, root, 'AMD-NOPATH-001');
+  unlinkSync(join(root, 'docs', 'packets', 'AMD-NOPATH-001.md'));
+  amendPacket(store, root, 'AMD-NOPATH-001', { writeSet: ['src/**', 'docs/**'] });
+  const ws = stringColumn(store.db.prepare('SELECT write_set FROM packets WHERE id = ?').get('AMD-NOPATH-001'), 'write_set');
   assert.ok(ws.includes('docs/**'));
 });
 
@@ -98,6 +98,8 @@ test('amendPacket does not write a .md file to disk', async () => {
   movePacket(store, undefined, 'AMD-NO-MD-001', STATUS.READY);
   const s1 = ensureSession(store, root);
   startPacket(store, s1, root, 'AMD-NO-MD-001');
+  const path = join(root, 'docs', 'packets', 'AMD-NO-MD-001.md');
+  unlinkSync(path);
   amendPacket(store, root, 'AMD-NO-MD-001', { writeSet: ['src/**', 'docs/**'] });
-  assert.equal(existsSync(join(root, 'docs', 'packets', 'AMD-NO-MD-001.md')), false);
+  assert.equal(existsSync(path), false);
 });
