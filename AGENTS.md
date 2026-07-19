@@ -164,8 +164,4 @@ Normative role definitions live in the role catalog. The human expects these bou
 Missing authority or capability produces a typed gap and bubbles through the declared handoff. No role improvises around it.
 
 
----
-
-Clarify human intent and expose irreducible product decisions.
-
 GENERATED — edit the source, run `sv-playbook instructions --write`
