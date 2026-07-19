@@ -3,9 +3,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting } from '../db/store.js';
-import { readBuildDigest, BUILD_DIGEST_FIELD } from '../db/build-digest.js';
+import { readBuildDigest } from '../db/build-digest.js';
 import { assertExclusiveStoreLock } from '../db/inspection.js';
-import { DAEMON_LOCK_FILE, DAEMON_ROUTE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
+import { BUILD_DIGEST_HEALTH_FIELD, DAEMON_LOCK_FILE, DAEMON_ROUTE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
 import { HTTP_METHOD, NODE_ERROR_CODE, PROCESS_EVENT, TEXT_ENCODING } from '../platform.constants.js';
 import { nodeErrorCode } from '../platform.js';
 import { SVP_DIR } from '../db/store.constants.js';
@@ -73,7 +73,7 @@ function handleHealth(req: IncomingMessage, res: ServerResponse): void {
     version: DAEMON_VERSION,
     pid: process.pid,
     storeLock: 'exclusive',
-    [BUILD_DIGEST_FIELD]: readBuildDigest(),
+    [BUILD_DIGEST_HEALTH_FIELD]: readBuildDigest(),
   });
 }
 

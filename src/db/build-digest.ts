@@ -2,9 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TEXT_ENCODING } from '../platform.constants.js';
-import { BUILD_DIGEST_FIELD as DIGEST_FIELD, BUILD_DIGEST_FILE_NAME } from './build-digest.constants.js';
-
-export const BUILD_DIGEST_FIELD = DIGEST_FIELD;
+import { BUILD_DIGEST_FIELD, BUILD_DIGEST_FILE_NAME } from './build-digest.constants.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Object(value) === value && !Array.isArray(value);
