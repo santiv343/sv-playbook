@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
+import { packets } from './schema.constants.js';
 import {
   amendPacket,
   createPacket,
@@ -71,7 +73,7 @@ for (const { status, pid } of [{ status: STATUS.DONE, pid: 'AMD-DONE-001' }, { s
       movePacket(store, s, pid, STATUS.BLOCKED);
     } else {
       movePacket(store, undefined, pid, STATUS.READY);
-      store.db.prepare('UPDATE packets SET status = ? WHERE id = ?').run(STATUS.DONE, pid);
+      store.orm.update(packets).set({ status: STATUS.DONE }).where(eq(packets.id, pid)).run();
     }
     assert.throws(
       () => { amendPacket(store, root, pid, { body: 'x' }); },

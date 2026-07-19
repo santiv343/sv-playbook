@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
-import { openStore } from './store.js';
+import { openStore, resolveStoreDir } from './store.js';
 import {
   STORE_INITIAL_SCHEMA_VERSION,
   STORE_MIGRATION_IDS,
@@ -15,7 +15,7 @@ test('event-commands-5 migration adds EVENT_AMEND_ACTIVE to events CHECK', async
   const store = openStore(root);
   store.close();
 
-  const dbPath = join(root, '.svp', 'playbook.sqlite');
+  const dbPath = join(resolveStoreDir(root), 'playbook.sqlite');
   const database = new DatabaseSync(dbPath);
 
   const oldCommands = ['transition', 'note', 'takeover', 'evidence', 'imported', 'schema-migrated'];
