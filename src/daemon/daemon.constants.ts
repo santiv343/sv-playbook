@@ -17,3 +17,10 @@ export const ERR_INVALID_CONTEXT = 'invalid context';
  *  inactivity timeout — commands set their own deadlines.
  *  Override via daemon config (not yet implemented). */
 export const DAEMON_CONNECT_TIMEOUT_MS_DEFAULT = 5000;
+
+/** Full-request timeout in ms for the forwarding transport child process.
+ *  Covers connect + processing. Cancelled only when the complete HTTP
+ *  response body is received or an error/close terminates the request.
+ *  Prevents the CLI from hanging indefinitely when the daemon stops
+ *  responding after accepting the TCP connection. */
+export const DAEMON_REQUEST_TIMEOUT_MS_DEFAULT = 30000;
