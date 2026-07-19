@@ -9,7 +9,7 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createServer as createNetServer } from 'node:net';
 import { openStore, migrateStore, readDaemonPort, worktreeRoot, resolveStoreDir } from './store.js';
 import { DAEMON_DEFAULT_PORT } from '../daemon/daemon.constants.js';
-import { EVENT_SCHEMA_MIGRATED, SCHEMA_VERSION } from './store.constants.js';
+import { EVENT_SCHEMA_MIGRATED, SCHEMA_VERSION, SVP_DIR } from './store.constants.js';
 import { numberColumn, stringColumn } from './rows.js';
 import { randomUUID } from 'node:crypto';
 import { initTestRepo } from '../testkit.js';
@@ -384,7 +384,7 @@ test('sync forward handles daemon dying mid-response without hanging (STORE-003)
 
 test('tryAutoForward targets the port recorded in the daemon lock file, not the default (STORE-003)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-lock-port-'));
-  const svpDir = resolveStoreDir(root);
+  const svpDir = join(root, SVP_DIR);
   await mkdir(svpDir, { recursive: true });
 
   // No lock file → default port

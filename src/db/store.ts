@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync as fsRealpathSync, unlinkSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { stringColumn } from './rows.js';
-import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
+import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_KIND, SVP_DIR, WORKTREE_DAEMON_REQUIRED_TEXT } from './store.constants.js';
 import { resolveStoreRoot } from './store-location.js';
 import { relocateStoreIfNeeded } from './store-migration-relocate.js';
 import { GIT_ARGUMENT } from '../git.constants.js';
@@ -38,6 +38,14 @@ export function resolveStoreDir(repoRoot: string): string {
     return resolveStoreRoot(commonRoot(repoRoot));
   } catch {
     return resolveStoreRoot(repoRoot);
+  }
+}
+
+function canonicalRootOrRepoRoot(repoRoot: string): string {
+  try {
+    return commonRoot(repoRoot);
+  } catch {
+    return repoRoot;
   }
 }
 
@@ -86,7 +94,7 @@ export function isWorktree(s: string): boolean {
   catch { return false; }
 }
 export function isDaemonRunning(repoRoot: string): boolean {
-  const lockPath = join(resolveStoreDir(repoRoot), DAEMON_LOCK_FILE);
+  const lockPath = join(repoRoot, SVP_DIR, DAEMON_LOCK_FILE);
   if (!existsSync(lockPath)) return false;
   try {
     const pid = Number(readFileSync(lockPath, 'utf8').trim().split('\n')[0]);
@@ -97,7 +105,7 @@ export function isDaemonRunning(repoRoot: string): boolean {
 }
 
 export function readDaemonToken(repoRoot: string): string | null {
-  const p = join(resolveStoreDir(repoRoot), DAEMON_TOKEN_FILE);
+  const p = join(repoRoot, SVP_DIR, DAEMON_TOKEN_FILE);
   if (!existsSync(p)) return null;
   try { return readFileSync(p, 'utf8').trim().split('\n')[0] ?? null; }
   catch { return null; }
@@ -115,7 +123,7 @@ export function blessedRoot(s: string): string | null {
 // The daemon lock file records `pid\nport\nstarted_at` — honor the port the
 // daemon actually bound (daemon --port N), falling back to the default.
 export function readDaemonPort(repoRoot: string): number {
-  const lockPath = join(resolveStoreDir(repoRoot), DAEMON_LOCK_FILE);
+  const lockPath = join(repoRoot, SVP_DIR, DAEMON_LOCK_FILE);
   try {
     const port = Number(readFileSync(lockPath, 'utf8').split('\n')[1]?.trim());
     if (Number.isInteger(port) && port > 0 && port <= 65535) return port;
@@ -258,6 +266,7 @@ export function setDaemonStore(s: Store | null): void {
       db: s.db,
       orm: s.orm,
       dir: s.dir,
+      repoRoot: s.repoRoot,
       close: () => {},
     };
   }
@@ -271,11 +280,12 @@ export function setDaemonStarting(v: boolean): void {
   daemonStarting = v;
 }
 
-function createStore(db: Database.Database, dir: string): Store {
+function createStore(db: Database.Database, dir: string, repoRoot: string): Store {
   return {
     db,
     orm: createStoreOrm(db),
     dir,
+    repoRoot,
     close: () => {
       if (db.open) db.close();
     },
@@ -295,7 +305,7 @@ function openStoreAt(dir: string, repoRoot: string, options?: OpenStoreOptions):
     checkVersionAndMigrate(db, repoRoot, options);
   }
   migratePacketColumn(db, 'pr', SQLITE_COLUMN_TYPE.TEXT, false);
-  return createStore(db, dir);
+  return createStore(db, dir, repoRoot);
 }
 
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
@@ -303,14 +313,14 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
     return daemonStore;
   }
   assertStoreNotHeldByDaemon(repoRoot);
-  relocateStoreIfNeeded(repoRoot, commonRoot(repoRoot));
+  relocateStoreIfNeeded(repoRoot, canonicalRootOrRepoRoot(repoRoot));
   return openStoreAt(resolveStoreDir(repoRoot), repoRoot, options);
 }
 
 function openStoreReadOnlyAt(dir: string, repoRoot: string): Store {
   const path = join(dir, DB_FILE);
   if (!existsSync(path)) {
-    relocateStoreIfNeeded(repoRoot, commonRoot(repoRoot));
+    relocateStoreIfNeeded(repoRoot, canonicalRootOrRepoRoot(repoRoot));
     openStore(repoRoot).close();
   }
 
@@ -321,7 +331,7 @@ function openStoreReadOnlyAt(dir: string, repoRoot: string): Store {
     db.close();
     throw new StoreVersionError(`store schema version ${String(version)} does not match runtime version ${SCHEMA_VERSION}`);
   }
-  return createStore(db, dir);
+  return createStore(db, dir, repoRoot);
 }
 
 export function openStoreReadOnly(repoRoot: string): Store {

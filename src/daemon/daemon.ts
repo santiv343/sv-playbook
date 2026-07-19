@@ -4,6 +4,7 @@ import { closeSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting, resolveStoreDir } from '../db/store.js';
 import { assertExclusiveStoreLock } from '../db/inspection.js';
+import { DB_FILE, SVP_DIR } from '../db/store.constants.js';
 import { DAEMON_LOCK_FILE, DAEMON_ROUTE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
 import { HTTP_METHOD, NODE_ERROR_CODE, PROCESS_EVENT } from '../platform.constants.js';
 import { nodeErrorCode } from '../platform.js';
@@ -279,7 +280,7 @@ function verifyDaemonStore(store: Store, dbPath: string, lockPath: string): void
 }
 
 function initializeDaemonRuntime(repoRoot: string, port: number): DaemonRuntime {
-  const svpDir = resolveStoreDir(repoRoot);
+  const svpDir = join(repoRoot, SVP_DIR);
   mkdirSync(svpDir, { recursive: true, mode: 0o700 });
   const lockPath = join(svpDir, DAEMON_LOCK_FILE);
   const tokenPath = join(svpDir, DAEMON_TOKEN_FILE);
@@ -290,7 +291,7 @@ function initializeDaemonRuntime(repoRoot: string, port: number): DaemonRuntime 
   const store = openDaemonStore(repoRoot, lockPath);
   setDaemonStore(store);
   state.store = store;
-  verifyDaemonStore(store, join(svpDir, 'playbook.sqlite'), lockPath);
+  verifyDaemonStore(store, join(resolveStoreDir(repoRoot), DB_FILE), lockPath);
   writeTokenFileOwnerOnly(tokenPath, token);
   return { token, state };
 }

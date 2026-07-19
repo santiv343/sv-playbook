@@ -146,7 +146,7 @@ export function leaseOf(store: Store, packetId: string): LeaseInfo | undefined {
   const row = store.db.prepare('SELECT session_id, worktree, acquired_at, heartbeat_at FROM leases WHERE packet_id = ?').get(packetId);
   if (row === undefined) return undefined;
   const heartbeatAt = stringColumn(row, 'heartbeat_at');
-  const leaseTtlMs = loadConfig(dirname(store.dir)).tasks.leaseTtlMs;
+  const leaseTtlMs = loadConfig(store.repoRoot).tasks.leaseTtlMs;
   return { sessionId: stringColumn(row, 'session_id'), worktree: stringColumn(row, 'worktree'),
     acquiredAt: stringColumn(row, 'acquired_at'), heartbeatAt,
     stale: Date.now() - Date.parse(heartbeatAt) > leaseTtlMs };
@@ -218,7 +218,7 @@ function gateReview(store: Store, packetId: string, from: string, to: string): v
   if (glbs.length === 0) return;
   let changed: readonly string[];
   try {
-    const baseReference = loadConfig(dirname(store.dir)).reviewPreflight.baseReference;
+    const baseReference = loadConfig(store.repoRoot).reviewPreflight.baseReference;
     changed = changedFilesForBase(lease.worktree, baseReference);
   } catch (error: unknown) {
     const detail = error instanceof Error ? error.message : String(error);

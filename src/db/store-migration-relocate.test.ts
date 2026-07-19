@@ -31,7 +31,7 @@ test('moves an existing in-tree .svp/ to the external location', () => {
     relocateStoreIfNeeded(repoRoot, commonRootPath);
 
     const externalPath = resolveStoreRoot(commonRootPath);
-    assert.equal(existsSync(inTreePath), false, 'in-tree .svp/ should be removed');
+    assert.equal(existsSync(inTreePath), true, 'in-tree .svp/ should be preserved for lock/token/session metadata');
     assert.equal(existsSync(join(externalPath, DB_FILE)), true, 'db should exist at external location');
   } finally {
     cleanup();
