@@ -70,27 +70,33 @@ export function amendPacket(
   _docRoot: string,
   packetId: string,
   updates: AmendPacketUpdates,
+  sessionId?: string,
 ): void {
   const row = store.orm.select().from(packets).where(eq(packets.id, packetId)).get();
   if (row === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
   assertAmendable(row.status, packetId);
-  const current = loadWorkDefinition(store, packetId).value;
   if (row.status === STATUS.ACTIVE) {
     assertActiveAmendFields(updates);
-    assertWriteSetExtension(current.writeSet, updates);
-    const definition = amendedDefinition(packetId, current, row.title, updates);
     const body = row.body;
     transact(store, () => {
+      const currentRow = store.orm.select().from(packets).where(eq(packets.id, packetId)).get();
+      if (currentRow === undefined) throw new LifecycleError(`unknown packet: ${packetId}`);
+      const current = loadWorkDefinition(store, packetId).value;
+      assertWriteSetExtension(current.writeSet, updates);
+      const definition = amendedDefinition(packetId, current, currentRow.title, updates);
       store.orm.update(packets).set({
         writeSetJson: canonicalJson(definition.writeSet),
         updatedAt: new Date().toISOString(),
       }).where(eq(packets.id, packetId)).run();
       recordWorkDefinition(store, workDefinitionValue(definition, body, current.type));
-      store.db.prepare(INSERT_EVENT_SQL).run(null, packetId, EVENT_AMEND_ACTIVE, `write_set extended: ${current.writeSet.join(', ')} -> ${definition.writeSet.join(', ')}`, new Date().toISOString());
+      store.db.prepare(INSERT_EVENT_SQL).run(sessionId ?? null, packetId, EVENT_AMEND_ACTIVE, `write_set extended: ${current.writeSet.join(', ')} -> ${definition.writeSet.join(', ')}`, new Date().toISOString());
     });
+    const current = loadWorkDefinition(store, packetId).value;
+    const definition = amendedDefinition(packetId, current, row.title, updates);
     writeFileSync(row.path, generatePacketDocument(definition, body), 'utf8');
     return;
   }
+  const current = loadWorkDefinition(store, packetId).value;
   const definition = amendedDefinition(packetId, current, row.title, updates);
   const body = updates.body ?? row.body;
   transact(store, () => {
