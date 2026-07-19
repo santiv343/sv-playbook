@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { NODE_EVAL_FLAG, PROCESS_STDIO, TEXT_ENCODING } from '../platform.constants.js';
-import { BUILD_DIGEST_HEALTH_FIELD, DAEMON_CONNECT_TIMEOUT_MS_DEFAULT, GIT_DIR_NAME } from './daemon.constants.js';
+import { BUILD_DIGEST_HEALTH_FIELD, DAEMON_CONNECT_TIMEOUT_MS_DEFAULT, DAEMON_REQUEST_TIMEOUT_MS_DEFAULT, GIT_DIR_NAME } from './daemon.constants.js';
 import { SESSION_FILE_NAME } from '../tasks/service.constants.js';
 import type { ExecutionContext } from '../runtime/context.types.js';
 import { getContext } from '../runtime/context.js';
@@ -11,9 +11,9 @@ import { getContext } from '../runtime/context.js';
 // synchronously from module-load code (store.ts tryAutoForward). The child
 // POSTs the argv to the daemon, mirrors stdout/stderr, and exits with the
 // daemon-reported exit code (1 on any transport/parse failure).
-function buildForwardScript(body: string, port: number): string {
+function buildForwardScript(body: string, port: number, timeoutMs: number): string {
   const bl = Buffer.byteLength(body);
-  return `const http=require('http');const b=${JSON.stringify(body)};const r=http.request({hostname:'127.0.0.1',port:${port},method:'POST',path:'/api/v1/exec',headers:{'Content-Type':'application/json','Content-Length':${bl}}},s=>{let d='';s.setEncoding('utf8');s.on('data',c=>{d+=c;});s.on('end',()=>{try{const p=JSON.parse(d);if(p.stdout)process.stdout.write(p.stdout);if(p.stderr)process.stderr.write(p.stderr);process.exit(typeof p.exitCode==='number'?p.exitCode:1);}catch{process.exit(1);}});});const ct=setTimeout(()=>{r.destroy();process.exit(1);},${DAEMON_CONNECT_TIMEOUT_MS_DEFAULT});r.on('socket',s=>{s.on('connect',()=>clearTimeout(ct));});r.on('error',()=>{clearTimeout(ct);process.exit(1);});r.end(b);`;
+  return `const http=require('http');const b=${JSON.stringify(body)};const r=http.request({hostname:'127.0.0.1',port:${port},method:'POST',path:'/api/v1/exec',headers:{'Content-Type':'application/json','Content-Length':${bl}}},s=>{let d='';s.setEncoding('utf8');s.on('data',c=>{d+=c;});s.on('end',()=>{clearTimeout(rt);try{const p=JSON.parse(d);if(p.stdout)process.stdout.write(p.stdout);if(p.stderr)process.stderr.write(p.stderr);process.exit(typeof p.exitCode==='number'?p.exitCode:1);}catch{process.exit(1);}});});const rt=setTimeout(()=>{r.destroy();process.exit(1);},${timeoutMs});r.on('error',()=>{clearTimeout(rt);process.exit(1);});r.end(b);`;
 }
 
 // The session id lives at the worktree root (.svp/session). Walk up from the
@@ -65,10 +65,11 @@ export function fetchDaemonBuildDigestSync(port: number): string | null {
   }
 }
 
-export function forwardToDaemonSync(argv: string[], token: string, port: number, ctx?: ExecutionContext): number {
+export function forwardToDaemonSync(argv: string[], token: string, port: number, ctx?: ExecutionContext, requestTimeoutMs?: number): number {
   const context = ctx ?? getContext() ?? { cwd: process.cwd(), sessionId: readSessionId(process.cwd()) };
   const body = JSON.stringify({ token, argv, context });
-  const result = spawnSync(process.execPath, [NODE_EVAL_FLAG, buildForwardScript(body, port)], {
+  const timeout = requestTimeoutMs ?? DAEMON_REQUEST_TIMEOUT_MS_DEFAULT;
+  const result = spawnSync(process.execPath, [NODE_EVAL_FLAG, buildForwardScript(body, port, timeout)], {
     stdio: ['ignore', 'inherit', 'inherit'],
   });
   return typeof result.status === 'number' ? result.status : 1;
