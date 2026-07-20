@@ -13,6 +13,13 @@ export interface PrInfo {
   isDraft: boolean;
 }
 
+// "Reconcile" concilia el estado del store con la realidad de GitHub (PRs
+// mergeados/cerrados fuera de banda) — GhReader es el puerto hacia `gh`
+// (ver F-003 en findings.md: `gh pr list --state all` es la única forma
+// confiable de detectar PRs squash-mergeados, `git merge-base
+// --is-ancestor` no alcanza). safety en ReconcilerRow clasifica cada acción
+// propuesta por cuán reversible es — determina si reconcile.ts la ejecuta
+// sola o la deja para confirmación humana.
 export interface ReconcilerRow {
   divergence: string;
   action: string;

@@ -76,6 +76,13 @@ function inferEslintConventions(root: string): InferredConvention[] {
   return conventions;
 }
 
+// "Adopt" (a diferencia del resto del sistema) trabaja sobre un repo AJENO
+// que se está incorporando a sv-playbook — inferTaste lee config existente
+// (tsconfig, eslint) para DEDUCIR convenciones ya en uso, en vez de
+// imponer las propias. confidence 1.0 es para hechos verificables
+// directamente en config (compilerOptions.strict === true); 0.9 para
+// inferencias sobre CONTENIDO de archivo (`raw.includes(...)`, más frágil
+// porque no parsea el AST de eslint.config.js, sólo busca substrings).
 export function inferTaste(root: string): InferredConvention[] {
   return [
     ...inferTsconfigConventions(root),

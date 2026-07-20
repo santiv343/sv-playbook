@@ -5,6 +5,13 @@ import type { ReviewCandidateIntegration } from '../review/review-candidate.type
 import { TRANSITION_COLUMN } from '../tasks/service.constants.js';
 import type { IntegrationOutcome, PromotionStatus, PromotionVerdict } from './promotion.types.js';
 
+// Todas las tablas de promotion_* son append-only con triggers "immutable"
+// (ver PROMOTION_IMMUTABLE_TRIGGERS en db/store.constants.ts) — el estado
+// "actual" de un candidato no es una columna que se pisa, es la última fila
+// de promotion_state_events por sequence (ver latestState() en
+// promotion.receipts.ts). Es el mismo patrón event-sourcing que taskEvents
+// en tasks/schema.constants.ts, pero acá aplicado también al historial de
+// checks/verdicts/intentos de integración, no sólo a las transiciones.
 export const PROMOTION_TABLE = {
   CANDIDATES: 'promotion_candidates',
   STATE_EVENTS: 'promotion_state_events',

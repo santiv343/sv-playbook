@@ -26,6 +26,14 @@ export interface PromotionReceipt {
   readonly createdAt: string;
 }
 
+// La "identidad" completa de un candidato de promoción es un compuesto de
+// 5 valores (taskId + workDefinitionVersion + candidateSha + configDigest +
+// contractDigest, ver promotion_candidate_identity uniqueIndex en
+// promotion.schema.constants.ts) — dos intentos de promover el MISMO sha
+// bajo la MISMA versión de work definition pero con config/contract
+// distintos son candidatos DISTINTOS, no duplicados. Esto es lo que
+// permite reintentar una promoción después de que cambien las reglas de
+// verificación sin chocar con el intento anterior.
 export interface CandidateIdentity {
   readonly id: string;
   readonly reviewCandidateId: string;

@@ -47,6 +47,14 @@ function parseWith<T>(schema: { parse(value: unknown): T }, raw: string, code: P
   }
 }
 
+// Dos esquemas de validación distintos para dos artefactos distintos que
+// entran a promotion desde afuera: el candidato en sí (lo que armó el
+// implementer, contra review-candidate.ts) y el veredicto del reviewer
+// (contra ReviewVerdictEnvelopeSchema, contracts/review-verdict.constants.ts
+// — el schema COMPARTIDO documentado ahí). ReviewCandidateArtifactSchema es
+// deliberadamente MÁS LAXO que REVIEW_CANDIDATE_SCHEMA_V3 completo — sólo
+// pide los campos que promotion.ts necesita leer, no re-valida todo el
+// contrato (eso ya lo hizo review-candidate.ts al crearlo).
 export function parseReviewCandidateArtifact(valueJson: string): ParsedReviewCandidateArtifact {
   const parsed = parseWith(ReviewCandidateArtifactSchema, valueJson, PROMOTION_ERROR.CANDIDATE_INVALID, 'review candidate artifact');
   const cleanVerification = parsed.evidence.preflight.cleanVerification;
