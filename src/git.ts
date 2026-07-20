@@ -27,6 +27,14 @@ export function resolveGitMergeBase(
   return gitOutput(worktree, [GIT_ARGUMENT.MERGE_BASE, baseReference, GIT_ARGUMENT.HEAD], options);
 }
 
+// Diff de "tres puntos" (`mergeBase...HEAD`), no un diff directo contra
+// `baseReference`: compara HEAD contra el punto donde la rama actual se
+// separó de la base, no contra la punta actual de la base. Esto importa
+// si `baseReference` avanzó después de que la rama se creó — un diff
+// directo mostraría también los cambios que la base sumó mientras tanto
+// (que no son responsabilidad de esta rama); el diff de tres puntos no.
+// Es lo que usan gateReview (flujo 3) y el candidato de review (flujo 4)
+// para saber "qué tocó REALMENTE esta rama".
 export function changedFilesForBase(worktree: string, baseReference: string): string[] {
   const mergeBase = resolveGitMergeBase(worktree, baseReference);
   const output = gitOutput(worktree, [
