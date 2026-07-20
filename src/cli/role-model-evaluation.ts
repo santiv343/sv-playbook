@@ -9,6 +9,11 @@ import { EXIT } from './command.constants.js';
 import type { Io } from './command.types.js';
 import { ROLE_SUBCOMMAND } from './commands/role.constants.js';
 
+// `role evaluate-models` corre model-capability-evaluation.ts (el examen de
+// 3 casos) contra CADA modelo distinto configurado en execution profiles
+// (evaluateConfiguredModels) — falla si algún modelo no pasa, o si no hay
+// ningún receipt (`receipts.length > 0` es parte de la condición: sin
+// profiles configurados, `valid` también es false, no vacuously true).
 export async function evaluateModels(args: readonly string[], io: Io): Promise<number> {
   if (args.length !== EMPTY_SIZE) {
     throw new TypeError(`${ROLE_SUBCOMMAND.EVALUATE_MODELS} takes no arguments`);
