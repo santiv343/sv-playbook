@@ -1,3 +1,7 @@
+// Vocabulario compartido de argumentos de `git` para no repetir strings
+// literales entre los ~15 lugares que invocan git (review-candidate.ts,
+// reconcile.ts, workspace/classification.ts, etc.) — PRINCIPLE-011
+// aplicado a comandos externos, no sólo a datos propios.
 export const GIT_EXECUTABLE = 'git';
 export const GIT_ARGUMENT = {
   ABBREV_REF: '--abbrev-ref',
