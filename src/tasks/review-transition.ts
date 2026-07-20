@@ -39,6 +39,12 @@ async function verifyLegacyReview(store: Store, packetId: string, from: string):
   captureLegacyReviewEvidence(store, packetId, from, STATUS.REVIEW, lease);
 }
 
+// Éste, no movePacket() (service.ts), es el camino que REALMENTE ejecuta
+// `task move <id> review` (ver src/cli/commands/task.ts, handleMove) — el
+// branch REVIEW-específico dentro de movePacket() (gateVerify,
+// captureLegacyReviewEvidence) queda inalcanzable desde el CLI real, sólo
+// lo ejercitan tests que llaman movePacket() directo (ver findings.md
+// F-007).
 export async function movePacketToReview(
   store: Store,
   sessionId: string | undefined,
