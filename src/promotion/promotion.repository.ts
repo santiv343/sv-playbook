@@ -55,6 +55,11 @@ function candidateIdentity(row: typeof promotionCandidates.$inferSelect): Candid
   };
 }
 
+// Event-sourcing puro para el estado de un candidato: nunca hay un UPDATE a
+// "status actual", sólo INSERTs con `sequence` creciente (max(sequence)+1).
+// candidateStatus() (más abajo) deriva el estado actual leyendo la última
+// fila por sequence — el mismo patrón que promotionStateEvents comparte con
+// taskEvents/transitions en tasks/schema.constants.ts.
 export function appendState(
   store: Store,
   candidateId: string,
@@ -163,6 +168,14 @@ export function candidateStatus(store: Store, candidateId: string): PromotionSta
   return row.status;
 }
 
+// Lee el estado actual, valida que coincida con `expected`, y sólo entonces
+// agrega el nuevo evento — un compare-and-swap LÓGICO, pero a diferencia de
+// los CAS por SQL (`UPDATE ... WHERE status = X`, ver architecture.md) acá
+// el read y el write son dos operaciones separadas, no atómicas a nivel de
+// motor. Bajo el modelo de single-blessed-writer (un solo daemon
+// escribiendo) esto es seguro; si alguna vez se paraleliza la escritura de
+// promoción, esta función necesitaría el mismo patrón condicional que el
+// resto del sistema usa para evitar una carrera entre lectura y escritura.
 export function transitionCandidate(
   store: Store,
   candidateId: string,
@@ -271,6 +284,13 @@ export function findIntegrationOutcome(store: Store, attemptId: string): Integra
   return { outcome: row.outcome, resultSha: row.resultSha, reason: row.reason };
 }
 
+// El outcome de un intento de integración es INMUTABLE una vez grabado —
+// una segunda llamada con un observation DISTINTO al ya guardado lanza en
+// vez de sobreescribir (comparando por canonicalJson). Esto es la garantía
+// de que, sin importar cuántas veces se reintente observar el resultado de
+// un `fastForwardRef` (ver integrationObservation en promotion.integration.ts),
+// el outcome persistido nunca cambia de opinión sobre qué pasó — es un
+// hecho histórico, no un estado que se actualiza.
 export function recordIntegrationOutcome(
   store: Store,
   attempt: StoredIntegrationAttempt,
