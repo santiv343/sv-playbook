@@ -110,6 +110,11 @@ interface ScaffoldResult {
   packetCount: number;
 }
 
+// Instala sv-playbook sobre un repo existente: escribe playbook.config.json
+// + AGENTS.md (si no existía) y, por cada gap detectado por analyzeGaps que
+// no esté ya PRESENT, crea un packet de remediación — así la adopción no
+// deja gaps silenciosos, los convierte en trabajo trazable en el board.
+// Sin --force se niega a pisar una adopción previa.
 export function scaffold(
   repoRoot: string,
   inventory: InventoryReport,

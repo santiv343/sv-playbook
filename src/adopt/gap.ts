@@ -14,6 +14,13 @@ function checkArtifact(
   return { requirement: key, status: GAP_STATUS.PRESENT, reason: presentReason };
 }
 
+// Compara el inventario de un repo existente contra lo mínimo que
+// sv-playbook necesita para instalarse sobre él (config, cold-start,
+// verify command, carpeta de packets, CI). branch-protection queda
+// deliberadamente 'unknown' — no hay forma de verificarlo sin llamar a la
+// API de GitHub, así que se le pide al humano que lo confirme a mano en vez
+// de fingir una respuesta. Cada gap 'missing' se convierte más adelante en
+// un packet de remediación (ver scaffold.ts).
 export function analyzeGaps(inventory: InventoryReport): GapReport {
   const checks: GapCheckResult[] = [
     checkArtifact(
