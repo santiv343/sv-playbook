@@ -35,17 +35,19 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 11. [`flows/flow-11-secondary-flows.md`](./flows/flow-11-secondary-flows.md) — backup/restore/rebuild, sprints, adopt, reconcile ✅
 
 ### Cierre
-- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — 10 hallazgos (F-001..F-010)
+- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — F-001..F-010 activos, F-011 retirado (autocorregido con más evidencia)
 
 ## Estado del recorrido
 
 **Los 11 flujos planificados en la Etapa 1 están completos.** Guía
 terminada en su primera pasada: fundamentos (arquitectura, mapa de
 repositorio, glosario, `explicacion-simple.md` a nivel producto) + 11
-flujos + `findings.md` con 10 hallazgos documentados (no implementados).
+flujos + `findings.md` con 10 hallazgos activos (F-001..F-010, no
+implementados) y un F-011 que se investigó, se documentó y se retiró en el
+mismo día tras encontrar evidencia contraria (ver sección siguiente).
 El código fuente (`src/`) también tiene comentarios explicativos en
-español agregados en ~65 archivos durante esta sesión — ver commits
-`docs(comments): ...`.
+español agregados en **~96 archivos** durante esta sesión — ver commits
+`docs(comments): ...` en la rama `docs/codebase-guide-and-comments-2026-07-20`.
 
 **Se agregó PRINCIPLE-016 — "Correctness is cross-domain, not
 file-local"** (`content/principles.md`, propagado a `AGENTS.md`/`CLAUDE.md`
@@ -71,11 +73,22 @@ gate sólo verifica si existe evidencia genérica, nunca cruza contenido.
 Todos también quedaron registrados en `docs/backlog.md` (IDEA-124..126)
 para el sistema real de tracking del proyecto, no sólo en esta guía.
 
+**PRINCIPLE-016 también se aplicó sobre sí mismo, y falló una vez — eso es
+la prueba de que funciona.** F-011 se anotó inicialmente como "un archivo
+rompe la convención de usar el ORM" mirando sólo `protocol-evolution.ts`
+en aislamiento — exactamente el error que PRINCIPLE-016 existe para
+prevenir. Al aplicar la disciplina de verdad (`grep` contra TODO el
+codebase, no confiar en la regla de memoria) aparecieron 22 archivos con el
+mismo patrón, y un gate mecánico ya existente (`check/orm-boundary.ts`) que
+lo rastrea como deuda monotónica versionada. F-011 se retiró y se corrigió
+el comentario en el código fuente en el mismo commit — documentado como
+lección, no borrado silenciosamente.
+
 Trabajo posterior sugerido (no iniciado): confirmar F-007/F-010 con
 ejecución real (no sólo lectura de código) y decidir su fix; decidir sobre
 el resto de `findings.md`; seguir cruzando patrones entre dominios en vez
 de sólo comentar archivo por archivo; extender los comentarios en español
-al resto del codebase (~230 archivos todavía sin tocar).
+al resto del codebase (~270 archivos todavía sin tocar).
 
 ## Reglas de esta guía (para quien la siga escribiendo)
 
