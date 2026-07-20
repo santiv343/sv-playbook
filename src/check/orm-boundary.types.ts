@@ -4,6 +4,9 @@ import type { SourceBaseline, SourceBaselineEvaluation } from './source-baseline
 export type OrmBoundaryViolationKind =
   typeof ORM_BOUNDARY_VIOLATION[keyof typeof ORM_BOUNDARY_VIOLATION];
 
+// OrmBoundaryInventory NO extiende SourceBaseline como sus hermanos (lo
+// redeclara con los mismos 3 campos) — inconsistencia cosmética, no
+// funcional, entre este archivo y duplicate-string.types.ts/literal-comparison.types.ts.
 export interface OrmBoundarySource {
   readonly path: string;
   readonly source: string;
