@@ -26,7 +26,7 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 5. [`flows/flow-05-context-coldstart.md`](./flows/flow-05-context-coldstart.md) — cold-start de contexto (`instructions --write`) ✅
 6. [`flows/flow-06-daemon-lifecycle.md`](./flows/flow-06-daemon-lifecycle.md) — daemon: ownership, forwarding, shutdown ✅ (gap real documentado: ver nota al inicio del archivo)
 7. [`flows/flow-07-serve-console.md`](./flows/flow-07-serve-console.md) — consola operativa HTTP ✅ (hallazgo real: F-002)
-8. `flows/flow-08-gateway-dispatch.md` — dispatch a agentes externos — *pendiente*
+8. [`flows/flow-08-gateway-dispatch.md`](./flows/flow-08-gateway-dispatch.md) — dispatch a agentes externos ✅
 9. `flows/flow-09-error-handling.md` — manejo de errores (transversal) — *pendiente*
 10. `flows/flow-10-complexity-checkpoint.md` — checkpoint de complejidad — *pendiente*
 11. `flows/flow-11-secondary-flows.md` — backup/restore/rebuild, sprints, adopt, reconcile — *pendiente*
@@ -36,7 +36,7 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 
 ## Estado del recorrido
 
-**Etapa actual: 8 — Consola serve.** Completada, ver `flows/flow-07-serve-console.md`. Encontró un segundo hallazgo real (F-002, SSE sin acotar).
+**Etapa actual: 9 — Gateway dispatch.** Completada, ver `flows/flow-08-gateway-dispatch.md`.
 
 ## Reglas de esta guía (para quien la siga escribiendo)
 
