@@ -1,3 +1,5 @@
+// Los marcadores literales BEGIN/END son lo que syncCommandReferenceDoc
+// busca en docs/how-it-works.md para reemplazar sólo ese bloque.
 export const COMMAND_REFERENCE_MARKERS = {
   BEGIN: '<!-- GENERATED:command-reference — do not edit below; regenerate: npx tsx src/cli/generate-command-reference.ts -->',
   END: '<!-- /GENERATED:command-reference -->',
