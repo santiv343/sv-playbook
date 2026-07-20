@@ -252,8 +252,17 @@ const gateEvidence = (store: Store, packetId: string, to: string): void => {
   const { evidenceRequired } = loadWorkDefinition(store, packetId).value;
   if (evidenceRequired.length > 0 && store.db.prepare("SELECT 1 FROM events WHERE packet_id = ? AND command = ? LIMIT 1").all(packetId, EVENT_EVIDENCE).length === 0) throw new LifecycleError(`missing required evidence: ${evidenceRequired.join(', ')}`);
 };
-// Camino "legacy" (pre-candidatos-de-review): si este packet no requiere el
-// flujo asíncrono de candidato de review (reviewCandidateRequired), corre
+// ⚠️ Ver findings.md F-007: esta función sólo se alcanza vía movePacket()
+// con to=REVIEW — y `task move <id> review` (el comando CLI real) NUNCA
+// llama a movePacket() con REVIEW, llama a movePacketToReview()
+// (review-transition.ts) en su lugar, que reimplementa esta misma
+// verificación de forma independiente (runSourceWorktreeVerifyCheck en
+// preflight.ts — async, timeout configurable, con outputTail — distinta
+// de verifyLegacyReviewSync, síncrona con execSync). Confirmado con grep
+// de todos los callers de movePacket(...,'review') en src/: sólo
+// aparecen en tests, nunca en un comando real. Camino "legacy"
+// (pre-candidatos-de-review): si este packet no requiere el flujo
+// asíncrono de candidato de review (reviewCandidateRequired), corre
 // verify de forma síncrona acá mismo antes de dejar pasar a REVIEW.
 function gateVerify(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;

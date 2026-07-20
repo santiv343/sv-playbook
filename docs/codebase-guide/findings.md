@@ -79,6 +79,66 @@ explícitamente (y en ese caso, agregar un test que cubra el caso
 "sesión sin ningún archivo de rol" para dejar esto agarrado). Cualquiera
 de las dos requiere decisión de producto, no es un fix mecánico obvio.
 
+## F-007: dos implementaciones independientes de "verificar en el worktree antes de pasar a review" — la que el CLI real usa no es la que los tests del dominio `tasks/` ejercitan
+
+**Encontrado en**: revisión cruzada de patrones entre `src/tasks/service.ts`,
+`src/tasks/review-transition.ts` y `src/review/preflight.ts`, 2026-07-20.
+
+**Qué pasa**: hay dos caminos separados que hacen esencialmente lo mismo
+("¿hay que correr `verifyCommand` en este worktree antes de dejar pasar a
+`review`, y si `enforceVerifyOnReview: false` está en la config, saltearlo?"):
+
+1. **`verifyLegacyReviewSync()`** (`src/tasks/legacy-review-verification.ts`) —
+   síncrona, vía `execSync` con timeout fijo, sin captura de output. La
+   llama `gateVerify()` dentro de `movePacket()` (`service.ts`), sólo
+   cuando `to === REVIEW` y `!reviewCandidateRequired(...)`.
+2. **`runSourceWorktreeVerifyCheck()`** (`src/review/preflight.ts`) —
+   asíncrona, vía `executePreflightCommand` con timeout configurable y
+   captura de output (`outputTail`). La llama `verifyLegacyReview()`
+   dentro de `movePacketToReview()` (`src/tasks/review-transition.ts`).
+
+Ambas parsean el mismo `playbook.config.json`, el mismo regex
+`enforceVerifyOnReview\s*:\s*false`, y corren el mismo
+`config.verifyCommand` — dos implementaciones separadas de la MISMA
+regla de negocio (violación de PRINCIPLE-011), con comportamiento
+observable distinto (timeout fijo vs. configurable, sin output capturado
+vs. con `outputTail` para debug).
+
+**El problema más serio, confirmado con grep de todos los callers de
+`movePacket(...)` en `src/`**: el comando real del CLI, `task move <id>
+review` (`src/cli/commands/task.ts`, función `handleMove`), **nunca**
+llama a `movePacket(store, session, id, STATUS.REVIEW)` — para
+`status === STATUS.REVIEW` específicamente, llama a
+`movePacketToReview()` en su lugar (`review-transition.ts`). Es decir:
+el camino 1 (`gateVerify`/`verifyLegacyReviewSync`) **nunca se ejecuta
+desde el CLI real** para esa transición.
+
+Sin embargo, `movePacket(..., 'review')` **sí se llama directo, muchas
+veces**, desde tests del dominio `tasks/`
+(`service.test.ts`, `service.verify.test.ts`, `redteam.test.ts`,
+`service.checkpoint.test.ts`, y otros — más de 15 call sites con
+`'review'`/`STATUS.REVIEW` sólo en tests). Estos tests SÍ pasan y SÍ
+verifican que el camino legacy funciona — pero verifican un camino que
+el usuario real, tipeando `sv-playbook task move X review`, nunca
+recorre. Da una falsa sensación de cobertura: "el gate de verify antes
+de review está probado" es cierto para la función `movePacket()` en
+aislamiento, pero no para el comportamiento real end-to-end del CLI.
+
+**No confirmado en vivo**: no se corrió `sv-playbook task move` contra un
+repo real para observar cuál de los dos mensajes de error aparece — el
+análisis es por lectura de código + trazado de imports/callers, no por
+ejecución.
+
+**Posible acción** (no implementada, a decidir): decidir si
+`gateVerify`/`verifyLegacyReviewSync`/el branch `reviewCandidateRequired`
+dentro de `movePacket()` siguen siendo un camino soportado (en cuyo caso
+debería llamarse desde algún lugar real del CLI, y las dos
+implementaciones de "correr verify en el worktree" deberían unificarse
+en una sola, probablemente `runSourceWorktreeVerifyCheck`), o si es
+código legacy que ya no aplica (en cuyo caso PRINCIPLE-015 pide
+retirarlo formalmente — con su propia evidencia de no-uso — en vez de
+dejarlo acumulado y sólo alcanzable desde tests).
+
 ## F-005: `loadConfig()` sin config file devuelve objetos anidados COMPARTIDOS por referencia (riesgo latente, no bug activo hoy)
 
 **Encontrado en**: tanda de comentarios en español extendida a `src/config.ts`, 2026-07-20.

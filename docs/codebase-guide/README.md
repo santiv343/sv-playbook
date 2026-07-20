@@ -35,24 +35,36 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 11. [`flows/flow-11-secondary-flows.md`](./flows/flow-11-secondary-flows.md) — backup/restore/rebuild, sprints, adopt, reconcile ✅
 
 ### Cierre
-- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — 5 hallazgos (F-001..F-005)
+- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — 7 hallazgos (F-001..F-007)
 
 ## Estado del recorrido
 
 **Los 11 flujos planificados en la Etapa 1 están completos.** Guía
 terminada en su primera pasada: fundamentos (arquitectura, mapa de
-repositorio, glosario) + 11 flujos + findings.md con 4 hallazgos reales
-documentados (no implementados). El código fuente (`src/`) también tiene
-comentarios explicativos en español agregados en los dominios centrales
-durante esta misma sesión — ver commits `docs(comments): ...`.
+repositorio, glosario, `explicacion-simple.md` a nivel producto) + 11
+flujos + `findings.md` con 7 hallazgos documentados (no implementados).
+El código fuente (`src/`) también tiene comentarios explicativos en
+español agregados en ~40 archivos durante esta sesión — ver commits
+`docs(comments): ...`.
 
-Trabajo posterior sugerido (no iniciado): decidir sobre los 4 hallazgos de
-`findings.md`; profundizar dominios mencionados pero no cubiertos en
-detalle (`orchestration/` más allá de `coordinator.ts`, `check/` más allá
-de `duplicate-string.ts`, `roles/` más allá de `catalog.ts`,
-`src/gateway/adapters/`); extender los comentarios en español al resto
-del codebase (hoy cubre el archivo principal de cada dominio, no cada
-archivo).
+Los dos hallazgos más importantes (F-006, F-007) no salieron de leer un
+archivo a la vez — salieron de cruzar patrones entre dominios (comparar
+cómo dos funciones distintas resuelven el mismo problema): **F-006**
+detecta que `decision answer` probablemente rechaza a un humano real por
+default (invierte el modelo de confianza de `destructive-gate.ts`); **F-007**
+detecta que el camino "legacy" de verificación pre-review
+(`gateVerify`/`verifyLegacyReviewSync` en `tasks/`) está duplicado con
+`runSourceWorktreeVerifyCheck` (`review/preflight.ts`) y es inalcanzable
+desde el CLI real — sólo lo ejercitan tests, dando cobertura falsa.
+Ambos también quedaron registrados en `docs/backlog.md` (IDEA-125,
+IDEA-124) para que entren al sistema real de tracking del proyecto, no
+sólo en esta guía.
+
+Trabajo posterior sugerido (no iniciado): confirmar F-006/F-007 con
+ejecución real (no sólo lectura de código) y decidir su fix; decidir sobre
+el resto de `findings.md`; seguir cruzando patrones entre dominios en vez
+de sólo comentar archivo por archivo; extender los comentarios en español
+al resto del codebase (~250 archivos todavía sin tocar).
 
 ## Reglas de esta guía (para quien la siga escribiendo)
 
