@@ -59,11 +59,11 @@ function execGitTopLevel(s: string): string {
   return execFileSync('git', GIT_TOPLEVEL_ARGS, { cwd: s, encoding: 'utf8' }).trim();
 }
 
-// git prints forward-slash paths while node:path resolves to backslashes on
-// win32 — normalize both sides (separators, drive-letter case, and any 8.3
-// short-name aliases) before comparing, or repo roots are misclassified on
-// Windows when os.tmpdir() returns a short-name path while git returns the
-// canonical long-name path.
+// git imprime paths con forward-slash mientras node:path resuelve a
+// backslashes en win32 — normalizar ambos lados (separadores, mayúsculas de
+// unidad, y cualquier alias de nombre corto 8.3) antes de comparar, o los
+// repo roots se clasifican mal en Windows cuando os.tmpdir() devuelve un
+// path de nombre corto mientras git devuelve el nombre largo canónico.
 function tryNativeRealpath(p: string): string | null {
   try { return fsRealpathSync.native(p); } catch { return null; }
 }
@@ -136,8 +136,9 @@ export function blessedRoot(s: string): string | null {
   } catch { return null; }
 }
 
-// The daemon lock file records `pid\nport\nstarted_at` — honor the port the
-// daemon actually bound (daemon --port N), falling back to the default.
+// El lock file del daemon registra `pid\nport\nstarted_at` — respeta el
+// puerto que el daemon efectivamente bindeó (daemon --port N), con
+// fallback al default si el archivo no está o es inválido.
 export function readDaemonPort(repoRoot: string): number {
   const lockPath = join(repoRoot, SVP_DIR, DAEMON_LOCK_FILE);
   try {
@@ -148,9 +149,10 @@ export function readDaemonPort(repoRoot: string): number {
 }
 
 // ── Workspace bindings (workspace → session, persisted) ──
-// The binding key is the canonical worktree root: linked worktrees get their
-// own binding, while subdirectories and other aliases of the same worktree
-// collapse onto one. Paths outside git fall back to the resolved cwd.
+// La clave de binding es la raíz canónica del worktree: los worktrees
+// enlazados (`git worktree add`) tienen su propio binding, mientras que
+// subdirectorios y otros alias del mismo worktree colapsan en uno solo.
+// Paths fuera de un repo git caen a un fallback del cwd resuelto.
 function bindingWorkspace(cwd: string): string {
   try {
     return normalizePathForCompare(execGitTopLevel(cwd));
@@ -159,9 +161,10 @@ function bindingWorkspace(cwd: string): string {
   }
 }
 
-// A workspace belongs to the daemon's repository when it sits inside the
-// blessed root or when its git common dir resolves back to it (linked
-// worktrees may live anywhere on disk).
+// Un workspace pertenece al repositorio del daemon cuando está dentro de la
+// "blessed root" (la raíz del checkout principal) o cuando su git common
+// dir resuelve de vuelta a ella (los worktrees enlazados pueden vivir en
+// cualquier parte del disco, no necesariamente bajo la raíz).
 export function workspaceWithinRepo(repoRoot: string, cwd: string): boolean {
   const workspace = bindingWorkspace(cwd);
   const root = normalizePathForCompare(repoRoot);
@@ -183,8 +186,9 @@ function assertMatchingBinding(workspace: string, actual: string, expected: stri
   throw new StoreVersionError(`workspace binding mismatch: ${workspace} is bound to session ${actual}, received ${expected}`);
 }
 
-// A claimed session that is already persisted for a different workspace is a
-// cross-bind attempt: reject it instead of creating a second identity link.
+// Una sesión reclamada que ya está persistida para otro workspace es un
+// intento de cross-bind: se rechaza en vez de crear un segundo enlace de
+// identidad (una sesión sólo puede estar atada a un worktree).
 function assertClaimMatchesSession(store: Store, workspace: string, sessionId: string): void {
   const row = store.db.prepare('SELECT worktree FROM sessions WHERE id = ?').get(sessionId);
   if (row === undefined) return;
@@ -224,27 +228,36 @@ export function bindWorkspace(store: Store, sessionId: string, workspace: string
   ).run(canonical, sessionId, new Date().toISOString());
 }
 
+// Se ejecuta al importar este módulo (ver el `if` de abajo), ANTES de que
+// ningún comando corra: si hay un daemon vivo para este repo, reenvía el
+// proceso CLI entero hacia él vía HTTP y termina este proceso con el exit
+// code que devolvió el daemon (process.exit). Es la forma en que "single
+// blessed writer" se cumple sin que cada comando tenga que saber si está
+// hablando con el daemon o abriendo el store directo — la decisión se toma
+// acá, una sola vez, antes de que exista esa ambigüedad.
 function tryAutoForward(): void {
   try {
     const cwd = getCwd();
     const args = process.argv.slice(2);
     if (args[0] === STORE_PROCESS_KIND.DAEMON) return;
 
-    // Classify at the worktree root: from a subdirectory the local .git entry
-    // differs from the common dir, which would misclassify plain
-    // subdirectories of the primary checkout as linked worktrees.
+    // Clasificar en la raíz del worktree: desde un subdirectorio, la entrada
+    // .git local difiere del common dir, lo cual clasificaría mal a simples
+    // subdirectorios del checkout principal como si fueran worktrees enlazados.
     const worktree = worktreeRoot(cwd);
     const br = blessedRoot(worktree);
-    // br is non-null in worktrees, null at root (where .git IS the common dir)
+    // br es no-null en worktrees enlazados, null en la raíz (donde .git ES el common dir)
     const repoRoot = br ?? worktree;
 
     if (!isDaemonRunning(repoRoot)) {
-      // Worktree without daemon: error with guidance
+      // Worktree sin daemon: no hay forma segura de escribir sin daemon
+      // (dos worktrees del mismo repo escribiendo directo al store
+      // colisionarían) — error con guía en vez de dejar avanzar.
       if (br !== null) {
         console.error(WORKTREE_DAEMON_REQUIRED_TEXT);
         process.exit(1);
       }
-      // Root without daemon: fall through to direct mode
+      // Raíz sin daemon: no hay riesgo de colisión, sigue en modo directo.
       return;
     }
 
@@ -252,6 +265,9 @@ function tryAutoForward(): void {
     if (token === null) return;
 
     const port = readDaemonPort(repoRoot);
+    // El digest de build evita que un CLI compilado de una versión distinta
+    // hable con un daemon de otra — reenviar comandos a un daemon con schema
+    // o contratos desalineados sería peor que fallar rápido acá.
     const myDigest = readBuildDigest();
     const daemonDigest = fetchDaemonBuildDigestSync(port);
     if (daemonDigest !== myDigest) {
@@ -260,13 +276,20 @@ function tryAutoForward(): void {
     }
 
     process.exit(forwardToDaemonSync(args, token, port));
-  } catch { /* proceed with direct mode */ }
+  } catch { /* si algo falla acá, seguir en modo directo es más seguro que bloquear el comando */ }
 }
 
+// NODE_TEST_CONTEXT_ENV desactiva el auto-forward en tests: los tests abren
+// el store directo y no quieren depender de un daemon real corriendo.
 if (!process.env[NODE_TEST_CONTEXT_ENV]) {
   tryAutoForward();
 }
 
+// Segunda línea de defensa del single-blessed-writer, para cuando
+// tryAutoForward no aplicó (ej. este mismo proceso ES el daemon, o el
+// forward falló silenciosamente): si hay un daemon vivo y este proceso no es
+// el daemon ni está arrancando uno, abrir el store acá sería una segunda
+// escritura concurrente — se rechaza en vez de arriesgar corrupción.
 function assertStoreNotHeldByDaemon(repoRoot: string): void {
   if (process.argv[2] === STORE_PROCESS_KIND.DAEMON || daemonStarting) return;
   if (isDaemonRunning(repoRoot)) {
@@ -280,9 +303,18 @@ function assertStoreNotHeldByDaemon(repoRoot: string): void {
   }
 }
 
+// Handle del store que mantiene abierto el propio proceso daemon (distinto
+// de daemonStore=null, que significa "no soy el daemon, abrí normal"). Todo
+// comando que corre DENTRO del proceso daemon reutiliza este mismo handle
+// (ver openStore/openStoreReadOnly más abajo) en vez de abrir su propia
+// conexión SQLite — es lo que hace al daemon un único escritor real y no
+// sólo un proxy.
 let daemonStore: Store | null = null;
 let daemonStarting = false;
 
+// close() se pisa por un no-op: el daemon es dueño del ciclo de vida real de
+// la conexión (la cierra él mismo al apagarse); un comando individual que
+// pidió prestado este store nunca debe poder cerrarlo por accidente.
 export function setDaemonStore(s: Store | null): void {
   if (s === null) {
     daemonStore = null;
@@ -333,6 +365,11 @@ function openStoreAt(dir: string, repoRoot: string, options?: OpenStoreOptions):
   return createStore(db, dir, repoRoot);
 }
 
+// Punto de entrada principal para lectura/escritura. relocateStoreIfNeeded
+// migra el store a su ubicación externa (fuera del árbol git, ver
+// store-location.ts) si todavía está en la ubicación legacy — se chequea en
+// cada apertura porque es barato y mantiene esa migración transparente sin
+// requerir un comando manual.
 export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   if (daemonStore !== null) {
     return daemonStore;
@@ -342,6 +379,10 @@ export function openStore(repoRoot: string, options?: OpenStoreOptions): Store {
   return openStoreAt(resolveStoreDir(repoRoot), repoRoot, options);
 }
 
+// Si el archivo todavía no existe (primera lectura de un repo sin store),
+// se abre y cierra una vez en modo escritura sólo para forzar la creación
+// del schema — de ahí en más esta conexión de sólo lectura puede asumir que
+// el archivo y el schema ya están.
 function openStoreReadOnlyAt(dir: string, repoRoot: string): Store {
   const path = join(dir, DB_FILE);
   if (!existsSync(path)) {
