@@ -8,6 +8,9 @@ import type {
   EventRowSchema,
 } from './store.constants.js';
 
+// Tipos de fila cruda validada (contraparte runtime de las tablas Drizzle
+// en tasks/schema.constants.ts) — usados donde se lee vía store.db.prepare
+// en vez de store.orm y hay que confiar el shape del resultado.
 export type PacketRow = s.Infer<typeof PacketRowSchema>;
 export type DepRow = s.Infer<typeof DepRowSchema>;
 export type TransitionRow = s.Infer<typeof TransitionRowSchema>;

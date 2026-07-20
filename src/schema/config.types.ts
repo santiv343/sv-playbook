@@ -1,6 +1,10 @@
 import type * as s from './core.types.js';
 import type { TierSchema, AutonomySchema, BackupConfigSchema, BaselineConfigSchema, ComplexityCheckpointConfigSchema, GatesConfigSchema, ModelEvaluationConfigSchema, PlaybookConfigSchema, ReviewPreflightConfigSchema, TasksConfigSchema } from './config.constants.js';
 
+// Todos estos tipos se DERIVAN de los schemas (s.Infer), nunca se declaran
+// por separado — un cambio al schema en config.constants.ts propaga
+// automáticamente el tipo acá, sin riesgo de que tipo y validador
+// diverjan (el mismo problema que PRINCIPLE-011 previene en general).
 export type Tier = s.Infer<typeof TierSchema>;
 export type Autonomy = s.Infer<typeof AutonomySchema>;
 export type BackupConfig = s.Infer<typeof BackupConfigSchema>;
