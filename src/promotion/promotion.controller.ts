@@ -106,6 +106,18 @@ function assertCurrentIdentity(
   }
 }
 
+// La única puerta a `done`: re-verifica todo en limpio antes de integrar a
+// main, en vez de confiar en lo que el agente reportó durante el review.
+// Pipeline de promote(): (1) cargar evidencia del candidato + validar que
+// pasó preflight y clean-verification atado a su propio SHA; (2)
+// re-confirmar que la work definition y config no cambiaron desde que se
+// creó el candidato (assertCurrentIdentity — evita promover algo "stale");
+// (3) validar el veredicto real del reviewer run; (4) avanzar la máquina de
+// estados propia de la promoción (advanceThroughChecks); (5) volver a correr
+// verify EN EL MOMENTO de integrar (verifyImmediatelyBeforeIntegration) —
+// porque main pudo haber cambiado entre que se aprobó el candidato y ahora;
+// (6) integrar (merge real) y cerrar la tarea. Cada paso deja un receipt
+// persistido — no hay forma de saltarse un paso sin dejar rastro.
 export class PromotionController {
   private readonly dependencies: PromotionControllerDependencies;
   private store: Store;
@@ -220,15 +232,20 @@ export class PromotionController {
     }
   }
 
+  // No basta con la clean-verification que ya pasó el candidato al crearse
+  // (evidence.cleanVerification*): entre ese momento y ahora, main puede
+  // haber avanzado. Esta es la re-verificación final, justo antes de
+  // integrar — el gate de "nunca fabricar verde" aplicado al momento exacto
+  // en que importa.
   private async verifyImmediatelyBeforeIntegration(candidate: CandidateIdentity): Promise<string> {
     if (this.dependencies.git.headSha(this.repoRoot) !== candidate.candidateSha) {
       throw new PromotionError(PROMOTION_ERROR.CANDIDATE_STALE, 'current worktree HEAD is not the candidate SHA');
     }
-    // The clean verification spawns a separate git worktree and runs the
-    // project verify command there. On Windows, keeping the primary store
-    // connection open while another process initializes the worktree store
-    // can produce SQLITE_BUSY / "database is locked" errors, so we close and
-    // reopen around the preflight.
+    // La clean verification lanza un worktree git separado y corre el
+    // comando verify del proyecto ahí. En Windows, mantener la conexión
+    // primaria del store abierta mientras otro proceso inicializa el store
+    // del worktree puede producir SQLITE_BUSY / "database is locked", así
+    // que se cierra y reabre alrededor del preflight.
     const previousStore = this.store;
     previousStore.close();
     let cleanReceipt: CleanVerificationReceipt;
