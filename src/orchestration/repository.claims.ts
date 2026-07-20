@@ -54,6 +54,12 @@ function effectQuery(store: Store) {
     .innerJoin(workflowArtifacts, eq(workflowArtifacts.id, workflowEffects.inputArtifactId));
 }
 
+// Mismo patrón compare-and-swap que fastForwardRef (promotion.git.ts,
+// flujo 11): el UPDATE incluye `WHERE status = PENDING` en la condición,
+// y si `changes !== 1` significa que otro worker ya reclamó este efecto
+// entre el SELECT y este UPDATE — se rechaza en vez de proceder con un
+// estado que ya cambió. Es lo que hace segura la concurrencia de
+// WorkflowCoordinator sin necesitar un lock explícito de aplicación.
 function persistClaim(
   store: Store,
   row: ClaimedWorkflowEffect,
@@ -89,6 +95,12 @@ function persistClaim(
   return row;
 }
 
+// `ne(executor, HUMAN)` es la línea que separa este archivo del mundo de
+// claimHumanEffect/findPendingHumanEffect más abajo: los efectos de
+// ejecutor HUMAN nunca se reclaman "al azar" por el próximo worker
+// disponible — se reclaman por `effectId` explícito, iniciados desde una
+// acción humana concreta (ver src/serve/server.ts, POST
+// /human-effects/:id/resolve, flujo 7).
 export function claimNextEffect(
   store: Store,
   leaseOwner: string,
