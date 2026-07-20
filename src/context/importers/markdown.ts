@@ -12,6 +12,11 @@ function parseHeading(line: string): Heading | undefined {
   return { level: match[1].length, title: match[2] };
 }
 
+// Extrae una sección de markdown por TÍTULO exacto de heading, respetando
+// jerarquía real: una vez encontrado el heading, sigue leyendo líneas hasta
+// el próximo heading del MISMO nivel o más alto (candidate.level <=
+// heading.level) — así una sub-sección anidada (nivel más profundo) queda
+// incluida como parte del contenido, no cortada prematuramente.
 export function readMarkdownSection(path: string, title: string): string {
   const lines = readFileSync(path, 'utf8').split(/\r?\n/);
   const start = lines.findIndex((line) => parseHeading(line)?.title === title);
