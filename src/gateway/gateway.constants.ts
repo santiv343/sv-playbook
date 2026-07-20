@@ -1,3 +1,9 @@
+// El gateway despacha trabajo a agentes EXTERNOS (procesos/CLIs fuera del
+// proceso de sv-playbook, ver flujo 08) — dispatch_intents es la tabla que
+// registra la INTENCIÓN de despachar antes de que el proceso externo
+// arranque; CONSUME_INTENT es otro compare-and-swap (status committed ->
+// consumed, sólo si sigue committed) para que dos workers no despachen el
+// mismo intent dos veces.
 export const GATEWAY_SQL = {
   BEGIN: 'BEGIN IMMEDIATE',
   COMMIT: 'COMMIT',

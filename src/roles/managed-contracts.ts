@@ -10,6 +10,11 @@ import { BUNDLED_ROLE_ARTIFACT_CONTRACT_REF } from './bundled-profile.constants.
 // Managed contracts are authored in code and reconciled into the store: a digest
 // mismatch repairs the schema in place, unless immutable artifacts already
 // reference the contract — changing it there would rewrite history.
+// El mismo patrón "aditivo, nunca destructivo" que review-candidate schemas
+// v1/v2/v3: si YA hay artefactos inmutables (workflowArtifacts) referenciando
+// este contractRef, un cambio de digest lanza driftErrorCode en vez de
+// pisarlo — la única forma de "cambiar" un contrato en uso es crear un ref
+// nuevo (versionado en el nombre) y migrar los productores.
 export function ensureManagedArtifactContract(
   store: Store,
   ref: string,

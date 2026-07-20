@@ -14,6 +14,13 @@ export interface ModelCapabilityEvaluationOptions {
   readonly validityDays: number;
 }
 
+// Evalúa si un modelo/adapter concreto es apto para ejercer un rol: le
+// manda el prompt fijo de model-capability-evaluation.constants.ts (3 casos
+// con respuesta correcta conocida) y compara el output real contra
+// MODEL_CAPABILITY_EVALUATION_EXPECTED. adapterEvidence/sessionEvidence/
+// submissionEvidence/observationEvidence son las 4 capas de evidencia cruda
+// que sustentan `passed` — nada se acepta sólo porque el LLM "dice" que
+// pasó (PRINCIPLE-001: todo claim respaldado por output literal).
 export interface ModelCapabilityEvaluationReceipt {
   readonly id: string;
   readonly suiteId: string;

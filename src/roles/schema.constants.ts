@@ -1,6 +1,14 @@
 import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { DATABASE_COLUMN, SQLITE_INTEGER_MODE } from '../db/schema-vocabulary.constants.js';
 
+// PRINCIPLE-013 en código: el catálogo de roles (quién hace qué, qué tiene
+// prohibido, cuándo escala) es una OPINIÓN de cada instancia, no algo
+// hardcodeado en el engine — por eso vive enteramente en tablas normalizadas
+// acá (responsibilities, role_prohibitions, role_stop_conditions, etc.) en
+// vez de en un enum de TypeScript. bundled-profile.constants.ts es sólo el
+// catálogo DEFAULT que se bootstrapea si el store está virgen
+// (roleCatalogStoreIsVirgin, ver system-check.ts); una instancia puede tener
+// un catálogo propio, versionado en role_catalog_versions.
 export const responsibilities = sqliteTable('responsibilities', {
   id: text(DATABASE_COLUMN.ID).primaryKey(),
   classification: text(DATABASE_COLUMN.CLASSIFICATION).notNull(),

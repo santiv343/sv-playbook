@@ -1,3 +1,8 @@
+// "Reconciliation" ata una propuesta de vocabulario (EscalationReconciliationProposal,
+// qué clases de escalación nuevas se necesitan y por qué) con su revisión
+// (EscalationReconciliationReview, PASS/FAIL con findings puntuales) — el
+// mismo patrón proponer→revisar de review-candidate.ts pero aplicado a
+// evolucionar el propio protocolo en vez de a un cambio de código.
 export interface EscalationClassMapping {
   roleId: string;
   sourceClass: string;

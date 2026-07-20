@@ -1,5 +1,29 @@
 # Hallazgos
 
+## F-011 (aplicando PRINCIPLE-016): `protocol-evolution.ts` usa SQL crudo en vez del ORM
+
+**Encontrado en**: comentando `src/contracts/protocol-evolution.ts` en
+español y comparando contra la convención del resto del código, 2026-07-20.
+
+**Qué pasa**: la convención establecida (y confirmada por el usuario en
+sesiones previas) es `store.orm` siempre para lectura/escritura de datos de
+negocio, con SQL crudo reservado a DDL/migraciones bajo `src/db`. La función
+`source()` en `src/contracts/protocol-evolution.ts` usa
+`store.db.prepare(...)` con un JOIN de 4 tablas y dos `UPDATE` crudos más
+abajo en `evolveProtocolVocabulary` — todo sobre tablas de negocio
+(`protocol_shared_schemas`, `artifact_contracts`,
+`artifact_contract_metadata`), no DDL, y fuera de `src/db`.
+
+**No confirmado si es intencional** (el JOIN de 4 tablas podría ser más
+directo en SQL crudo que expresarlo con el query builder de Drizzle) — pero
+rompe la convención documentada sin comentario que lo justifique.
+
+**Sugerencia (no implementada)**: si el JOIN es difícil de expresar con
+Drizzle, documentar la excepción explícitamente en el archivo; si no,
+migrar a `store.orm`.
+
+---
+
 ## F-010 (aplicando PRINCIPLE-016): `evidenceRequired` declara una lista de evidencias distintas, pero el gate sólo verifica "¿existe ALGUNA?"
 
 **Encontrado en**: cruzando TODOS los write-sites de `EVENT_EVIDENCE`

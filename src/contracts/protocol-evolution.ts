@@ -67,6 +67,11 @@ interface EvolutionSource {
   metadata: JsonRecord;
 }
 
+// ⚠️ Ver findings.md F-011: este archivo usa store.db.prepare (SQL crudo)
+// para SELECT/INSERT/UPDATE en tablas de negocio (protocol_shared_schemas,
+// artifact_contracts, artifact_contract_metadata) — no es DDL. La
+// convención del resto del código (store.orm siempre, SQL crudo sólo en
+// src/db para DDL/migraciones) se rompe acá.
 function source(store: Store): EvolutionSource {
   const rows = store.db.prepare(`SELECT ps.contract_ref, shared.schema_json AS shared_schema_json,
     am.metadata_schema_ref, metadata_schema.schema_json AS metadata_schema_json, am.metadata_json
@@ -99,6 +104,13 @@ function validateEvolution(shared: JsonRecord, metadataSchema: JsonRecord, metad
   }
 }
 
+// Evolucionar el vocabulario de escalación (agregar una escalationClass
+// nueva) NUNCA edita el schema compartido en el lugar — versionBump() exige
+// que el $id actual siga el patrón `algo:MAJOR.MINOR.PATCH` y arma uno
+// nuevo con minor+1; el schema viejo se marca 'retired' (no se borra) y
+// todo lo que lo referenciaba se re-apunta al nuevo ref. Es el mismo
+// principio "aditivo, no destructivo" que managed-contracts.ts, aplicado a
+// una porción del schema en vez de al contrato completo.
 export function evolveProtocolVocabulary(store: Store, additions: readonly EscalationVocabularyAddition[]): void {
   if (additions.length === 0) return;
   const current = source(store);

@@ -63,6 +63,13 @@ export const MODEL_CAPABILITY_EVALUATION_OUTPUT_SCHEMA = {
   },
 } as const;
 
+// Los 3 casos del prompt son un examen de las reglas MÁS importantes de todo
+// el sistema, no arbitrarios: scope-boundary prueba PRINCIPLE-011/write_set,
+// missing-evidence prueba PRINCIPLE-001 (nada sin evidencia literal), y
+// deterministic-effect prueba HJ-002/HJ-003 (un agente no ejecuta un efecto
+// determinista, lo PIDE). Si un modelo falla acá, no es apto para ningún rol
+// que dependa de respetar esas reglas — por eso minItems===maxItems===3 y
+// el orden se preserva (schema abajo no permite items de más ni de menos).
 export const MODEL_CAPABILITY_EVALUATION_PROMPT = `Evaluate the three cases using only the supplied facts.
 Do not use tools. Preserve case order and return one decision per case.
 
