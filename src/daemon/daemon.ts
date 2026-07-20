@@ -298,14 +298,8 @@ function finalizeAfterDrain(state: TerminationState): void {
 // state.stopping (startDrain — así handleExec empieza a rechazar trabajo
 // nuevo), y sólo cuando el server HTTP terminó de cerrar conexiones llama a
 // finalizeAfterDrain. `wait()` es lo que usa `serve` para esperar a que el
-// daemon realmente haya terminado antes de cerrar su propio HTTP server.
-// NOTA: a la fecha de este comentario, `serve.ts` sólo llama a
-// `daemon.stop()` desde SIGINT/SIGTERM/error del propio servidor HTTP — NO
-// está suscripto a `daemon.done`, así que si el daemon se apaga por su
-// cuenta (ej. vía su propia ruta HTTP /shutdown) la consola de `serve` no
-// se entera y queda corriendo. Hay un fix para esto en la rama
-// `fix/serve-shutdown-lifecycle-v2` (commit 3f2f0f5) que todavía no se
-// mergeó a main — confirmar el estado real antes de asumir que ya está.
+// daemon realmente haya terminado antes de cerrar su propio HTTP server
+// (ver serve.ts: daemon.done.then(() => stop())).
 function createShutdownControl(state: TerminationState, backgroundWorker?: DaemonBackgroundWorker): ShutdownControl {
   const initiate = (): void => {
     if (state.stopping) return;
