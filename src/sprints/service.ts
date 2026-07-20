@@ -133,6 +133,9 @@ export function listSprints(store: Store): Array<{ id: string; goal: string; sta
   });
 }
 
+// Un sprint sólo se puede cerrar si todos sus tasks llegaron a un estado
+// terminal (done/dropped) — cerrar con trabajo abierto ocultaría ese
+// trabajo de la vista activa sin haberlo resuelto realmente.
 export function closeSprint(store: Store, sprintId: string): void {
   const sprint = store.db.prepare(GET_SPRINT_SQL).get(sprintId);
   if (sprint === undefined) throw new LifecycleError(`unknown sprint: ${sprintId}`);

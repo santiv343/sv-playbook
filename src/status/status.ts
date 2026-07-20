@@ -155,6 +155,10 @@ export function formatFooter(backup: BoardStatus['backup'], packets: StatusPacke
   return lines;
 }
 
+// Punto de entrada del comando `status`: junta leases, últimos eventos,
+// packets y estado de backup en un único snapshot de sólo lectura — no muta
+// nada, es la vista de "qué está pasando ahora" que consume tanto la
+// terminal (formatStatusTable) como `--json` para consumo programático.
 export function readBoardStatus(store: Store, repoRoot: string): BoardStatus {
   const leases = leaseRows(store);
   const events = eventRows(store);
