@@ -42,6 +42,12 @@ function pushTableStep(t: string, steps: StepData[]): void {
   });
 }
 
+// Un parser de máquina de estados chico para tablas markdown (OUT -> HEAD ->
+// BODY): sólo le interesa la fila de encabezado (para saltarla vía
+// isSeparatorRow) y las filas de cuerpo de la sección "Steps" de cada
+// archivo de rol — extrae type/onMismatch de columnas fijas por posición
+// (cells[1], cells[4]) en vez de por nombre de columna, así que el formato
+// de la tabla en format.md es un contrato implícito que este parser asume.
 function findTables(content: string): StepData[] {
   const steps: StepData[] = [];
   const lines = content.split('\n');

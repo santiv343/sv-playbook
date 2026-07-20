@@ -12,6 +12,12 @@ export function normalizedSourcePath(path: string): string {
   return path.replace(/\\/g, '/');
 }
 
+// La fuente de verdad de QUÉ archivos cubren los gates de deuda
+// (orm-boundary, literal-comparison, duplicate-string) — todos comparten
+// esta misma función para no divergir en criterio de inclusión.
+// normalizedSourcePath() convierte separadores Windows a POSIX SIEMPRE, así
+// los fingerprints/baselines son estables entre SO (un dev en Windows y CI
+// en Linux calculan el mismo digest).
 export function readCheckedSources(repoRoot: string): SourceText[] {
   return CHECKED_SOURCE_ROOTS.flatMap((sourceRoot) => {
     const root = join(repoRoot, sourceRoot);
