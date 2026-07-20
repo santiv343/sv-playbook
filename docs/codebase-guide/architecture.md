@@ -111,6 +111,28 @@ módulo que exporta un objeto `Command` (`{ name, summary, usage, run }`).
 El registro central es `src/cli/registry.ts`. Detalle completo del
 despacho en `flows/flow-01-cli-entry-dispatch.md`.
 
+## Un patrón que se repite en 3 lugares distintos: "comparar y reemplazar" en vez de locks explícitos
+
+Detectado al cruzar dominios (no visible leyendo un solo archivo): cada
+vez que dos actores podrían intentar la misma operación al mismo tiempo,
+el sistema NO usa un lock de aplicación (mutex, semáforo) — usa una
+operación atómica de la capa de abajo (SQLite o git) que sólo tiene éxito
+si el estado sigue siendo el que el actor vio por última vez, y falla
+limpio si otro actor se adelantó.
+
+| Dónde | Qué compara | Qué usa |
+|---|---|---|
+| `promotion/promotion.git.ts` (`fastForwardRef`, flujo 4/11) | "¿`targetRef` sigue apuntando al SHA que vi?" | `git update-ref <ref> <new> <old>` |
+| `orchestration/repository.claims.ts` (`persistClaim`, flujo 8) | "¿este efecto de workflow sigue `PENDING`?" | `UPDATE ... WHERE status = PENDING` + chequeo de `changes === 1` |
+| `daemon/daemon.lock.ts` (`acquireLock`, flujo 6) | "¿el archivo de lock todavía no existe?" | `openSync(path, 'wx')` — falla si ya existe |
+
+Ningún módulo importa lógica de otro para esto — cada uno lo resuelve por
+su cuenta, con la primitiva atómica que tiene más a mano (git, SQL,
+filesystem). No es necesariamente un problema (no hay una dependencia
+obvia que unificaría los tres, viven en capas distintas), pero vale
+saberlo: si alguna vez aparece una CUARTA necesidad de "sólo uno gana",
+este es el patrón a seguir, no inventar un lock nuevo.
+
 ## Integraciones externas
 
 | Integración | Cómo | Dónde |

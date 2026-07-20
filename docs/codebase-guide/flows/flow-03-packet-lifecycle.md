@@ -4,6 +4,15 @@
 > Continúa del flujo 2 (persistencia) — acá ya asumimos que `Store` está
 > abierto y usamos `store.orm`/`store.db` directamente.
 
+> ⚠️ **Corrección agregada después, ver `findings.md` F-007**: el
+> "camino legacy" descrito abajo (`gateVerify()` dentro de `movePacket()`,
+> pasos 4 y "antes de continuar") está documentado tal como está escrito
+> en el código — pero el comando real `task move <id> review` NO pasa por
+> acá. Usa `movePacketToReview()` (`tasks/review-transition.ts`, ver
+> flujo 4), que reimplementa la misma verificación de forma independiente.
+> `gateVerify()` sólo lo alcanzan tests que llaman `movePacket()`
+> directo. Dejalo en mente al leer el resto de este documento.
+
 ## Qué vamos a estudiar
 
 Cómo nace un packet (la unidad de trabajo del sistema), cómo se mueve entre
