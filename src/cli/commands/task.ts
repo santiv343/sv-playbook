@@ -65,6 +65,12 @@ function isPacketStatus(value: string): value is PacketStatus {
   return PACKET_STATUSES.some((status) => status === value);
 }
 
+// Backup oportunista, llamado después de eventos significativos del
+// ciclo de vida de un packet (done, force-takeover): sólo dispara un
+// backup real si YA está vencido por edad, O si este evento específico
+// está en la lista configurada `onEvents` — evita tomar un backup
+// completo en cada evento menor, reservándolo para los momentos que la
+// instancia decidió que importan (config, no hardcodeado — PRINCIPLE-013).
 function backupForEvent(repoRoot: string, event: BackupEvent, reason: BackupReason, allowFreshLeases?: boolean): void {
   const config = loadConfig(repoRoot);
   if (!config.backup.enabled) return;
