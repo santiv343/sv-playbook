@@ -22,6 +22,12 @@ function activeTool(part: Record<string, unknown>): boolean {
   return status === OPENCODE_TOOL_STATE.PENDING || status === OPENCODE_TOOL_STATE.RUNNING;
 }
 
+// Deriva una actividad legible ("thinking"/"using-tool"/"responding") para
+// la consola operativa a partir de las PARTS del último mensaje en curso —
+// prioridad fija: tool activa > texto > razonamiento > arrancando, en ese
+// orden (`.some()` en cascada, la primera que matchea gana). Es puramente
+// cosmético/informativo — no afecta ninguna decisión de negocio, sólo lo
+// que el operador ve en pantalla mientras un agente está corriendo.
 export function openCodeRunActivity(
   messageValue: unknown,
   state: AdapterRunObservation['state'],
