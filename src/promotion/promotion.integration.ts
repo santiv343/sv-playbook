@@ -40,6 +40,15 @@ export function transitionIf(
   transitionCandidate(store, candidateId, expected, target, trigger, runtimeDigest, reason);
 }
 
+// El efecto real (fastForwardRef, un git update-ref condicional — el mismo
+// compare-and-swap documentado en architecture.md) puede fallar SIN que eso
+// sea el veredicto final: después de intentarlo (o de saltarlo porque
+// beforeEffect ya no matchea), se OBSERVA el estado real del ref y se
+// deriva el outcome de ahí — SUCCEEDED si avanzó al candidateSha esperado,
+// FAILED si se quedó en beforeSha, UNKNOWN si divergió a otra cosa. Esto
+// hace que la operación sea segura de reintentar: si el proceso murió justo
+// después del update-ref pero antes de registrar el resultado, la próxima
+// corrida observa la realidad en vez de asumir que falló.
 function integrationObservation(
   git: GitPromotionPort,
   repoRoot: string,

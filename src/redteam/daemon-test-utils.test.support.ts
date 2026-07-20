@@ -21,6 +21,12 @@ const EXIT_POLL_MS = 5000;
 const HEALTH_ATTEMPTS = 30;
 const HEALTH_DELAY_MS = 500;
 
+// "redteam" acá no es seguridad ofensiva — son los tests de integración
+// que levantan el daemon REAL como subproceso (spawn, no un stub) y le
+// pegan por HTTP de verdad, para probar el ciclo de vida completo (arranque,
+// shutdown, forwarding) tal como lo haría un CLI real. freePort() pide al
+// SO un puerto libre en vez de hardcodear uno — evita colisiones si varios
+// tests de este estilo corren en paralelo.
 export function freePort(): Promise<number> {
   return new Promise((resolve) => {
     const server = createNetServer();
