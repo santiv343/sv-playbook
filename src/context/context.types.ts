@@ -44,6 +44,13 @@ export interface CompiledContextItem {
   contentDigest: string;
 }
 
+// receipt (ContextItemReceipt[]) es la auditoría COMPLETA de la compilación
+// de un context pack — no sólo qué items ENTRARON (`selected`/`dependency`/
+// `explicit-reference`), también por qué otros NO entraron
+// (`selector-mismatch`/`inactive`/`lower-precedence`, con `replacedBy`
+// apuntando a qué ítem ganó en su lugar). Esto es lo que permite depurar
+// "¿por qué mi agente no recibió tal principio en su contexto?" sin tener
+// que releer la lógica de compileContext entera.
 export interface ContextItemReceipt {
   ref: string;
   included: boolean;

@@ -1,3 +1,8 @@
+// PREFLIGHT_PHASE es la secuencia real que un candidato atraviesa antes de
+// llegar a review (worktree limpio -> config cargada -> preparación ->
+// verify -> cleanup) — cada fase tiene su propio PREFLIGHT_FAILURE_CODE
+// específico, así un fallo en "preparation" nunca se confunde con un fallo
+// en "verification" real, aunque ambos terminen en el mismo status FAIL.
 export const PREFLIGHT_VERIFY_OUTPUT_TAIL_CHARACTERS = 4_096;
 export const LEGACY_REVIEW_VERIFY_TIMEOUT_MS = 120_000;
 
