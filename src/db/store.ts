@@ -7,7 +7,7 @@ import { DB_FILE, NODE_TEST_CONTEXT_ENV, SCHEMA, SCHEMA_VERSION, STORE_PROCESS_K
 import { resolveStoreRoot } from './store-location.js';
 import { relocateStoreIfNeeded } from './store-migration-relocate.js';
 import { GIT_ARGUMENT } from '../git.constants.js';
-import { OS_PLATFORM } from '../platform.constants.js';
+import { EMPTY_SIZE, OS_PLATFORM } from '../platform.constants.js';
 import { getCwd } from '../runtime/context.js';
 import { StoreVersionError } from './store.errors.js';
 import { DAEMON_DEFAULT_PORT, DAEMON_LOCK_FILE, DAEMON_TOKEN_FILE, GIT_DIR_NAME } from '../daemon/daemon.constants.js';
@@ -94,14 +94,29 @@ export function isWorktree(s: string): boolean {
   try { return normalizePathForCompare(dirname(resolve(s, execGitCommonDir(s)))) !== normalizePathForCompare(execGitTopLevel(s)); }
   catch { return false; }
 }
+const LOCK_FILE_NONCE_LINE_COUNT = 4;
+
+function checkDaemonIdentity(lines: string[], repoRoot: string): boolean {
+  const storedNonce = lines.length >= LOCK_FILE_NONCE_LINE_COUNT ? lines[3]?.trim() : undefined;
+  if (storedNonce === undefined || storedNonce.length === EMPTY_SIZE) return true;
+  const token = readDaemonToken(repoRoot);
+  return token !== null && token === storedNonce;
+}
+
 export function isDaemonRunning(repoRoot: string): boolean {
   const lockPath = join(repoRoot, SVP_DIR, DAEMON_LOCK_FILE);
   if (!existsSync(lockPath)) return false;
   try {
-    const pid = Number(readFileSync(lockPath, 'utf8').trim().split('\n')[0]);
+    const lines = readFileSync(lockPath, 'utf8').trim().split('\n');
+    const pid = Number(lines[0]);
     if (Number.isNaN(pid)) return false;
-    try { process.kill(pid, 0); return true; }
+    try { process.kill(pid, 0); }
     catch { unlinkSync(lockPath); return false; }
+    if (!checkDaemonIdentity(lines, repoRoot)) {
+      unlinkSync(lockPath);
+      return false;
+    }
+    return true;
   } catch { return false; }
 }
 
