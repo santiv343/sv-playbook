@@ -7,6 +7,13 @@ import type { RunSpec } from './gateway.types.js';
 import { RUN_PROMPT_INSTRUCTION, RUN_PROMPT_PROTOCOL, RUN_SPEC_ERROR } from './gateway.constants.js';
 import { resolveWorkDefinition } from '../tasks/work-definitions.js';
 
+// El prompt final que recibe el agente externo es JSON canónico (no texto
+// libre) — protocol/instruction fuerzan al agente a devolver EXACTAMENTE un
+// valor que matchee outputContract.schema, sin markdown ni prosa alrededor
+// (ver RUN_PROMPT_INSTRUCTION en gateway.constants.ts). `items` son los
+// context_pack_items ya resueltos a su body completo — el agente no recibe
+// referencias que tenga que ir a buscar, recibe todo el contexto ya
+// materializado en el mismo mensaje.
 export function renderRunPrompt(store: Store, runSpec: RunSpec): string {
   const rows = store.db.prepare(`SELECT i.id, i.version, i.kind, i.semantic_key, i.body
     FROM context_pack_items pi

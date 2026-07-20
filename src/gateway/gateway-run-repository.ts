@@ -10,6 +10,12 @@ import type {
   GatewayTerminalRecord,
 } from './gateway-run-repository.types.js';
 
+// El WHERE compartido por todo update de estado: sólo toca la fila si
+// TODAVÍA está OBSERVING. Una vez que finishGatewayRun/failGatewayRun la
+// mueven a un estado terminal, cualquier observación tardía que llegue
+// después (p.ej. una respuesta HTTP demorada del adapter) hace un UPDATE
+// que no matchea ninguna fila — no hay excepción explícita acá porque
+// updates .run() no fallan por 0 filas afectadas, simplemente no-opean.
 function runStatusScope(runSpecId: string) {
   return and(
     eq(gatewayRunState.runSpecId, runSpecId),

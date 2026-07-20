@@ -1,26 +1,22 @@
 # Hallazgos
 
-## F-011 (aplicando PRINCIPLE-016): `protocol-evolution.ts` usa SQL crudo en vez del ORM
+## F-011 — CORREGIDO (autocorregido con más evidencia, mismo día): no es una desviación puntual, es deuda de baseline ya mecanizada
 
-**Encontrado en**: comentando `src/contracts/protocol-evolution.ts` en
-español y comparando contra la convención del resto del código, 2026-07-20.
-
-**Qué pasa**: la convención establecida (y confirmada por el usuario en
-sesiones previas) es `store.orm` siempre para lectura/escritura de datos de
-negocio, con SQL crudo reservado a DDL/migraciones bajo `src/db`. La función
-`source()` en `src/contracts/protocol-evolution.ts` usa
-`store.db.prepare(...)` con un JOIN de 4 tablas y dos `UPDATE` crudos más
-abajo en `evolveProtocolVocabulary` — todo sobre tablas de negocio
-(`protocol_shared_schemas`, `artifact_contracts`,
-`artifact_contract_metadata`), no DDL, y fuera de `src/db`.
-
-**No confirmado si es intencional** (el JOIN de 4 tablas podría ser más
-directo en SQL crudo que expresarlo con el query builder de Drizzle) — pero
-rompe la convención documentada sin comentario que lo justifique.
-
-**Sugerencia (no implementada)**: si el JOIN es difícil de expresar con
-Drizzle, documentar la excepción explícitamente en el archivo; si no,
-migrar a `store.orm`.
+Versión original: se anotó que `protocol-evolution.ts` usaba
+`store.db.prepare` (SQL crudo) en vez de `store.orm`, como si fuera una
+desviación aislada de ese archivo. Al aplicar PRINCIPLE-016 en serio
+(cruzar contra TODO el codebase, no asumir la regla de memoria sin
+verificar) aparecen **22 archivos** fuera de `src/db` con
+`store.db.prepare`. Pero el codebase YA tiene un gate mecánico real para
+esto: `src/check/orm-boundary.ts` (`inspectOrmBoundary` +
+`evaluateOrmBoundaryBaseline`) detecta exactamente este patrón vía AST y lo
+compara contra un baseline versionado (mismo mecanismo que
+`literal-comparison.ts` y otros gates de deuda — ver
+`project-sv-playbook-debt-gates` en memoria). O sea: esto NO es un hallazgo
+nuevo — es deuda conocida, monotónica (no puede crecer, gate corta si
+aparecen violaciones nuevas no bajadas al baseline) y ya rastreada por el
+propio sistema. El error de la versión original fue tratar un archivo
+individual como caso aislado sin chequear si ya existía un gate cubriéndolo.
 
 ---
 

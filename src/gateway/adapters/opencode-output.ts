@@ -43,6 +43,12 @@ function acceptedResponse(response: JsonRecord): OpenCodeOutputReconciliation {
   return { status: 'accepted', responseMessageIds: [id], rawText: texts.join(''), violations: [] };
 }
 
+// "Ambiguous" no es un error transitorio, es una violación de invariante:
+// se espera EXACTAMENTE una respuesta assistant hija de parentMessageId; si
+// OpenCode devuelve más de una, algo se rompió en el modelo de sesión (dos
+// respuestas concurrentes al mismo prompt) y no hay forma segura de elegir
+// cuál es la "buena" — se reporta como violación en vez de tomar la
+// primera/última arbitrariamente.
 export function reconcileOpenCodeOutput(messages: unknown, parentMessageId: string): OpenCodeOutputReconciliation {
   const responses = assistantResponses(messages, parentMessageId);
   const ids = responses.map(responseId);

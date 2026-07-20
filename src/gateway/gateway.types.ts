@@ -52,6 +52,14 @@ export interface ContextItemReference {
   version: number;
 }
 
+// RunSpec es la unidad de trabajo que el gateway le manda a un agente
+// externo (flujo 08): agrupa el contexto (contextPackId/contextTags/
+// contextReferences), a qué está atado (workDefinitionRef XOR
+// workflowEffectRef — un RunSpec sirve tanto al mundo de packets como al de
+// workflows orquestados), y bajo qué perfil de ejecución corre
+// (executionProfile: qué adapter/modelo/tools). specDigest es el ancla de
+// integridad — todo lo que se le manda al agente debe reconstruirse
+// exactamente igual a partir de esta estructura.
 export interface RunSpec {
   id: string;
   roleId: string;
@@ -187,6 +195,13 @@ export interface GatewayDispatchReceipt {
   completion: GatewayCompletionReceipt;
 }
 
+// El contrato que TODO adapter de agente externo debe implementar
+// (OpenCodeAdapter es hoy la única implementación real, ver
+// adapters/opencode-adapter.ts). Los 5 métodos son las 5 fases de un
+// diálogo con el agente: verificar el perfil sirve, crear sesión, mandar el
+// turno, observar progreso (polling), cancelar. Cualquier adapter nuevo
+// (otro CLI de agente) sólo necesita implementar esta interfaz — el resto
+// del gateway (coordinator, recovery) es agnóstico de CUÁL adapter es.
 export interface AgentAdapter {
   readonly id: string;
   verifyProfile(runSpec: RunSpec, directory: string): Promise<AdapterProfileReceipt>;

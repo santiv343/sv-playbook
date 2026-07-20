@@ -23,6 +23,13 @@ interface RecoveryTarget {
   runSpecId: string;
 }
 
+// "Huérfano" = un run del gateway sigue OBSERVING pero el workflow/effect
+// que lo originó ya NO está activo (el workflow no está RUNNING, o el
+// effect ya no está PENDING/CLAIMED). Pasa típicamente si el proceso murió
+// entre que el effect se marcó FAILED/COMPLETED y que el run del gateway
+// se enteraba — reconcileOrphanedGatewayRuns (llamado al arrancar el
+// runtime, ver runtime.ts) cancela estos runs para no dejarlos corriendo
+// indefinidamente sin nadie esperando su resultado.
 function orphanedTargets(store: Store): RecoveryTarget[] {
   const rows = store.orm.select({
     runSpecId: gatewayRunState.runSpecId,
