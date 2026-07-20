@@ -1,6 +1,11 @@
 import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { DATABASE_COLUMN } from '../db/schema-vocabulary.constants.js';
 
+// Definiciones Drizzle que espejan CONTEXT_STORE_SCHEMA
+// (db/context.schema.constants.ts) — dos representaciones del MISMO schema
+// SQL: el DDL crudo (para CREATE TABLE) y estas tablas tipadas (para
+// store.orm). Deben mantenerse en sincronía manualmente; no hay generación
+// automática de uno a partir del otro.
 export const contextItems = sqliteTable('context_items', {
   id: text('id').notNull(),
   version: integer('version').notNull(),
