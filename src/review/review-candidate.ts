@@ -12,6 +12,7 @@ import { EMPTY_SIZE, NODE_ERROR_CODE } from '../platform.constants.js';
 import { nodeErrorCode } from '../platform.js';
 import { GIT_ARGUMENT } from '../git.constants.js';
 import { gitOutput, resolveGitMergeBase } from '../git.js';
+import { bootstrapBundledRoleCatalog } from '../roles/bundled-profile-bootstrap.js';
 import { roleCatalogActivation, roleResponsibilities } from '../roles/schema.constants.js';
 import type { StoredWorkDefinition } from '../tasks/work-definition.types.js';
 import { packets } from '../tasks/schema.constants.js';
@@ -36,7 +37,6 @@ import type {
   ManualInputBinding,
   PendingReviewCandidate,
   ReviewCandidateNote,
-  ReviewCandidateSummary,
   ReviewCandidateValue,
   ReviewProjectionEvidence,
 } from './review-candidate.types.js';
@@ -50,6 +50,18 @@ function activeCatalog(store: Store): { readonly version: number; readonly diges
     throw new ContextError(REVIEW_CANDIDATE_ERROR.CATALOG_MISSING, 'an active role catalog is required');
   }
   return row;
+}
+
+function activeCatalogWithSelfHeal(store: Store): { readonly version: number; readonly digest: string } {
+  try {
+    return activeCatalog(store);
+  } catch (error: unknown) {
+    if (error instanceof ContextError && error.code === REVIEW_CANDIDATE_ERROR.CATALOG_MISSING) {
+      bootstrapBundledRoleCatalog(store);
+      return activeCatalog(store);
+    }
+    throw error;
+  }
 }
 
 function activeProjections(
@@ -175,7 +187,7 @@ export async function assembleReviewCandidate(
     config.reviewCandidateMaxBytes,
   );
   if (branch === '') throw new ContextError(REVIEW_CANDIDATE_ERROR.EVIDENCE_FAILED, 'candidate branch is unavailable');
-  const catalog = activeCatalog(store);
+  const catalog = activeCatalogWithSelfHeal(store);
   const createdAt = new Date().toISOString();
   const value: ReviewCandidateValue = {
     kind: REVIEW_CANDIDATE_KIND,
@@ -312,33 +324,6 @@ function candidateArtifactId(store: Store, definition: StoredWorkDefinition): st
     throw new ContextError(REVIEW_CANDIDATE_ERROR.CANDIDATE_MISSING, definition.packetId);
   }
   return candidate.artifactId;
-}
-
-function selectReviewCandidateSummary() {
-  return {
-    id: reviewCandidates.id,
-    packetId: reviewCandidates.packetId,
-    workDefinitionVersion: reviewCandidates.workDefinitionVersion,
-    candidateSha: reviewCandidates.candidateSha,
-    branch: reviewCandidates.branch,
-    createdAt: reviewCandidates.createdAt,
-  };
-}
-
-export function listReviewCandidates(store: Store, packetId?: string): readonly ReviewCandidateSummary[] {
-  const columns = selectReviewCandidateSummary();
-  if (packetId === undefined) {
-    return store.orm.select(columns).from(reviewCandidates)
-      .orderBy(desc(reviewCandidates.createdAt)).all();
-  }
-  return store.orm.select(columns).from(reviewCandidates)
-    .where(eq(reviewCandidates.packetId, packetId))
-    .orderBy(desc(reviewCandidates.createdAt)).all();
-}
-
-export function getReviewCandidate(store: Store, id: string): ReviewCandidateSummary | undefined {
-  return store.orm.select(selectReviewCandidateSummary()).from(reviewCandidates)
-    .where(eq(reviewCandidates.id, id)).get();
 }
 
 export function resolveManualInput(
