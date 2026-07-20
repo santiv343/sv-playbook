@@ -68,6 +68,13 @@ function isStructuralLiteral(node: ts.Node): boolean {
   return ts.isImportDeclaration(parent) || ts.isExportDeclaration(parent) || ts.isExternalModuleReference(parent);
 }
 
+// Extrae texto donde PUEDE haber una sugerencia de comando/flag (cualquier
+// string literal ejecutable, no estructural) del código TypeScript real —
+// la contraparte "de declaración" son COMMAND_NAME_DECLARATION_PATTERN/etc
+// en suggested-command.constants.ts, que minan sólo DECLARACIONES (`name:
+// 'foo'`, usage strings) para construir el CommandSurface real. Comparar
+// estas dos fuentes (sugerencias vs superficie declarada) es lo que
+// detecta un comando/flag mencionado que no existe de verdad.
 function tsSuggestionTexts({ path, source }: SuggestedCommandSource): SuggestionText[] {
   const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const found: SuggestionText[] = [];
