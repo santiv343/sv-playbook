@@ -23,6 +23,13 @@ function booleanValue(value: string | undefined): boolean {
   throw new UsageError('--retryable must be true or false');
 }
 
+// Único punto de escritura de workflowFailurePolicies (ver
+// StoreWorkflowFailureClassifier en orchestration/runtime-configuration.ts)
+// — declara si un código de error de workflow es reintentable o no.
+// errorCode es un string libre (el código que la excepción real produce,
+// p.ej. ContextError.code), no un enum cerrado — cualquier código nuevo que
+// aparezca en producción se puede clasificar sin tocar código, sólo
+// corriendo este comando.
 function setPolicy(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: false, options: {
     error: { type: 'string' }, retryable: { type: 'string' },
