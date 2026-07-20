@@ -8,6 +8,11 @@ export interface LeaseInfo {
   stale: boolean;
 }
 
+// RecoveryReport es lo que se le muestra a un agente/humano que retoma un
+// packet ACTIVE (recuperación de sesión) — junta status, lease actual,
+// dependencias, Y los últimos eventos relevantes (transitions/notes) para
+// que retomar no signifique releer todo el historial, sólo lo último que
+// importa para entender "dónde quedó esto".
 export interface RecoveryReport {
   packetId: string;
   status: string;

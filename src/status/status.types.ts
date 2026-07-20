@@ -31,6 +31,11 @@ export interface StatusBackup {
   readonly terminalCountRegressed: boolean;
 }
 
+// BoardStatus es la proyección de sólo lectura que alimenta tanto `status`
+// (CLI) como la consola operativa (serve/) — packets con su lease y último
+// evento ya resueltos (StatusPacket), más el estado de backup embebido
+// (StatusBackup, mismo shape que BackupStatus en db/backup.types.ts pero
+// proyectado para UI). Un único read model para dos consumidores distintos.
 export interface BoardStatus {
   readonly counts: Record<string, number>;
   readonly packets: StatusPacket[];

@@ -6,6 +6,12 @@ export const STATUS_SQL = {
   LAST_EVENTS: 'SELECT packet_id, command, detail, at FROM events WHERE packet_id IS NOT NULL ORDER BY seq ASC',
 } as const;
 
+// DISPLAY_ORDER es el orden VISUAL del tablero (`status`) — deliberadamente
+// distinto del orden natural de PACKET_STATUSES (tasks/service.constants.ts,
+// draft primero). Acá lo que necesita atención humana YA (active, blocked)
+// va arriba, y lo terminal (done, dropped) al final, separado por
+// DIVIDER_BEFORE — prioriza lo accionable sobre el orden "lógico" del
+// ciclo de vida.
 export const DISPLAY_ORDER: readonly string[] = [
   'active',
   'blocked',
