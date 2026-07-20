@@ -287,6 +287,12 @@ function createVerifiedBackup(repoRoot: string, reason: BackupReason): void {
   if (integrityCheck !== SQLITE_INTEGRITY_OK) throw new Error('pre-migration backup verification failed (integrity check)');
 }
 
+// Migrar el schema en la rama principal por accidente (en vez de en la
+// rama que trae la migración) dejaría el store en una versión que el
+// código de `main` todavía no sabe leer. `assertMigrationBranch` rechaza
+// eso a menos que se pase explícitamente `migrateLive: true` — hoy sólo
+// alcanzable de forma programática (`openStore(root, { migrateLive: true })`),
+// ningún comando del CLI expone el flag todavía.
 function performMigration(db: Database.Database, repoRoot: string, currentVersion: number, options?: OpenStoreOptions): void {
   try {
     assertMigrationBranch(repoRoot, options?.migrateLive);
@@ -294,6 +300,8 @@ function performMigration(db: Database.Database, repoRoot: string, currentVersio
     db.close();
     throw error;
   }
+  // Backup verificado ANTES de tocar el schema — si la migración falla a
+  // mitad de camino, hay algo confiable a lo que volver.
   createVerifiedBackup(repoRoot, BACKUP_REASON.STORE_OPEN);
   db.exec(beginImmediateSql);
   try {
@@ -308,6 +316,13 @@ function performMigration(db: Database.Database, repoRoot: string, currentVersio
 
 const tooNewText = (currentVersion: number): string => `store unusable (schema v${currentVersion} does not match v${SCHEMA_VERSION}): a migration PR is likely open or just merged - git pull and retry. Restore a verified backup with 'restore state --file <snap>' (primary), or 'rebuild' from git (last resort) - never delete .svp`;
 
+// Tres casos posibles al abrir un store existente: versión atrasada
+// (migra hacia adelante, siempre que sea >= 3 — versiones anteriores no
+// son migrables automáticamente), versión igual (no hace nada), o versión
+// MÁS NUEVA que la que este binario conoce — eso significa que otro
+// proceso con un build más nuevo ya migró el store; en vez de intentar
+// "desmigrar" (imposible), se rechaza con instrucciones claras de
+// recuperación (`tooNewText`).
 export function checkVersionAndMigrate(
   db: Database.Database,
   repoRoot: string,
