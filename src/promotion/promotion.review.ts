@@ -46,6 +46,12 @@ function completedReviewRun(store: Store, runSpecId: string): CompletedReviewRun
   return { ...row, outputJson: row.outputJson, outputDigest: row.outputDigest };
 }
 
+// Dos garantías separadas: (1) el run del reviewer realmente evaluó ESTE
+// candidato (mismo artifact de input, misma work definition — no un
+// veredicto reciclado de otro candidato parecido), y (2) el reviewer no
+// es la misma sesión que produjo el candidato — SELF_REVIEW. Nunca se
+// confía en que el reviewer "diga" que no se autorevisó; se compara la
+// identidad de sesión real, persistida por separado para cada rol.
 function assertRunBinding(row: CompletedReviewRun, candidate: CandidateIdentity, evidence: CandidateEvidence): void {
   if (row.inputArtifactId !== evidence.artifactId
     || row.workDefinitionId !== candidate.taskId
@@ -58,6 +64,10 @@ function assertRunBinding(row: CompletedReviewRun, candidate: CandidateIdentity,
   }
 }
 
+// Re-calcula el digest del output guardado y lo compara contra el digest
+// que se persistió al completarse el run — detecta si el JSON fue
+// editado a mano en la DB después de guardado (o corrupción), antes de
+// confiar en su contenido para decidir si promover o no.
 function verifiedOutput(row: CompletedReviewRun, candidate: CandidateIdentity): ParsedReviewOutput {
   const parsedValue: unknown = JSON.parse(row.outputJson);
   if (digest(parsedValue) !== row.outputDigest) {
