@@ -6,7 +6,7 @@ import {
   SELECTOR_WILDCARD,
 } from './context.constants.js';
 import { ContextError } from './context.errors.js';
-import { digest } from './digest.js';
+import { compareOrdinal, digest } from './digest.js';
 import type { ContextCatalog } from './repository.types.js';
 import type {
   CapabilityDecision,
@@ -138,7 +138,7 @@ function resolveSemanticConflicts(catalog: ContextCatalog, selected: Map<string,
 function compileItems(catalog: ContextCatalog, selected: ReadonlyMap<string, SelectedItem>): CompiledContextItem[] {
   return [...selected].sort((left, right) => {
     const rank = rankOf(catalog, right[1].item) - rankOf(catalog, left[1].item);
-    return rank === 0 ? left[0].localeCompare(right[0]) : rank;
+    return rank === 0 ? compareOrdinal(left[0], right[0]) : rank;
   }).map(([ref, value]) => ({
     ref,
     kind: value.item.kind,
@@ -162,7 +162,7 @@ function compileCapabilities(catalog: ContextCatalog, selected: ReadonlyMap<stri
     if (new Set(winners.map((winner) => winner.effect)).size !== 1) {
       throw new ContextError(CONTEXT_ERROR.CAPABILITY_CONFLICT, `conflicting rules for capability ${capability}`);
     }
-    const winner = winners.sort((left, right) => left.ref.localeCompare(right.ref))[0];
+    const winner = winners.sort((left, right) => compareOrdinal(left.ref, right.ref))[0];
     if (winner === undefined) throw new ContextError(CONTEXT_ERROR.CAPABILITY_CONFLICT, `missing winner for capability ${capability}`);
     return { capability, effect: winner.effect, source: winner.ref };
   });
@@ -178,7 +178,7 @@ function buildReceipt(catalog: ContextCatalog, candidates: ReadonlyMap<string, S
     if (!isApplicable(item, attributes)) return { ref, included: false, reason: SELECTOR_MISMATCH_REASON, replacedBy: null };
     const replacement = [...selected].find(([, value]) => value.item.semanticKey === item.semanticKey)?.[0] ?? null;
     return { ref, included: false, reason: candidates.has(ref) ? 'lower-precedence' : SELECTOR_MISMATCH_REASON, replacedBy: replacement };
-  }).sort((left, right) => left.ref.localeCompare(right.ref));
+  }).sort((left, right) => compareOrdinal(left.ref, right.ref));
 }
 
 export function compileContext(catalog: ContextCatalog, input: ContextCompileInput): CompiledContextPack {
