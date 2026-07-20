@@ -10,6 +10,12 @@ export function renderCommandReferenceBlock(entries: readonly CommandReferenceEn
   return [...COMMAND_REFERENCE_TABLE_HEADER, ...rows].join('\n');
 }
 
+// Reemplaza SÓLO el contenido entre dos marcadores literales en el
+// documento (BEGIN/END), preservando todo lo demás — el mismo patrón que
+// setSection/regenerateExport en constitution.ts usa para no pisar
+// prosa escrita a mano alrededor de contenido generado. Lanza si los
+// marcadores no están (documento corrupto o marcadores movidos) en vez de
+// insertar el bloque en un lugar arbitrario.
 export function syncCommandReferenceDoc(docText: string, block: string): string {
   const beginIndex = docText.indexOf(COMMAND_REFERENCE_MARKERS.BEGIN);
   const endIndex = docText.indexOf(COMMAND_REFERENCE_MARKERS.END);
