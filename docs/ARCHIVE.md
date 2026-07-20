@@ -126,3 +126,16 @@ comandos, generada del registro real del CLI). El registro preciso y
 vivo de "qué existe hoy" es `how-it-works.md §13`; el de "qué falta" es
 `docs/backlog.md`. Estos dos archivos no se fusionaron porque hacerlo
 habría reintroducido afirmaciones falsas ("PLANNED" sobre algo ya hecho).
+
+## Handoffs de sesión del 2026-07-16 (archivados 2026-07-19)
+
+`docs/research/2026-07-16-agent-handoff.md` y
+`docs/research/2026-07-16-session-findings-handoff.md` eran notas de
+handoff puntuales de una sesión de trabajo (CI de Windows colgado, gap de
+permisos de OpenCode, lista de bugs pendientes de ese momento). Todo su
+contenido operativo ya graduó: el fix de CI está en `main`, el
+`write_set amend` está implementado, `ADAPTER_RUN_STATE.UNKNOWN` está
+resuelto, y el resto de los hallazgos vive como entradas propias en
+`docs/backlog.md`. Se retiraron los archivos originales — si hace falta
+el detalle exacto de esa sesión, está en el historial de git de esas dos
+rutas.
