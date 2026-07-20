@@ -35,6 +35,12 @@ function renderViolations(report: PreflightReport, io: Io): void {
   }
 }
 
+// El anchor de las columnas se calcula del CONTENIDO real (nameW/statusW
+// via Math.max sobre todas las filas), no de un ancho fijo — así la tabla
+// se ajusta sola tanto a nombres de check cortos como al literal
+// `preflight-check` del encabezado (de ahí el mínimo 10/8 hardcodeado como
+// piso). `report` viene de runPreflight (review/preflight.ts) — este
+// archivo sólo formatea lo que ya se calculó, no re-ejecuta ningún check.
 function renderPreflightTable(report: PreflightReport, io: Io): void {
   io.out('');
   io.out(`Preflight report — ${report.packetId}`);
