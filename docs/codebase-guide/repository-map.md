@@ -60,7 +60,7 @@ Convención por dominio (no todos tienen los 5 archivos, según necesidad):
 
 ```
 content/
-├── principles.md       # los 15 PRINCIPLE-XXX del proyecto
+├── principles.md       # los 16 PRINCIPLE-XXX del proyecto (PRINCIPLE-016 agregado 2026-07-20)
 ├── taste/               # HJ-001..021, juicio humano capturado
 ├── roles/                # (mayormente retirado — los roles viven en DB ahora)
 ├── review.md             # checklist de reviewer
@@ -85,3 +85,16 @@ lecturas puntuales de los archivos principales de cada uno. La fila de
 (`reconcile`, `enforcement`, `workspace`) están basadas en el nombre de
 archivo y una lectura superficial, no en lectura completa — se profundizan
 en las etapas donde correspondan.
+
+## Progreso de comentarios en español (código fuente real)
+
+A diferencia de esta guía (que documenta desde afuera), también se están
+agregando comentarios explicativos DENTRO del código fuente (`src/`), en
+español, explicando el "por qué" de cada pieza no obvia. Estado a
+2026-07-20: **~96 archivos comentados** de los ~367 no-test totales
+(`docs(comments): ...` en el historial de git de la rama de esta guía).
+Prioridad de cobertura: primero los archivos con lógica real (funciones con
+invariantes no obvias, compare-and-swap, migraciones), después
+`.constants.ts`/`.types.ts` sólo cuando agregan contexto que no está ya en
+su archivo `.ts` hermano — evitando comentarios redundantes que sólo
+repiten el nombre del tipo.
