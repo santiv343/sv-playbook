@@ -4,6 +4,81 @@
 > guía. **Nada de esto se implementa desde acá** — son observaciones para
 > que el equipo decida qué hacer, cuándo corresponda.
 
+## F-006 (el más importante hasta ahora): `decision answer` probablemente rechaza a un humano real por default — invierte el modelo de confianza documentado
+
+**Encontrado en**: revisión cruzada de patrones (no archivo por archivo) entre
+`src/cli/destructive-gate.ts` y `src/cli/commands/decision.ts`, 2026-07-20.
+
+**El modelo de confianza documentado** (`content/cli.md`, sección sobre el
+gate de operaciones destructivas): el archivo `.svp-session-role` en la
+raíz del repo es **identidad auto-declarada por un agente** — un agente
+que se comporta bien escribe ese archivo para decir "soy un agente".
+Textual: *"the role file is self-attested identity — the gate protects
+against the honest agent that declares itself, not against one that
+omits the declaration"*. Es decir: **archivo AUSENTE = se asume que no es
+un agente (humano o al menos no-declarado como agente)**.
+
+Confirmado con grep: en TODO `src/` (fuera de tests), **ningún comando ni
+script escribe `.svp-session-role`** — no existe ningún flujo de
+producción que lo cree. Sólo se lee (`destructive-gate.ts`,
+`decision.ts`) y sólo se escribe en fixtures de test
+(`decision.test.ts`, `gate-001.test.ts`, ambos con `writeFileSync`
+directo para simular el escenario). En una sesión real de un humano en
+su terminal, ese archivo casi con certeza **nunca existe**.
+
+`destructive-gate.ts` (`readSessionRole`) respeta el modelo documentado:
+
+```ts
+const role = readSessionRole(repoRoot);
+if (role !== null) {  // archivo presente = agente declarado -> rechaza
+  ...
+}
+```
+
+`decision.ts` (`handleAnswer`, checkpoint de complejidad — flujo 10) usa
+la MISMA función pero con la lógica **invertida**:
+
+```ts
+const role = readSessionRole(repoRoot);
+if (role !== WORKFLOW_EXECUTOR.HUMAN) {  // exige que el archivo EXISTA
+  io.err(`decision ${id} can only be answered in a human session`);   // Y diga literalmente 'human'
+  return EXIT.GATE_FAIL;
+}
+```
+
+Si `role === null` (el caso normal — nadie escribió el archivo), esta
+condición es `null !== 'human'` → `true` → **rechazado**. Un humano real,
+sentado en su terminal, corriendo `sv-playbook decision answer DEC-001
+"sí, aprobado"` de la forma más normal posible, **recibiría `GATE_FAIL`**
+a menos que — por alguna razón no documentada en ningún flujo de
+producción — exista un `.svp-session-role` con el contenido exacto
+`human`.
+
+**Por qué es más grave que los hallazgos anteriores**: el checkpoint de
+complejidad (flujo 10, PRINCIPLE-013/HJ-004) existe específicamente para
+que un humano apruebe decisiones antes de que un packet avance a
+territorio nuevo. Si `decision answer` rechaza por default al humano que
+se supone que debe poder responder, el mecanismo de aprobación humana
+completo queda roto en el camino más común (sesión de terminal directa,
+sin ningún wrapper que declare roles) — el checkpoint se convertiría en
+un callejón sin salida real, no sólo un gate estricto.
+
+**No confirmado en vivo** (para no fabricar evidencia falsa): no se
+ejecutó `sv-playbook decision answer` en una sesión real sin el archivo
+para observar el `GATE_FAIL` directamente — el análisis es por lectura
+de código + los tests existentes, que sólo cubren los casos CON archivo
+presente (`'human'` y `'agent'`), nunca el caso realista de archivo
+ausente. Ese es exactamente el hueco de cobertura que dejó pasar esto:
+ningún test ejercita "sesión humana real, sin `.svp-session-role`".
+
+**Posible acción** (no implementada, a decidir): o bien `decision.ts`
+cambia su chequeo a `role !== null` (igual criterio que
+`destructive-gate.ts` — ausencia de archivo = tratar como humano), o el
+sistema necesita un mecanismo real que marque las sesiones humanas
+explícitamente (y en ese caso, agregar un test que cubra el caso
+"sesión sin ningún archivo de rol" para dejar esto agarrado). Cualquiera
+de las dos requiere decisión de producto, no es un fix mecánico obvio.
+
 ## F-005: `loadConfig()` sin config file devuelve objetos anidados COMPARTIDOS por referencia (riesgo latente, no bug activo hoy)
 
 **Encontrado en**: tanda de comentarios en español extendida a `src/config.ts`, 2026-07-20.
