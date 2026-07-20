@@ -6,6 +6,12 @@ import { NODE_TEST_CONTEXT_ENV } from '../db/store.constants.js';
 import { TEXT_ENCODING } from '../platform.constants.js';
 import type { CommandReferenceEntry } from './command-reference.types.js';
 
+// Otro caso de PRINCIPLE-009 (boilerplate generado): la sección de
+// referencia de comandos en docs/how-it-works.md se sincroniza contra el
+// registry REAL de comandos (`commands()`), reemplazando sólo el bloque
+// marcado, no el documento entero — syncCommandReferenceDoc es idempotente
+// (devuelve el mismo contenido si nada cambió, por eso `next === current`
+// evita escrituras innecesarias).
 export function regenerateCommandReference(entries: readonly CommandReferenceEntry[]): boolean {
   const docPath = fileURLToPath(COMMAND_REFERENCE_DOC_URL);
   const current = readFileSync(docPath, TEXT_ENCODING.UTF8);
