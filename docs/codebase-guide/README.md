@@ -29,14 +29,27 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 8. [`flows/flow-08-gateway-dispatch.md`](./flows/flow-08-gateway-dispatch.md) — dispatch a agentes externos ✅
 9. [`flows/flow-09-error-handling.md`](./flows/flow-09-error-handling.md) — manejo de errores (transversal) ✅ (hallazgo real: F-004)
 10. [`flows/flow-10-complexity-checkpoint.md`](./flows/flow-10-complexity-checkpoint.md) — checkpoint de complejidad ✅
-11. `flows/flow-11-secondary-flows.md` — backup/restore/rebuild, sprints, adopt, reconcile — *pendiente*
+11. [`flows/flow-11-secondary-flows.md`](./flows/flow-11-secondary-flows.md) — backup/restore/rebuild, sprints, adopt, reconcile ✅
 
 ### Cierre
-- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — 4 hallazgos hasta ahora (F-001..F-004)
+- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — 4 hallazgos (F-001..F-004)
 
 ## Estado del recorrido
 
-**Etapa actual: 11 — Checkpoint de complejidad.** Completada, ver `flows/flow-10-complexity-checkpoint.md`.
+**Los 11 flujos planificados en la Etapa 1 están completos.** Guía
+terminada en su primera pasada: fundamentos (arquitectura, mapa de
+repositorio, glosario) + 11 flujos + findings.md con 4 hallazgos reales
+documentados (no implementados). El código fuente (`src/`) también tiene
+comentarios explicativos en español agregados en los dominios centrales
+durante esta misma sesión — ver commits `docs(comments): ...`.
+
+Trabajo posterior sugerido (no iniciado): decidir sobre los 4 hallazgos de
+`findings.md`; profundizar dominios mencionados pero no cubiertos en
+detalle (`orchestration/` más allá de `coordinator.ts`, `check/` más allá
+de `duplicate-string.ts`, `roles/` más allá de `catalog.ts`,
+`src/gateway/adapters/`); extender los comentarios en español al resto
+del codebase (hoy cubre el archivo principal de cada dominio, no cada
+archivo).
 
 ## Reglas de esta guía (para quien la siga escribiendo)
 
