@@ -75,6 +75,13 @@ function compareOccurrences(left: StringOccurrence, right: StringOccurrence): nu
   return left.path.localeCompare(right.path) || left.line - right.line || left.column - right.column;
 }
 
+// Gate mecánico de PRINCIPLE-011 (single source for every fact): parsea
+// cada archivo como AST real (no regex sobre texto) para encontrar literales
+// de string que aparecen más de una vez en código ejecutable — excluye
+// imports/exports, nombres de propiedad, y tests (donde repetir literales
+// es habitual y no indica una constante faltante). De cada grupo de
+// duplicados, la PRIMERA ocurrencia (orden estable) se considera la
+// definición legítima; el resto son las violaciones reportadas.
 export function inspectDuplicateStrings(sources: readonly DuplicateStringSource[]): DuplicateStringInventory {
   const byValue = new Map<string, StringOccurrence[]>();
   for (const item of sources.flatMap(occurrences)) {
