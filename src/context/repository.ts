@@ -6,6 +6,7 @@ import { CAPABILITY_EFFECT, CONTEXT_ERROR, CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STR
 import { BUNDLED_ROLE_CONTEXT_KIND, BUNDLED_ROLE_ID } from '../roles/bundled-profile.constants.js';
 import { REFERENCE_VERSION_SEPARATOR } from '../platform.constants.js';
 import { ContextError } from './context.errors.js';
+import { compareOrdinal } from './digest.js';
 import type { CapabilityEffect, ContextItemInput, ContextItemStatus, ContextItemStrength, StoredContextItem } from './context.types.js';
 import type { ContextCatalog } from './repository.types.js';
 import { contextPrecedence } from './schema.constants.js';
@@ -97,7 +98,7 @@ export function addContextItem(store: Store, item: ContextItemInput): void {
   const dependencies = (item.dependencies ?? []).map(refParts).map((dependency) => [item.id, item.version, dependency.id, dependency.version] as const);
   const supersessionTargets = (item.supersedes ?? []).map(refParts);
   const supersessions = supersessionTargets.map((target) => [item.id, item.version, target.id, target.version] as const);
-  const capabilities = Object.entries(item.capabilities ?? {}).sort(([left], [right]) => left.localeCompare(right))
+  const capabilities = Object.entries(item.capabilities ?? {}).sort(([left], [right]) => compareOrdinal(left, right))
     .map(([capability, effect]) => [item.id, item.version, capability, effect] as const);
 
   store.db.exec(BEGIN_WRITE);
