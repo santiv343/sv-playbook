@@ -4,6 +4,38 @@
 > guía. **Nada de esto se implementa desde acá** — son observaciones para
 > que el equipo decida qué hacer, cuándo corresponda.
 
+## F-005: `loadConfig()` sin config file devuelve objetos anidados COMPARTIDOS por referencia (riesgo latente, no bug activo hoy)
+
+**Encontrado en**: tanda de comentarios en español extendida a `src/config.ts`, 2026-07-20.
+
+**Qué pasa**: cuando no existe `playbook.config.json`, `loadConfig()`
+devuelve `{ ...DEFAULTS }` — un shallow copy. `DEFAULTS`
+(`src/config.constants.ts`) es un único objeto módulo-level con campos
+anidados (`tasks`, `backup`, `reviewPreflight`, `modelEvaluation`,
+`gates`), cada uno también object literal. El shallow spread copia el
+nivel superior, pero `config.tasks`, `config.backup`, etc. siguen siendo
+la MISMA referencia de objeto en TODAS las llamadas a `loadConfig()` en
+todo el proceso (y `loadConfig()` se llama sin caché, muy seguido — 31
+call sites confirmados).
+
+**Por qué importa**: si algún caller, ahora o en el futuro, mutara un
+campo anidado del config devuelto (ej. `config.tasks.complexityCheckpoint.requireDecisionForPaths.push(...)`
+o `config.backup.onEvents = [...]`), esa mutación afectaría a TODO
+llamador futuro de `loadConfig()` en el mismo proceso — un bug de acción
+a distancia difícil de rastrear, porque el código que lee `config.tasks`
+en un archivo no tiene forma de saber que otro archivo, en otro momento,
+mutó ese mismo objeto.
+
+**Estado**: verificado con grep — **hoy no hay ningún caller que mute**
+un campo anidado del config (los 31 call sites son todos de sólo
+lectura). No es un bug activo, es una fragilidad de diseño latente.
+
+**Posible acción** (no implementada, a decidir): usar un deep clone
+(`structuredClone(DEFAULTS)` — disponible nativamente desde Node 17) en
+vez de un shallow spread, para que cada llamada a `loadConfig()` devuelva
+objetos completamente independientes, sin importar si algún caller futuro
+decide mutar el resultado.
+
 ## F-001: `serve` no reacciona a un apagado del daemon iniciado por sí mismo
 
 **Encontrado en**: Etapa 7 (`flows/flow-06-daemon-lifecycle.md`), 2026-07-20.
