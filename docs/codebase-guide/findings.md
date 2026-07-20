@@ -1,5 +1,31 @@
 # Hallazgos
 
+## F-013 (aplicando PRINCIPLE-016): `withStore`/`withStoreAsync` existe compartido en `cli/store.ts`, pero 8 comandos redefinen su propia copia local
+
+**Encontrado en**: comentando comandos CLI en español y notando el mismo
+patrón `withStore` repetido literalmente en cada archivo, 2026-07-20.
+
+**Qué pasa**: `src/cli/store.ts` exporta `withStore`/`withStoreAsync` —
+abrir el store, ejecutar una operación, cerrar siempre (incluso si la
+operación lanza). Sólo 2 comandos lo importan de ahí
+(`promotion.ts`, `task.ts`). Los otros **8** (`constitution.ts`,
+`context.ts`, `contract.ts`, `decision.ts`, `dispatch.ts`, `packet.ts`,
+`role.ts`, `sprint.ts`) definen su propia función local `withStore` con el
+mismo cuerpo (open → try/finally close), en vez de importar la compartida.
+
+**Por qué importa**: es exactamente el tipo de duplicación que
+PRINCIPLE-011 (single source for every fact) pide evitar — hoy inofensivo
+porque las 8 copias son funcionalmente idénticas, pero si `withStore`
+compartido gana lógica nueva (p.ej. telemetría, un timeout, manejo de
+errores especial) sólo se actualiza en 2 de 10 lugares reales, y las otras
+8 copias divergen en silencio.
+
+**Sugerencia (no implementada)**: migrar los 8 comandos a importar
+`withStore`/`withStoreAsync` desde `cli/store.ts` y borrar las copias
+locales.
+
+---
+
 ## F-012 (aplicando PRINCIPLE-016): `persistReviewCandidate` escribe 3 filas relacionadas sin transacción; `closePromotedTask` (mismo tipo de problema) sí usa `transact()`
 
 **Encontrado en**: comentando `src/review/review-candidate.ts` en español
