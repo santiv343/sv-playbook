@@ -206,6 +206,10 @@ function readRedTestCriteria(body: string): string {
   return match[1].trim();
 }
 
+// Sólo verifica que la sección "## RED test" EXISTE en el documento del
+// packet — no evalúa si el test realmente falla antes de implementar
+// (PRINCIPLE-002). Esa adecuación semántica es responsabilidad del
+// reviewer humano/agente, no de este chequeo mecánico.
 function checkRedTest(body: string): PreflightCheck {
   const criteria = readRedTestCriteria(body);
   if (criteria === '') {
@@ -266,6 +270,13 @@ function persistPreflightEvent(store: Store, packetId: string, overall: Prefligh
   }).run();
 }
 
+// Chequeos mecánicos que corren ANTES de que un candidato llegue a
+// revisión humana/de otro agente: write_set respetado, HEAD coincide con lo
+// reportado en el PR, CI en verde, verify limpio en un checkout aislado
+// (runCleanVerification), y presencia de la sección "RED test" en el
+// documento del packet (sólo verifica que existe, no su calidad semántica —
+// eso queda para el reviewer humano/agente). `overall` es FAIL si cualquier
+// check individual fue FAIL; SKIP/UNKNOWN no bloquean por sí solos.
 export async function runPreflight(
   store: Store,
   packetId: string,
