@@ -52,6 +52,13 @@ function adapterConfig(path: string): Readonly<Record<string, unknown>> {
   return Object.fromEntries(Object.entries(value));
 }
 
+// La política de tools de un execution profile es explícita por tool
+// (`--tool <id=allow|deny>`, nunca "todo permitido por default") — el
+// mismo default-deny que verifyOpenCodeToolPermissions
+// (gateway/adapters/opencode-permissions.ts) exige que el adapter respete
+// en runtime. Acá es donde el operador declara esa política al crear el
+// profile; allá es donde se verifica que el agente externo la cumpla de
+// verdad.
 function toolPolicy(values: readonly string[] | undefined): Record<string, boolean> {
   const tools: Record<string, boolean> = {};
   for (const value of values ?? []) {

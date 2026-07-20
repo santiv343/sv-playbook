@@ -12,6 +12,12 @@ import { ATTENTION_STATUSES, HANDOFF_ROLE_DEFAULT, nextActionAndCounts, rolePoin
 
 const NO_PRS = 'open PRs: none';
 
+// "Stale" acá es una heurística de comunicación, no de tiempo transcurrido:
+// un packet ACTIVE/BLOCKED está stale si su última TRANSICIÓN de estado es
+// más reciente que su última NOTE — es decir, alguien movió el packet
+// (p.ej. a blocked) sin dejar una nota explicando por qué. `handoff` usa
+// esto para señalarle al próximo humano/agente qué packets necesitan
+// contexto antes de retomarlos, sin tener que leer el historial completo.
 function staleActivePackets(store: { db: { prepare(sql: string): { all(): unknown[] } } }): string[] {
   const rows = store.db.prepare(`
     SELECT p.id, p.status,
