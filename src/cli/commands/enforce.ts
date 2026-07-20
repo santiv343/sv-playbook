@@ -6,6 +6,12 @@ import { CONFORMANCE_VERDICT } from '../../enforcement/conformance.constants.js'
 const USAGE = 'Usage: sv-playbook enforce <contract-path> <schema-path> <profile-path>';
 const ENFORCE_ARG_COUNT = 3;
 
+// "Machine-authoritative" en el summary es literal: `enforce` valida un
+// artifact contra su schema Y contra un profile de reglas SIN ningún
+// juicio humano/agente de por medio (runConformance en
+// enforcement/conformance.ts) — es la mecanización de PRINCIPLE-001 llevada
+// a un comando standalone, usable fuera del ciclo normal de review para
+// verificar conformidad de cualquier tripleta contrato/schema/profile.
 export const command: Command = {
   name: 'enforce',
   summary: 'Machine-authoritative contract conformance check (read-only)',
