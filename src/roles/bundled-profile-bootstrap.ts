@@ -120,6 +120,13 @@ function resumableBundledProfile(store: Store): boolean {
     && profile.sourceKind === ROLE_CATALOG_PROFILE_SOURCE.BUNDLED;
 }
 
+// Tres modos posibles, decididos ANTES de escribir nada: EMPTY (store sin
+// ningún rol — primera vez), RESUME (ya se corrió este bootstrap exacto
+// antes, mismo digest — self-heal seguro, ver bootstrapBundledRoleCatalog
+// más abajo, llamado automáticamente si falta el catálogo activo, flujo
+// 4), RECONCILE (hay roles en DB pero no coinciden exactamente con el
+// set de IDs del profile bundled — situación ambigua, requiere lógica
+// explícita de reconciliación en vez de sobreescribir a ciegas).
 function assertBootstrapAvailable(store: Store, profileDigest: string): BootstrapAvailability {
   const existing = existingReceipt(store);
   if (existing !== undefined) {
@@ -305,6 +312,13 @@ export function roleCatalogStoreIsVirgin(store: Store): boolean {
     && store.orm.select({ roleId: roleContracts.roleId }).from(roleContracts).all().length === EMPTY_SIZE;
 }
 
+// Self-heal automático: se llama desde review-candidate.ts
+// (activeCatalogWithSelfHeal, flujo 4) cuando falta un catálogo de roles
+// activo — un packet no debería fallar por "nadie corrió el setup
+// inicial todavía" si el sistema puede resolverlo solo con el profile
+// bundled. Idempotente por digest del profile completo
+// (`digest(BUNDLED_ROLE_PROFILE)`): correrlo de nuevo con el mismo
+// profile no duplica nada.
 export function bootstrapBundledRoleCatalog(store: Store): BundledRoleBootstrapReceipt {
   validateBundledProfile();
   const profileDigest = digest(BUNDLED_ROLE_PROFILE);
