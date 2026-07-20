@@ -97,6 +97,12 @@ function evidenceForProfile(
   )).orderBy(asc(modelCapabilityEvidence.assessedAt), asc(modelCapabilityEvidence.id)).all();
 }
 
+// Un perfil de ejecución (modelo+provider+variant) sólo puede usarse para
+// un rol si hay evidencia REGISTRADA (no asumida) de que ese modelo tiene
+// la capability mínima que el rol exige (roleContracts.minimumModelCapability),
+// y esa evidencia tiene que estar VIGENTE (assessedAt <= ahora < expiresAt)
+// — una evaluación de capacidad de modelo vieja no cuenta como prueba
+// permanente, los modelos cambian de comportamiento entre versiones.
 function profileViolation(
   store: Store,
   profile: EvidenceProfileIdentity,
@@ -125,6 +131,10 @@ export function checkModelCapabilityEvidence(store: Store, now = new Date()): Mo
   return { valid: violations.length === EMPTY_SIZE, violations };
 }
 
+// Llamado desde dispatchRun() (gateway.ts, flujo 8) antes de contactar al
+// adapter: si el perfil de ejecución no tiene evidencia vigente, el
+// dispatch se rechaza ACÁ, antes de gastar un turno de agente real con un
+// modelo que nunca se demostró capaz de la tarea.
 export function requireExecutionProfileModelEvidence(
   store: Store,
   profile: ExecutionProfile,
