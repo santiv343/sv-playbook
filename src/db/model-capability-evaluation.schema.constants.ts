@@ -1,3 +1,9 @@
+// Cada evaluación de capacidad de modelo queda como registro INMUTABLE
+// (mismo patrón de triggers ABORT que review_candidates/promotion_*) —
+// receipt_digest UNIQUE es lo que hace posible re-evaluar el mismo
+// modelo/suite sin duplicar filas: dos corridas con exactamente el mismo
+// receipt (mismo resultado, mismo digest) colisionarían en el UNIQUE en vez
+// de crear una fila redundante.
 export const MODEL_CAPABILITY_EVALUATION_STORE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS model_capability_evaluations (
   id TEXT PRIMARY KEY,

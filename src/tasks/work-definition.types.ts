@@ -11,6 +11,13 @@ export interface ResolvedWorkDefinitionReference extends WorkDefinitionReference
   digest: string;
 }
 
+// WorkDefinitionReference (id+version) es un puntero LIVIANO; agregar
+// digest lo vuelve ResolvedWorkDefinitionReference — verificable sin volver
+// a la DB, útil para pasar referencias entre procesos/mensajes donde hay
+// que confiar en el contenido sin re-consultar. WorkDefinitionValue es el
+// contenido REAL versionado (ver work-definitions.ts) — todo lo que define
+// "qué hay que hacer" en un packet, separado de su estado de ciclo de vida
+// (que vive en la tabla packets, no acá).
 export interface WorkDefinitionValue {
   schemaVersion: typeof WORK_DEFINITION_SCHEMA_VERSION;
   id: string;
