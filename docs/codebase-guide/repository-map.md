@@ -91,10 +91,13 @@ en las etapas donde correspondan.
 A diferencia de esta guía (que documenta desde afuera), también se están
 agregando comentarios explicativos DENTRO del código fuente (`src/`), en
 español, explicando el "por qué" de cada pieza no obvia. Estado a
-2026-07-20: **~96 archivos comentados** de los ~367 no-test totales
+2026-07-20: **~165 archivos comentados** de los ~367 no-test totales
 (`docs(comments): ...` en el historial de git de la rama de esta guía).
 Prioridad de cobertura: primero los archivos con lógica real (funciones con
 invariantes no obvias, compare-and-swap, migraciones), después
 `.constants.ts`/`.types.ts` sólo cuando agregan contexto que no está ya en
 su archivo `.ts` hermano — evitando comentarios redundantes que sólo
-repiten el nombre del tipo.
+repiten el nombre del tipo. Mientras se comenta, se sigue aplicando
+PRINCIPLE-016 activamente: comentar `review-candidate.ts` y compararlo
+contra `promotion.receipts.ts` produjo **F-012** (falta una transacción
+donde el patrón análogo sí la usa) — ver `findings.md`.
