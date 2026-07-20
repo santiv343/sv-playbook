@@ -247,6 +247,14 @@ function gateReview(store: Store, packetId: string, from: string, to: string): v
 // evento EVENT_EVIDENCE registrado — evidencia se registra con un comando
 // del CLI, nunca se puede fabricar a mano (PRINCIPLE-001: nada de reclamos
 // sin respaldo de comando real).
+// ⚠️ Ver findings.md F-010: `evidenceRequired` es una LISTA de ítems
+// (ej. ['final-sha', 'security-signoff']), pero este gate sólo chequea
+// si existe AL MENOS UN evento — nunca cruza el contenido de cada evento
+// contra los ítems específicos de la lista. Confirmado leyendo los 3
+// write-sites reales de EVENT_EVIDENCE (preflight.ts, review-candidate.ts,
+// legacy-review-evidence.ts): ninguno etiqueta qué ítem de
+// evidenceRequired satisface. Hoy, en la práctica, la lista funciona como
+// un booleano disfrazado de array.
 const gateEvidence = (store: Store, packetId: string, to: string): void => {
   if (to !== STATUS.DONE) return;
   const { evidenceRequired } = loadWorkDefinition(store, packetId).value;

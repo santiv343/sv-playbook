@@ -1,5 +1,62 @@
 # Hallazgos
 
+## F-010 (aplicando PRINCIPLE-016): `evidenceRequired` declara una lista de evidencias distintas, pero el gate sólo verifica "¿existe ALGUNA?"
+
+**Encontrado en**: cruzando TODOS los write-sites de `EVENT_EVIDENCE`
+contra su único punto de lectura (`gateEvidence`), 2026-07-20.
+
+**Qué pasa**: un packet declara `evidenceRequired: string[]` — por
+ejemplo el default, `DEFAULT_EVIDENCE = ['final-sha']`
+(`src/tasks/service.constants.ts`), o cualquier lista más larga como
+`['final-sha', 'security-signoff', 'load-test-passed']`. El nombre y el
+tipo (array de strings) implican una lista de evidencias DISTINTAS que
+cada una debería quedar satisfecha antes de que el packet pueda cerrar.
+
+El gate real (`gateEvidence`, `src/tasks/service.ts`):
+
+```ts
+const gateEvidence = (store, packetId, to) => {
+  if (to !== STATUS.DONE) return;
+  const { evidenceRequired } = loadWorkDefinition(store, packetId).value;
+  if (evidenceRequired.length > 0 && store.db.prepare(
+    "SELECT 1 FROM events WHERE packet_id = ? AND command = ? LIMIT 1"
+  ).all(packetId, EVENT_EVIDENCE).length === 0) throw new LifecycleError(...);
+};
+```
+
+Sólo comprueba: (1) si la lista NO está vacía, y (2) si existe AL MENOS
+UN evento con `command = 'evidence'` — nunca lee el CONTENIDO de
+`evidenceRequired` más allá de su longitud, y nunca compara el `detail`
+de los eventos existentes contra los ítems específicos de la lista.
+
+Confirmado con grep de TODOS los lugares que escriben `EVENT_EVIDENCE` en
+`src/` (3 en total):
+- `review/preflight.ts` → `detail: "preflight:pass"` / `"preflight:fail"` (el resultado global del preflight, no por-ítem).
+- `review/review-candidate.ts` → mismo prefijo `preflight:...`.
+- `tasks/legacy-review-evidence.ts` → `detail: "head-sha <sha>"` / `"branch <name>"`.
+
+Ninguno de los tres escribe nada que contenga literalmente `final-sha` ni
+ningún identificador que se pueda cruzar contra un ítem de
+`evidenceRequired`. Consecuencia concreta: un packet con
+`evidenceRequired: ['final-sha', 'security-signoff', 'load-test-passed']`
+queda satisfecho con UN solo evento de preflight (que no tiene nada que
+ver con "security-signoff" ni "load-test-passed") — exactamente el mismo
+resultado que si sólo hubiera declarado `['final-sha']`. La lista es,
+en la práctica, sólo un booleano disfrazado de array.
+
+**No confirmado en vivo**: no se creó un packet real con
+`evidenceRequired` multi-ítem para observar el cierre — el análisis es
+por lectura completa de todos los write-sites + el único read-site, no
+por ejecución.
+
+**Posible acción** (no implementada, a decidir): o bien `evidenceRequired`
+pasa a ser lo que su enforcement actual sugiere (un booleano —
+"¿hace falta evidencia, sí o no?", simplificando el tipo), o el gate
+empieza a cruzar contenido real: cada evento de evidencia debería llevar
+una etiqueta de qué ítem satisface, y `gateEvidence` debería exigir que
+TODOS los ítems de `evidenceRequired` tengan al menos un evento que los
+cubra, no sólo que exista uno cualquiera.
+
 ## F-009 (CONFIRMADO EN VIVO): el header de `content/principles.md` dice la dirección de generación AL REVÉS
 
 **Encontrado en**: al ir a agregar un principio nuevo, 2026-07-20.

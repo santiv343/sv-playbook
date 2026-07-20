@@ -35,36 +35,47 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 11. [`flows/flow-11-secondary-flows.md`](./flows/flow-11-secondary-flows.md) — backup/restore/rebuild, sprints, adopt, reconcile ✅
 
 ### Cierre
-- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — 7 hallazgos (F-001..F-007)
+- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — 10 hallazgos (F-001..F-010)
 
 ## Estado del recorrido
 
 **Los 11 flujos planificados en la Etapa 1 están completos.** Guía
 terminada en su primera pasada: fundamentos (arquitectura, mapa de
 repositorio, glosario, `explicacion-simple.md` a nivel producto) + 11
-flujos + `findings.md` con 7 hallazgos documentados (no implementados).
+flujos + `findings.md` con 10 hallazgos documentados (no implementados).
 El código fuente (`src/`) también tiene comentarios explicativos en
-español agregados en ~40 archivos durante esta sesión — ver commits
+español agregados en ~65 archivos durante esta sesión — ver commits
 `docs(comments): ...`.
 
-Los dos hallazgos más importantes (F-006, F-007) no salieron de leer un
-archivo a la vez — salieron de cruzar patrones entre dominios (comparar
-cómo dos funciones distintas resuelven el mismo problema): **F-006**
-detecta que `decision answer` probablemente rechaza a un humano real por
-default (invierte el modelo de confianza de `destructive-gate.ts`); **F-007**
-detecta que el camino "legacy" de verificación pre-review
-(`gateVerify`/`verifyLegacyReviewSync` en `tasks/`) está duplicado con
-`runSourceWorktreeVerifyCheck` (`review/preflight.ts`) y es inalcanzable
-desde el CLI real — sólo lo ejercitan tests, dando cobertura falsa.
-Ambos también quedaron registrados en `docs/backlog.md` (IDEA-125,
-IDEA-124) para que entren al sistema real de tracking del proyecto, no
-sólo en esta guía.
+**Se agregó PRINCIPLE-016 — "Correctness is cross-domain, not
+file-local"** (`content/principles.md`, propagado a `AGENTS.md`/`CLAUDE.md`
+vía bootstrap + `instructions --write`, verificado con `check
+instructions`). Codifica la disciplina que produjo la mayoría de los
+hallazgos reales de esta guía: revisar cada primitiva compartida contra
+TODOS sus call sites, no sólo confirmar que un archivo aislado hace lo
+que dice.
 
-Trabajo posterior sugerido (no iniciado): confirmar F-006/F-007 con
+Los hallazgos más importantes NO salieron de leer un archivo a la vez —
+salieron de cruzar patrones entre dominios (comparar cómo dos funciones
+distintas resuelven el mismo problema, aplicando PRINCIPLE-016):
+**F-006** (confirmado en vivo) — `decision answer` rechaza a un humano
+real por default, invierte el modelo de confianza de
+`destructive-gate.ts`; **F-007** — el camino "legacy" de verificación
+pre-review está duplicado y es inalcanzable desde el CLI real, sólo lo
+ejercitan tests; **F-008** (confirmado en vivo, en este propio repo) —
+store SQLite huérfano en `.svp/`, congelado desde antes de la migración
+externa; **F-009** (confirmado y corregido en el momento) — el header de
+`content/principles.md` decía la dirección de generación al revés;
+**F-010** — `evidenceRequired` es una lista de ítems distintos pero el
+gate sólo verifica si existe evidencia genérica, nunca cruza contenido.
+Todos también quedaron registrados en `docs/backlog.md` (IDEA-124..126)
+para el sistema real de tracking del proyecto, no sólo en esta guía.
+
+Trabajo posterior sugerido (no iniciado): confirmar F-007/F-010 con
 ejecución real (no sólo lectura de código) y decidir su fix; decidir sobre
 el resto de `findings.md`; seguir cruzando patrones entre dominios en vez
 de sólo comentar archivo por archivo; extender los comentarios en español
-al resto del codebase (~250 archivos todavía sin tocar).
+al resto del codebase (~230 archivos todavía sin tocar).
 
 ## Reglas de esta guía (para quien la siga escribiendo)
 
