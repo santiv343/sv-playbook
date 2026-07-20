@@ -75,6 +75,17 @@ function effectiveBroadAction(rules: readonly PermissionRule[], toolId: string):
   )).at(-1)?.action;
 }
 
+// Verifica default-deny de verdad, no sólo que las tools declaradas estén
+// permitidas: (1) tiene que existir una regla wildcard/wildcard DENY en
+// algún punto (defaultDenyIndex) — sin eso, cualquier tool no listada
+// explícitamente sería un ALLOW implícito; (2) después de esa regla, NINGÚN
+// ALLOW puede referirse a algo que el profile no habilitó
+// (verifyNoUndeclaredAllows); (3) TODA tool que el profile SÍ habilitó
+// tiene que resolver a ALLOW como la regla más específica vigente
+// (effectiveBroadAction, toma la última regla que matchea — así funciona
+// la precedencia real de permisos de OpenCode). Sin este triple chequeo,
+// un profile podría creer que restringió tools que en la práctica el
+// agente igual puede usar.
 export function verifyOpenCodeToolPermissions(value: unknown, profile: ExecutionProfile): void {
   const rules = permissionRules(value);
   const denyIndex = defaultDenyIndex(rules);

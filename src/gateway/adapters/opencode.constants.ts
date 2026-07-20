@@ -1,3 +1,10 @@
+// OpenCode es hoy el único adapter de agente real soportado (ver
+// AgentAdapter en gateway.types.ts). NATIVE vs VALIDATED_TEXT
+// (OPENCODE_OUTPUT_MODE) son dos formas de forzar output estructurado:
+// NATIVE usa el soporte de json_schema del propio proveedor si lo tiene;
+// VALIDATED_TEXT es el fallback para proveedores sin eso — le prohíbe
+// tools explícitamente (OPENCODE_VALIDATED_TEXT_SYSTEM_PROMPT) y valida el
+// texto crudo como JSON después.
 export const OPENCODE_ADAPTER_ID = 'opencode-shared-bootstrap-v1';
 
 export const OPENCODE_API_PATH = {

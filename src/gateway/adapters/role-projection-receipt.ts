@@ -10,6 +10,13 @@ import {
 import type { RoleProjectionReceipt } from './role-projection-receipt.types.js';
 import type { RoleProjectionCandidate } from './role-projection.types.js';
 
+// Un receipt es la prueba de que un catálogo de roles concreto (catalogVersion
+// + catalogDigest) se proyectó a la config de un adapter específico
+// (profileDigest + artifactDigest de los archivos generados). Es idempotente
+// por CONTENIDO — si ya existe un receipt con exactamente esos 5 valores, se
+// reutiliza en vez de crear uno nuevo; sólo se reactiva (roleProjectionActivation,
+// que sí es 1 fila por adapter, se pisa) para marcar cuál receipt es el
+// "vigente" ahora mismo.
 export function recordRoleProjectionReceipts(
   store: Store,
   candidates: readonly RoleProjectionCandidate[],

@@ -43,6 +43,15 @@ function candidateFor(
   };
 }
 
+// Tres funciones que devuelven cosas parecidas pero para audiencias
+// distintas: inspectRoleProjections lee lo YA promovido a disco (con
+// receiptViolations, detecta drift entre store y filesystem);
+// inspectEffectiveRoleProjections recompila en memoria y compara con lo que
+// HABRÍA en disco si se promoviera ahora (no toca receipts); compileRoleProjections
+// arma los candidatos para promoteRoleProjections() los escriba de verdad.
+// promoteRoleProjections escribe con el patrón write-then-rename
+// (.svp-candidate -> destino) para que un writeFileSync a mitad de camino
+// nunca deje un archivo de proyección corrupto en su lugar final.
 export function inspectRoleProjections(
   store: Store,
   repoRoot: string,

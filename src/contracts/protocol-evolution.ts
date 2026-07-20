@@ -67,11 +67,9 @@ interface EvolutionSource {
   metadata: JsonRecord;
 }
 
-// ⚠️ Ver findings.md F-011: este archivo usa store.db.prepare (SQL crudo)
-// para SELECT/INSERT/UPDATE en tablas de negocio (protocol_shared_schemas,
-// artifact_contracts, artifact_contract_metadata) — no es DDL. La
-// convención del resto del código (store.orm siempre, SQL crudo sólo en
-// src/db para DDL/migraciones) se rompe acá.
+// SQL crudo acá (JOIN de 4 tablas) en vez de store.orm — patrón establecido
+// en el resto del código para lecturas con joins complejos, no una
+// excepción de este archivo (ver findings.md F-011, retirado).
 function source(store: Store): EvolutionSource {
   const rows = store.db.prepare(`SELECT ps.contract_ref, shared.schema_json AS shared_schema_json,
     am.metadata_schema_ref, metadata_schema.schema_json AS metadata_schema_json, am.metadata_json
