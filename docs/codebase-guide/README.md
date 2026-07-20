@@ -22,7 +22,7 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 1. [`flows/flow-01-cli-entry-dispatch.md`](./flows/flow-01-cli-entry-dispatch.md) — punto de entrada y despacho de comandos ✅
 2. [`flows/flow-02-store-persistence.md`](./flows/flow-02-store-persistence.md) — persistencia y store ✅
 3. [`flows/flow-03-packet-lifecycle.md`](./flows/flow-03-packet-lifecycle.md) — ciclo de vida de un packet ✅
-4. `flows/flow-04-preflight-review-promotion.md` — preflight + review + promotion — *pendiente*
+4. [`flows/flow-04-preflight-review-promotion.md`](./flows/flow-04-preflight-review-promotion.md) — preflight + review + promotion ✅
 5. `flows/flow-05-context-coldstart.md` — cold-start de contexto (`instructions --write`) — *pendiente*
 6. `flows/flow-06-daemon-lifecycle.md` — daemon: ownership, forwarding, shutdown — *pendiente*
 7. `flows/flow-07-serve-console.md` — consola operativa HTTP — *pendiente*
@@ -36,7 +36,7 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 
 ## Estado del recorrido
 
-**Etapa actual: 4 — Ciclo de vida de un packet.** Completada, ver `flows/flow-03-packet-lifecycle.md`.
+**Etapa actual: 5 — Preflight + review + promotion.** Completada, ver `flows/flow-04-preflight-review-promotion.md`.
 
 ## Reglas de esta guía (para quien la siga escribiendo)
 
