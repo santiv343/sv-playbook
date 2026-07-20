@@ -35,6 +35,12 @@ function requiredString(value: string | boolean | string[] | undefined, option: 
   }
 }
 
+// `promotion run` es la única puerta CLI a PromotionController.promote()
+// (flujo 04) — recibe el id del review candidate YA aprobado más el
+// runSpec del reviewer que lo aprobó, y delega toda la lógica real (checks,
+// verificación de verdict, integración a git) al controller. targetRef es
+// opcional porque el controller tiene su propio default (la rama base
+// configurada); acá sólo se pasa si el operador quiere sobreescribirla.
 async function runPromotion(args: readonly string[], io: Io): Promise<number> {
   const parsed = parseArgs({
     args,

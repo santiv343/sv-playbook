@@ -43,6 +43,13 @@ function serveOptions(args: string[]): ServeOptions | undefined {
   return { port, daemonPort, refreshMs };
 }
 
+// `serve` arranca DOS cosas encadenadas: primero el daemon (startDaemon,
+// puede tardar si tiene que arrancar de cero) y sólo si eso sale bien,
+// el server HTTP de la consola operativa apuntando al store DEL daemon —
+// nunca abre su propio store independiente. Ver F-001 en findings.md: el
+// `stop()` de este comando no espera el `done` promise del daemon antes de
+// terminar, así que un shutdown puede reportar éxito antes de que el
+// daemon termine de limpiar de verdad.
 async function runServer(args: string[], io: Io): Promise<number> {
     let options: ServeOptions | undefined;
     try { options = serveOptions(args); } catch (error: unknown) {
