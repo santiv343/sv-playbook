@@ -16,6 +16,12 @@ function writeLockFileAtomically(lockPath: string, pid: number, port: number, no
   }
 }
 
+// El "single blessed writer" del daemon se implementa con el flag `wx` de
+// openSync — crea el archivo SÓLO si no existe, atómico a nivel de SO. Es
+// el mismo patrón compare-and-swap documentado en architecture.md, pero vía
+// filesystem en vez de SQL o git: si dos procesos intentan acquireLock() al
+// mismo tiempo, el SO garantiza que sólo uno gana (ALREADY_EXISTS para el
+// perdedor), sin necesitar ningún lock adicional de aplicación.
 export function acquireLock(lockPath: string, pid: number, port: number, nonce: string): void {
   try {
     writeLockFileAtomically(lockPath, pid, port, nonce);
