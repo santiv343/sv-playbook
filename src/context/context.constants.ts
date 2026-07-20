@@ -1,3 +1,10 @@
+// 4 estados del ciclo de vida de un context item: ACTIVE es lo único que
+// compileContext() considera; SUPERSEDED es lo que produce
+// validateSupersessions (context/repository.ts) al reemplazar un ítem;
+// DEFERRED/RETIRED existen para gradúa la retirada de un ítem sin borrar su
+// historia (item inmutable, sólo cambia status). STRENGTH es ortogonal —
+// MANDATORY vs ADVISORY vs REFERENCE decide cómo el compilador prioriza
+// contenido cuando hay conflicto de precedencia, no si el ítem está vivo.
 export const CONTEXT_ITEM_STATUS = Object.freeze({
   ACTIVE: 'active',
   SUPERSEDED: 'superseded',
