@@ -1,5 +1,40 @@
 # Hallazgos
 
+## F-012 (aplicando PRINCIPLE-016): `persistReviewCandidate` escribe 3 filas relacionadas sin transacción; `closePromotedTask` (mismo tipo de problema) sí usa `transact()`
+
+**Encontrado en**: comentando `src/review/review-candidate.ts` en español
+y comparando el patrón "persistir un resultado con varias filas
+relacionadas + un evento" contra su análogo en `promotion.receipts.ts`,
+2026-07-20.
+
+**Qué pasa**: `persistReviewCandidate` (`src/review/review-candidate.ts`)
+hace 3 escrituras relacionadas — `workflowArtifacts` (el artifact),
+`reviewCandidates` (el candidato) y `taskEvents` (el evento de evidencia) —
+como 3 llamadas `.run()` sueltas, sin `transact()` ni
+`store.orm.transaction()` envolviéndolas. Confirmado con grep: cero
+ocurrencias de `transact` en todo el archivo.
+
+`closePromotedTask` (`src/promotion/promotion.receipts.ts`), que resuelve
+el MISMO tipo de problema (persistir un resultado + actualizar estado
+relacionado + dejar evento, de forma que sea seguro reintentar tras un
+crash a mitad de camino), sí envuelve sus escrituras en `transact(store,
+() => { ... })`.
+
+**Por qué importa**: si el proceso muere entre el insert de
+`workflowArtifacts` y el de `reviewCandidates`, queda un artifact huérfano
+sin candidato que lo referencie — o peor, si muere entre `reviewCandidates`
+y el evento de evidencia, el candidato existe pero sin el evento
+`EVENT_EVIDENCE` que otros gates (`gateEvidence` en `tasks/service.ts`)
+esperan encontrar. La función es "casi" idempotente por el chequeo de
+identidad al principio (`existing !== undefined` devuelve temprano), pero
+esa idempotencia no cubre un fallo A MITAD de la secuencia de inserts.
+
+**Sugerencia (no implementada)**: envolver las 3 escrituras de
+`persistReviewCandidate` en `transact(store, () => { ... })`, igual que
+`closePromotedTask`.
+
+---
+
 ## F-011 — CORREGIDO (autocorregido con más evidencia, mismo día): no es una desviación puntual, es deuda de baseline ya mecanizada
 
 Versión original: se anotó que `protocol-evolution.ts` usaba
