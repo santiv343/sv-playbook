@@ -1,3 +1,7 @@
+// Todos los gates de fuente (duplicate-string, literal-comparison,
+// orm-boundary) escanean el MISMO árbol — sólo `src/`, sólo .ts/.js, nunca
+// .d.ts — vía readCheckedSources (source-tree.ts), que usa estas
+// constantes como única fuente de verdad de cobertura.
 export const CHECKED_SOURCE_ROOTS = ['src'] as const;
 export const SOURCE_FILE_SUFFIX = {
   DECLARATION: '.d.ts',
