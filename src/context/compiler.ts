@@ -37,6 +37,10 @@ function requestAttributes(input: ContextCompileInput): Readonly<Record<string, 
   };
 }
 
+// Un item de contexto puede declarar selectores por dimensión (role, phase,
+// tag, etc.) — vacío o wildcard ("*") significa "aplica siempre para esta
+// dimensión"; si no, tiene que haber intersección con lo que pide el
+// request (ver requestAttributes).
 function selectorMatches(expected: readonly string[], actual: readonly string[] | undefined): boolean {
   if (expected.length === 0 || expected.includes(SELECTOR_WILDCARD)) return true;
   if (actual === undefined) return false;
@@ -114,6 +118,13 @@ function rankOf(catalog: ContextCatalog, item: StoredContextItem): number {
   return rank;
 }
 
+// Dos items pueden competir por el mismo semanticKey (ej. dos versiones de
+// "cómo debe sonar el rol reviewer"). Se agrupan por semanticKey y gana el
+// de mayor precedence (catalog.precedence[kind], configurado por instancia
+// — PRINCIPLE-013: la jerarquía de precedencia es opinión, no está
+// hardcodeada acá). Un empate en el rank más alto es un conflicto real: no
+// hay forma automática de decidir, así que se aborta con CONTEXT_CONFLICT en
+// vez de elegir arbitrariamente.
 function resolveSemanticConflicts(catalog: ContextCatalog, selected: Map<string, SelectedItem>): Map<string, SelectedItem> {
   const groups = new Map<string, Array<[string, SelectedItem]>>();
   for (const entry of selected) {
@@ -181,6 +192,14 @@ function buildReceipt(catalog: ContextCatalog, candidates: ReadonlyMap<string, S
   }).sort((left, right) => compareOrdinal(left.ref, right.ref));
 }
 
+// Pipeline completo: indexar catálogo -> seleccionar candidatos aplicables
+// (+ sus dependencias transitivas) -> resolver conflictos semánticos por
+// precedencia -> ordenar y armar los items finales -> resolver qué
+// capabilities quedan permitidas/denegadas. El packId se deriva del digest
+// semántico del resultado (no un UUID aleatorio): el mismo input siempre
+// produce el mismo packId, lo que hace el context pack reproducible y
+// verificable — dos agentes con el mismo role+phase+catálogo reciben
+// exactamente el mismo pack.
 export function compileContext(catalog: ContextCatalog, input: ContextCompileInput): CompiledContextPack {
   const byRef = indexCatalog(catalog);
   const candidates = selectCandidates(catalog, input, byRef);
