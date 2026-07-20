@@ -1,70 +1,67 @@
-# Plan de implementación: ciclo de vida de `serve` y shutdown (v2)
+# Serve: ciclo de vida al apagar el daemon embebido
 
-## Hallazgo estático confirmado
+**Idea:** serve-shutdown-lifecycle  
+**Fecha:** 2026-07-20  
+**Estado:** reproducido y corregido
 
-`src/cli/commands/serve.ts:55-89` inicia un daemon y la UI, pero su `stop()`
-(que cierra UI y daemon) sólo se invoca por SIGINT/SIGTERM o error de la UI.
-No observa `daemon.done`. `src/daemon/daemon.types.ts:26-29` define que
-`done` se resuelve al detenerse por shutdown, señal o error. Por tanto un POST
-a `/api/v1/shutdown` puede cerrar el daemon sin ejecutar `server.close()` y
-dejar la UI de 3131 viva.
+## Topología confirmada
 
-## Resultado de la reproducción solicitada (2026-07-19)
+`serve` no crea un proceso hijo: llama `startDaemon()` in-process. El proceso
+Node que atiende la UI y el daemon es el mismo; por lo tanto SIGKILL a un
+supuesto hijo no es una reproducción válida.
 
-La primera reproducción no es ejecutable como fue formulada: no existe un
-daemon hijo de `serve` para matar con SIGKILL. `serve.ts` llama
-`startDaemon()` directamente (`src/cli/commands/serve.ts:55-64`) y continúa
-creando la UI en ese mismo proceso Node; `startDaemon()` a su vez llama
-`createDaemon()` sin `spawn` (`src/daemon/daemon.ts:372-379`). Un SIGKILL al
-único proceso mata simultáneamente daemon y UI, por lo que no puede demostrar
-un servidor huérfano.
+## Reproducción en vivo
 
-Se intentó una consola visible aislada en `C:\tmp\svp-serve-live` con:
+Se usó el clon aislado `C:\tmp\svp-serve-live`, con puertos no compartidos:
 
 ```powershell
-node bin\sv-playbook.js serve --port 43131 --daemon-port 44141
+node bin/sv-playbook.js serve --port 33131 --daemon-port 34141
 ```
 
-El primer intento (terminal PID 28884) no abrió puertos porque la copia aún no
-tenía `dist`; el posterior `npm run build` excedió 60 s sin salida mientras
-las tres verificaciones de implementación ocupaban el entorno. No se obtuvo
-un POST `/shutdown` observable y no se fabrican PIDs ni estados.
+La salida registrada fue:
 
-**Decisión:** detener este paquete antes de código. La premisa de la Tarea 1
-es falsa; redefinir la reproducción alrededor de shutdown interno del mismo
-proceso requeriría una nueva decisión de alcance.
+```text
+Operations console listening on http://127.0.0.1:33131
+```
 
-## Tarea 1: reproducción live obligatoria (obsoleta; no ejecutar)
+Antes del cierre, `Test-NetConnection` confirmó TCP en `33131` y `34141`.
+`Get-NetTCPConnection` identificó el proceso Node de `serve` como PID `32680`
+en el puerto de UI. Desde otro proceso se leyó el token de
+`.svp/.svp-daemon-token` y se envió:
 
-**Archivos:** ninguno.
+```powershell
+Invoke-WebRequest -Method Post `
+  -Uri http://127.0.0.1:34141/api/v1/shutdown `
+  -ContentType application/json `
+  -Body (@{ token = (Get-Content -Raw .svp/.svp-daemon-token).Trim() } | ConvertTo-Json -Compress)
+```
 
-- [ ] No ejecutar: no hay daemon hijo independiente al que aplicar SIGKILL.
-- [ ] Arrancar un `serve` limpio, llamar autenticadamente
-  `/api/v1/shutdown` contra el daemon que él lanzó y registrar estado del
-  daemon, proceso `serve` y puerto 3131.
-- [ ] Guardar comandos, PID/puertos y salida. Si cualquiera no reproduce,
-  detenerse y actualizar este plan con el resultado, sin implementar.
+Después de la solicitud, la conexión a `34141` falló y no quedó listener del
+daemon; `33131` seguía escuchando con PID `32680` y `serve_process_alive=True`.
+PowerShell informó una `NullReferenceException` al materializar la respuesta
+de `Invoke-WebRequest`, pero el cierre observado del daemon y la persistencia
+de la UI son los hechos de la reproducción.
 
-## Tarea 2: prueba RED de supervisión del daemon (requiere nueva aprobación)
+## Causa
 
-**Archivos:** prueba de `serve` existente o nueva prueba de proceso.
+`src/cli/commands/serve.ts` sólo invocaba `stop()` ante señales del proceso o
+un error del servidor de UI. El endpoint autenticado del daemon resuelve
+`daemon.done`, pero `serve` no estaba suscrito a ese latch; por eso el servidor
+HTTP de UI quedaba vivo con su dueño de store ya cerrado.
 
-- [ ] Escribir una prueba que arranque `serve`, haga POST shutdown al daemon y
-  espere daemon detenido, 3131 cerrado y salida del proceso padre.
-- [ ] Ejecutarla y guardar el RED antes de modificar producción.
+## Implementación RED-first
 
-## Tarea 3: vincular `daemon.done` al cierre idempotente (no autorizado)
+1. Añadir en `serve.test.ts` un proceso real de `serve`; esperar ambos puertos,
+   hacer POST autenticado a `/api/v1/shutdown`, y exigir que el proceso salga y
+   que la UI deje de responder. El RED falló con: `serve process did not exit
+   after daemon shutdown`.
+2. Suscribir `daemon.done` al `stop(EXIT.OK)` idempotente existente. Así se
+   cierra la UI, se quitan listeners de señales y se resuelve el comando para
+   todo cierre terminal del daemon.
+3. Confirmar el test focal en verde y ejecutar la verificación completa.
 
-**Archivos:** `src/cli/commands/serve.ts`, prueba de serve.
+## Evidencia focal
 
-- [ ] Registrar `daemon.done` al mismo `stop()` idempotente ya usado por
-  señales, de forma que cierre la UI aun cuando el daemon muera por shutdown o
-  error.
-- [ ] Preservar el manejo SIGINT/SIGTERM y `EXIT.OK`; evitar doble cierre y
-  rechazos no manejados.
-- [ ] Ejecutar la prueba RED hasta verde y repetir ambas reproducciones live.
-
-## Criterio de aceptación
-
-Después de shutdown HTTP o terminación inesperada del daemon, no queda ningún
-proceso `serve` ni listener en 3131. Ejecutar `npm run verify` al finalizar.
+```text
+✔ serve exits and closes its UI when the embedded daemon is shut down by HTTP
+```

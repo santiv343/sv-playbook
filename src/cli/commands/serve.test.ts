@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
@@ -23,6 +23,7 @@ import { initTestRepo } from '../../testkit.js';
 const BIN_PATH = resolve('bin/sv-playbook.js');
 const SERVER_START_TIMEOUT_MS = 15_000;
 const SERVER_POLL_INTERVAL_MS = 50;
+const SERVER_STOP_TIMEOUT_MS = 1_000;
 const LIVE_PACKET_ID = 'SV-001';
 const LIVE_NOTE = 'forwarded while UI is live';
 
@@ -96,6 +97,13 @@ function httpPost(url: string, value: unknown): Promise<string> {
     });
     request.on('error', reject);
     request.end(JSON.stringify(value));
+  });
+}
+
+function waitForExit(child: ReturnType<typeof spawn>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { reject(new Error('serve process did not exit after daemon shutdown')); }, SERVER_STOP_TIMEOUT_MS);
+    child.once('exit', () => { clearTimeout(timeout); resolve(); });
   });
 }
 
@@ -238,5 +246,25 @@ test('serve keeps UI reads and forwarded CLI mutations behind one store owner', 
       });
     }
     assert.equal(stderr, '');
+  });
+});
+
+test('serve exits and closes its UI when the embedded daemon is shut down by HTTP', async () => {
+  await inTempRepo(async () => {
+    const uiPort = await freePort();
+    const daemonPort = await freePort();
+    const child = spawn(process.execPath, [
+      BIN_PATH, 'serve', '--port', String(uiPort), '--daemon-port', String(daemonPort),
+    ], { cwd: process.cwd(), env: productionEnvironment(), stdio: ['ignore', 'ignore', 'pipe'] });
+    try {
+      await waitForUrl(`http://127.0.0.1:${daemonPort}/api/v1/health`);
+      await waitForUrl(`http://127.0.0.1:${uiPort}${SERVE_ROUTE.DASHBOARD}`);
+      const token = (await readFile('.svp/.svp-daemon-token', 'utf8')).trim();
+      await httpPost(`http://127.0.0.1:${daemonPort}/api/v1/shutdown`, { token });
+      await waitForExit(child);
+      await assert.rejects(httpGet(`http://127.0.0.1:${uiPort}${SERVE_ROUTE.DASHBOARD}`));
+    } finally {
+      child.kill();
+    }
   });
 });
