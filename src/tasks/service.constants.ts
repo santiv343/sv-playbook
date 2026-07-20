@@ -46,6 +46,7 @@ export const INSERT_LEASE_SQL = 'INSERT INTO leases (packet_id, session_id, work
 export const DELETE_LEASE_SQL = 'DELETE FROM leases WHERE packet_id = ?';
 export const INSERT_PACKET_SQL = 'INSERT INTO packets (id, title, path, status, body, write_set, type, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)';
 export const EXISTS_SQL = 'SELECT 1 FROM packets WHERE id = ?';
+export const MISSING_PACKET_DEPENDENCY = 'depends on missing packet';
 
 export const TASK_TYPE_PREFIX: Record<string, string> = {
   feature: 'FEAT',
