@@ -1,6 +1,14 @@
 import { SOURCE_BASELINE_STATUS } from './source-baseline.constants.js';
 import type { SourceBaseline, SourceBaselineEvaluation } from './source-baseline.types.js';
 
+// Gate anti-regresión compartido por todos los inventarios de deuda
+// (duplicados de string, comparaciones literales, etc. — ver
+// check/duplicate-string.ts): compara el conteo actual contra un baseline
+// congelado. Subir el conteo es FAIL (`INCREASED`); bajarlo pide
+// actualizar el baseline a mano (`DECREASED`, no se auto-actualiza —
+// bajar deuda es una mejora que hay que reconocer explícitamente, no
+// blanquear); mismo conteo pero distinto contenido (`digest`) es
+// `CHANGED` — señal de que la deuda se movió de lugar sin reducirse.
 export function evaluateSourceBaseline(
   label: string,
   inventory: SourceBaseline,

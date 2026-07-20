@@ -118,6 +118,11 @@ function indexSteps(repository: WorkflowRepositoryPort, definition: WorkflowDefi
   return steps;
 }
 
+// Cada step necesita EXACTAMENTE una ruta default (sin outputPointer) para
+// no dejar un camino sin salida cuando ninguna condición matchea — y no
+// puede haber dos rutas default desde el mismo step (ambigüedad: ¿cuál
+// gana?). Las rutas condicionales (con outputPointer) pueden ser varias,
+// se desambiguan por `priority`.
 function validateRoutes(definition: WorkflowDefinitionInput, steps: ReadonlyMap<string, WorkflowStepDefinitionInput>): void {
   const routeKeys = new Set<string>();
   const routeSources = new Set<string>();
@@ -165,6 +170,11 @@ function repository(store: Store): WorkflowRepositoryPort {
   return new DrizzleWorkflowRepository(store);
 }
 
+// Registrar una definición nunca pisa una versión anterior — cada llamada
+// crea una versión nueva (`nextDefinitionVersion`), igual que los context
+// items (flujo 5) y los role contracts (roles/catalog.ts): versionar en
+// vez de mutar es el patrón repetido en todo el sistema para que un
+// workflow ya en curso nunca vea cambiar la definición bajo sus pies.
 export function registerWorkflowDefinition(
   store: Store,
   definition: WorkflowDefinitionInput,
@@ -249,6 +259,11 @@ function publicEffect(effect: ClaimedWorkflowEffect, leaseOwner: string, leaseEx
   };
 }
 
+// Reclama el próximo efecto pendiente con un lease exclusivo — el mismo
+// mecanismo de lease-con-TTL que WorkflowCoordinator (coordinator.ts)
+// renueva mientras ejecuta. `undefined` significa "no hay trabajo
+// pendiente ahora", no un error — el coordinador lo interpreta como señal
+// para esperar `idlePollIntervalMs` antes de reintentar.
 export function claimWorkflowEffect(store: Store, leaseOwner: string, leaseMs: number, now: Date = new Date()): WorkflowEffect | undefined {
   requiredText(leaseOwner, 'leaseOwner');
   if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new ContextError(WORKFLOW_ERROR.INVALID_EFFECT_LEASE, INVALID_LEASE_DURATION_MESSAGE);
