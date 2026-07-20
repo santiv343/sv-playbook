@@ -12,6 +12,13 @@ function recordEvidence(store: Store, packetId: string, detail: string, at: stri
   }).run();
 }
 
+// Este es uno de los 3 write-sites de EVENT_EVIDENCE citados en F-010
+// (findings.md) — el camino LEGACY específicamente (ver F-007: sólo lo
+// ejercitan tests, movePacket(...,'review') nunca se llama en producción).
+// Nunca falla duro: si git no responde, igual registra un evento con
+// "head-sha unavailable: <mensaje>" en vez de abortar la transición — la
+// evidencia de fallo es en sí misma evidencia, no un motivo para bloquear
+// el movimiento del packet.
 export function captureLegacyReviewEvidence(
   store: Store,
   packetId: string,

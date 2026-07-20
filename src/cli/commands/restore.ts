@@ -7,6 +7,11 @@ import { restoreStateBackup } from '../../db/backup.js';
 import { RESTORE_USAGE, STATE_SUBCOMMAND } from './backup.constants.js';
 import { loadConfig } from '../../config.js';
 
+// `destructive: true` en la definición del Command es lo que engancha
+// destructive-gate.ts (ver flujo de gates destructivos) — restaurar
+// SIEMPRE toma un backup del estado actual primero (restoreStateBackup en
+// db/backup.ts), así que "destructivo" acá es sobre el efecto neto
+// (reemplaza el store en vivo), no sobre falta de red de seguridad.
 export const command: Command = {
   name: 'restore',
   summary: 'Restore local SQLite state from a snapshot',
