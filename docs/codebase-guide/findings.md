@@ -69,3 +69,52 @@ nuevos en cada tick (el mecanismo ya existe, sólo falta conectarlo), o si
 el diseño realmente quiere "estado completo siempre" entonces
 `readWorkflowDashboard` debería tener un límite/paginación en `readEvents`
 en vez de traer la tabla completa sin `LIMIT`.
+
+## F-003 (proceso, no código): el `main` local de esta sesión estaba desactualizado respecto a `origin/main`, y se documentó/comentó código sobre esa base stale durante varias horas
+
+**Encontrado en**: Etapa 9 (al escribir `flows/flow-08-gateway-dispatch.md`
+y volver a chequear el estado de los 4 branches "indispensable ahora" de
+la sesión anterior), 2026-07-20.
+
+**Qué pasó**: en la sesión previa se habían mergeado 4 packets
+(`fix/referential-integrity-audit`, `fix/error-boundary-audit`,
+`fix/context-bootstrap-idempotency`, `fix/serve-shutdown-lifecycle-v2`) —
+o al menos eso se creía. Al retomar esta sesión, el `main` local nunca se
+actualizó con `git pull`/`git fetch`, así que quedó desactualizado
+respecto a `origin/main` en exactamente 2 commits reales
+(`6f168d9`/PR #193 y `c0e777a`/PR #194 — `referential-integrity-audit` y
+`error-boundary-audit`, ambos sí mergeados en GitHub). Los otros dos
+(`context-bootstrap-idempotency` PR #195, `serve-shutdown-lifecycle-v2`
+PR #196) siguen genuinamente `OPEN`, nunca mergeados — eso confirma que
+**F-001 sigue siendo un hallazgo real**, no una confusión.
+
+Durante esas horas de docs/comentarios en español, el código que se leía
+y comentaba (`constitution.ts`, `rebuild.ts`, `daemon.ts` command,
+`tasks/service.ts`, `context/repository.ts`) era la versión SIN los dos
+fixes reales — por ejemplo, se comentó `rebuild.ts` sin notar que su
+catch-all seguía devolviendo `GATE_FAIL` en vez de `SYSTEM` (el bug que
+el propio audit debía corregir).
+
+**Cómo se detectó**: al verificar el estado real de las 4 ramas con
+`git merge-base --is-ancestor <branch> HEAD` para escribir un hallazgo
+sobre F-001, dio `NOT_MERGED` para las 4 — inesperado, porque 2 de ellas
+sí deberían estar. Correr `gh pr list --state all` mostró que 2 SÍ están
+`MERGED` en GitHub; `git fetch origin main` confirmó que el local estaba
+2 commits atrás. `git merge origin/main` reconcilió sin conflictos.
+
+**Lección de método** (para no repetir el error): `git merge-base
+--is-ancestor <branch-tip> HEAD` es la comprobación correcta sólo si el
+merge real fue un fast-forward o un merge commit normal. Con **squash
+merge** (lo que usa este repo vía `gh pr merge`), el commit final en
+`main` tiene un hash distinto al tip de la rama — así que "la rama no es
+ancestro" NO prueba que no esté mergeada. La comprobación confiable es
+`gh pr list --state all --search <términos>` (mira el estado real del PR
+en GitHub) o comparar contenido de archivos, no ancestría de commits.
+También: **siempre `git fetch`/`pull` al retomar una sesión** antes de
+asumir que el `main` local refleja el estado real de `origin`.
+
+**Estado**: corregido — `main` local ya está al día (merge sin conflictos,
+build y typecheck verificados en verde).
+
+**Posible acción**: ninguna — esto ya se corrigió en esta misma sesión.
+Queda documentado como recordatorio de proceso.
