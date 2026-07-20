@@ -39,6 +39,12 @@ function withStore<T>(fn: (store: Store, repoRoot: string) => T): T {
   }
 }
 
+// Cada escritura de constitución hace DOS cosas: persiste en la DB
+// (setSection/addPrinciple, la fuente de verdad interna) Y regenera un
+// export a markdown en disco (regenerateExport) — el mismo patrón
+// "compilado desde la DB" que `instructions --write` usa para
+// AGENTS.md/CLAUDE.md (flujo 05), pero acá aplicado a la constitución del
+// producto en vez de a los principios/roles del propio sv-playbook.
 function handleSet(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: true, options: { 'body-file': { type: 'string' } } });
   const [section] = parsed.positionals;

@@ -35,6 +35,11 @@ function parseDefinitionJson(json: string): Record<string, unknown> {
   return DefinitionJsonSchema.parse(json);
 }
 
+// `packet history`/`packet diff` son de sólo lectura sobre
+// packetDefinitions (ver tasks/schema.constants.ts: cada versión de un
+// work definition queda archivada, nunca se pisa) — este comando expone
+// esa historia al operador sin necesitar tocar la DB a mano, mostrando el
+// digest corto (8 chars) de cada versión como identificador legible.
 function handleHistory(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: true, options: { json: BOOLEAN_OPTION } });
   const [packetId, extra] = parsed.positionals;
