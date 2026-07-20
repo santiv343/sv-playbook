@@ -69,6 +69,12 @@ interface GatewayFixtureOptions {
   readonly seedModelEvidence?: boolean;
 }
 
+// Fixture de integración pesado a propósito: arma un catálogo de roles
+// completo, un contexto activo, execution profile y workflow real (no
+// mocks de esas piezas) — sólo el AgentAdapter (FakeAdapter) es fake. La
+// idea es testear el gateway/orchestration contra infraestructura real de
+// store, y sólo reemplazar el punto de contacto con el proceso EXTERNO
+// (el CLI de OpenCode) que no tiene sentido levantar en un test unitario.
 export class FakeAdapter implements AgentAdapter {
   readonly id = 'fake';
   turnRequest: AdapterTurnRequest | undefined;

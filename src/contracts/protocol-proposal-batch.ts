@@ -30,6 +30,16 @@ function parseRecord(text: string, label: string): JsonRecord {
   return value;
 }
 
+// El patrón "runtime-owned, agente no puede pisarlo" se repite 3 veces acá:
+// injectRuntimeIdentity fuerza workPacketId/workPacketDigest a los valores
+// REALES (si el agente mandó otros, eso es VIOLACIÓN, no se silencia);
+// normalizePayloadSchema fuerza type/additionalProperties del schema
+// generado, quitándolos si el agente los declaró explícitamente distintos;
+// removeRedundantScaffoldProperties depura propiedades que ya vienen del
+// scaffold generado para no duplicarlas. Los tres devuelven `{value,
+// violations}` — el valor SANEADO se usa igual (el runtime nunca confía
+// ciegamente en lo que mandó el agente), pero las violations quedan
+// registradas para que la propuesta se rechace si corresponde.
 function injectRuntimeIdentity(
   value: unknown,
   workPacketId: string,
