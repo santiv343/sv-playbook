@@ -17,6 +17,12 @@ import {
 // Test repos must never inherit the host's init.defaultBranch: CI images leave
 // it unset (so repos land on 'master'), which breaks every code path that diffs
 // against the configured main base reference.
+// Fixture compartida por CASI todos los tests de integración del repo —
+// fuerza `-b main` explícito (no depende de `init.defaultBranch` del host,
+// ver el comentario original arriba) y deja un commit inicial real con
+// playbook.config.json + .gitignore ya en el árbol, así cualquier test que
+// abra un store sobre este repo encuentra config válida desde el primer
+// commit, no un repo vacío que después haya que poblar a mano.
 export function initTestRepo(root: string): void {
   execFileSync(GIT_EXECUTABLE, ['init', '-b', DEFAULT_GIT_BRANCH.MAIN], {
     cwd: root,

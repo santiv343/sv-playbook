@@ -20,6 +20,12 @@ export function isOnDefaultBranch(repoRoot: string): boolean {
   }
 }
 
+// El guard real detrás de `migrateLive` (ver el comentario en
+// db/store.migrations.ts sobre este mismo gap: hoy sólo alcanzable
+// programáticamente, ningún comando CLI expone el flag). isOnDefaultBranch
+// trata "sin rama" (detached HEAD, común en worktrees) como si fuera la
+// rama default — un migración en un worktree detached no debería
+// bloquearse sólo por no poder nombrar la rama actual.
 export function assertMigrationBranch(repoRoot: string, migrateLive: boolean | undefined): void {
   if (isOnDefaultBranch(repoRoot)) return;
   const branch = getCurrentBranch(repoRoot);
