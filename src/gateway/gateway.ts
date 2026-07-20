@@ -34,6 +34,12 @@ function assertAdapterReceipt(adapter: AgentAdapter, adapterId: string): void {
   if (adapterId !== adapter.id) throw new ContextError('ADAPTER_RECEIPT_MISMATCH', 'adapter receipt id mismatch');
 }
 
+// Idempotencia por identidad (dispatchRun/(runSpec.id)+adapter): si ya existe
+// una sesión durable para este run+adapter, se reutiliza en vez de crear
+// una nueva — volver a "preparar" el mismo run nunca duplica trabajo contra
+// el adapter externo. Si el profileDigest cambió desde que se creó la
+// sesión persistida, es una señal de que la config del rol cambió bajo los
+// pies del run: se rechaza en vez de continuar con una sesión desalineada.
 async function ensureSession(
   store: Store,
   runSpec: RunSpec,
@@ -153,6 +159,12 @@ function terminalDispatchReceipt(
   return { session, turn: turn.receipt, completion };
 }
 
+// Patrón "terminal-first" (ver glosario docs/codebase-guide/glossary.md):
+// si el run ya tiene un snapshot durable que no está en OBSERVING, la
+// decisión se toma enteramente desde ese estado persistido
+// (terminalDispatchReceipt) — nunca se contacta al adapter de nuevo. Sólo
+// cuando el run está genuinamente en curso se paga el costo de verificar
+// perfil/sesión/turno y observar hasta que termine.
 export async function dispatchRun(
   store: Store,
   runSpecId: string,
