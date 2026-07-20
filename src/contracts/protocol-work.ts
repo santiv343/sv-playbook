@@ -204,6 +204,15 @@ function contractScaffold(
   return { ref: contract.ref, properties, required, exampleValues };
 }
 
+// Compila TODO el protocolo actual (roles, handoffs, contratos,
+// responsabilidades runtime, schemas compartidos) en un único paquete
+// machine-readable — es el input que se le da a un agente encargado de
+// PROPONER nuevos contratos/schemas (`proposalRules`: prefijos de ID
+// permitidos, keywords prohibidas, mínimo de ejemplos válidos/inválidos
+// por contrato). `sourceDigest`/`packetDigest` hacen que dos inspecciones
+// del mismo estado del protocolo sean idénticas byte a byte — el mismo
+// patrón de reproducibilidad que `compileContext` (flujo 5) y
+// `dispatchRun`'s `RunSpec` (flujo 8).
 function createPacket(store: Store): ProtocolWorkInspection {
   const roles = loadRoles(store);
   const handoffs = loadHandoffs(store);
@@ -254,6 +263,11 @@ export function persistProtocolWorkInspection(store: Store): ProtocolWorkInspect
   return inspection;
 }
 
+// La variante que realmente se usa para despachar trabajo (a diferencia
+// de `inspectProtocolWorkPacket`, de sólo diagnóstico): si el protocolo
+// actual tiene violaciones internas (roles mal formados, escalaciones sin
+// soporte, etc.), se rechaza ACÁ — nunca se le da a un agente un paquete
+// de trabajo construido sobre una base ya inconsistente.
 export function compileProtocolWorkPacket(store: Store): ProtocolWorkPacket {
   const inspection = createPacket(store);
   if (!inspection.valid) {
