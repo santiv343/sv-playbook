@@ -16,6 +16,11 @@ function tagLines(def: PacketDefinition): string[] {
   return def.tags === undefined ? [] : [`tags: ${jsonArray(def.tags)}`];
 }
 
+// Serializa un packet a formato .md con frontmatter — usado hoy sólo para
+// exportar/inspeccionar, ya que desde D4 los packets viven en DB (ver
+// tasks/service.ts createPacket) y no como archivos fuente de verdad. El
+// comentario GENERATED es la señal de "no edites esto a mano, va a
+// pisarse" — la única forma soportada de cambiar un packet es `task amend`.
 export function generatePacketDocument(def: PacketDefinition, body: string): string {
   assertValid(def);
   return [
@@ -47,6 +52,11 @@ function parseStringArray(raw: string, key: string): string[] {
   return parsed;
 }
 
+// Parser inverso: frontmatter YAML-like simple (clave: valor por línea,
+// arrays como JSON inline) + cuerpo markdown libre después del segundo
+// `---`. Tolera el prefijo GENERATED de generatePacketDocument (lo descarta
+// si está presente) para poder re-parsear un documento que el propio
+// sistema exportó.
 export function parsePacketDocument(text: string): { definition: PacketDefinition; body: string } {
   let content = text;
   if (content.startsWith(GENERATED_PACKET_PREFIX)) {

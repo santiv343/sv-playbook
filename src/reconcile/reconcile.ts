@@ -88,6 +88,11 @@ function dispatchAction(row: ReconcilerRow, exec: ReconcilerExecutor): void {
   }
 }
 
+// Sólo las filas marcadas SAFE se aplican solas (ej. actualizar una rama
+// behind, cerrar un packet cuyo PR ya se mergeó); las UNSAFE (conflictos de
+// merge) sólo se reportan — requieren juicio humano. Args vacíos ('') son
+// tratados como divergencia detectada pero sin datos suficientes para
+// actuar: se registra el rechazo en vez de ejecutar con un argumento roto.
 function applyRow(row: ReconcilerRow, exec: ReconcilerExecutor, events: ReconcilerEvent[]): void {
   if (row.safety !== RECONCILE_SAFETY.SAFE) return;
 
@@ -108,6 +113,10 @@ function applyRow(row: ReconcilerRow, exec: ReconcilerExecutor, events: Reconcil
   exec.recordEvent(event);
 }
 
+// Detecta divergencias entre el estado declarado (packets en DB) y el
+// estado real observado (PRs de GitHub, backup en disco) y opcionalmente
+// las corrige. `options.dryRun` separa detección de corrección — siempre se
+// puede ver qué haría sin aplicarlo.
 export function reconcile(
   store: Store,
   repoRoot: string,

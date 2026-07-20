@@ -98,6 +98,15 @@ function includesStatus(statuses: readonly PacketStatus[], status: PacketStatus)
   return statuses.includes(status);
 }
 
+// Un archivo "sucio" en el worktree puede pertenecer a 0, 1 o varios
+// packets según qué write_set lo cubre. AMBIGUOUS gana si hay más de un
+// dueño NO terminal (dos packets vivos reclamando el mismo archivo —
+// debería haber sido atrapado antes por checkWriteSetConflict, esto es la
+// vista de diagnóstico); si el único dueño vivo está CURRENT/PLANNED, esa es
+// la clasificación; si todos los dueños ya son terminales, es un cambio
+// "huérfano" de trabajo ya cerrado (TERMINAL); sin ningún dueño, es un
+// cambio sin packet que lo explique (ORPHAN) — útil para `doctor`/status
+// detectando trabajo no declarado.
 function ownershipFor(owners: readonly WorkspaceOwner[]): WorkspaceOwnership {
   const nonTerminal = owners.filter((owner) => !includesStatus(TERMINAL_PACKET_STATUSES, owner.status));
   if (nonTerminal.length > SINGLE_SIZE) return WORKSPACE_OWNERSHIP.AMBIGUOUS;
