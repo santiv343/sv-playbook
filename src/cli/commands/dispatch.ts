@@ -48,6 +48,12 @@ async function withStoreAsync<T>(operation: (store: Store, root: string) => Prom
   }
 }
 
+// `dispatch` es el comando manual de bajo nivel para el ciclo del gateway
+// (flujo 08): prepare arma el RunSpec (sin correr nada), start lo despacha
+// de verdad contra el adapter real, retry reintenta un run fallido. Normal
+// no se usa así en producción (el orchestration coordinator lo hace
+// automáticamente) — existe para debug/testing manual del pipeline de
+// despacho sin tener que armar un workflow completo.
 function prepare(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: false, options: {
     role: { type: 'string' }, phase: { type: 'string' }, task: { type: 'string' }, profile: { type: 'string' },
