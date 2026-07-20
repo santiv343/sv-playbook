@@ -1,3 +1,11 @@
+// Gate que evita que el CLI/docs sugieran un comando/subcomando/flag que NO
+// existe: minea las declaraciones REALES del código (nombres de comando,
+// literales de uso, keys de parseArgs) como fuente de verdad, y compara
+// contra toda mención de `sv-playbook ...` o `--flag` en código y markdown
+// vivo (ver EXCLUDED_MARKDOWN_PREFIXES: snapshots fechados no cuentan,
+// citan el pasado a propósito). EXTERNAL_FLAG_ALLOWLIST es la válvula de
+// escape explícita para flags de herramientas EXTERNAS (git/gh) que el
+// gate no puede verificar contra código propio.
 export const SUGGESTED_COMMAND_KIND = {
   UNKNOWN_COMMAND: 'unknown-command',
   UNKNOWN_SUBCOMMAND: 'unknown-subcommand',
