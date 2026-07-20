@@ -39,6 +39,14 @@ function parseWriteSet(raw: string): readonly string[] {
   return WRITE_SET_SCHEMA.parse(raw);
 }
 
+// classifyWorkspace (más abajo, usa estas funciones) cruza DOS fuentes
+// independientes: el `git status` real (gitChanges, vía `-z` null-terminated
+// para manejar paths con espacios/caracteres raros sin ambigüedad) contra
+// el write_set declarado de CADA packet (packetScopes). La clasificación
+// final (CURRENT/PLANNED/AMBIGUOUS/TERMINAL/ORPHAN, ver classification.constants.ts)
+// sale de superponer ambos: un archivo modificado que ningún write_set
+// reclama es ORPHAN; uno que dos packets no-terminales reclaman a la vez es
+// AMBIGUOUS (multiple-non-terminal).
 function packetScopes(store: Store): readonly PacketScope[] {
   return store.orm.select({
     id: packets.id,
