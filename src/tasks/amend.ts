@@ -14,6 +14,13 @@ function assertAmendable(status: string, packetId: string): void {
   throw new LifecycleError(`cannot amend packet ${packetId} in status ${status}`, 'only draft, ready, and active packets can be amended');
 }
 
+// Mientras el packet está ACTIVE, el write_set sólo puede CRECER (ser
+// superset del actual) — nunca encogerse ni reemplazarse. Reducirlo
+// mientras hay trabajo en curso podría invalidar cambios que el agente
+// ya hizo dentro del write_set original; agrandarlo es seguro porque
+// nunca le quita permiso a algo que ya estaba autorizado. El checkpoint
+// de complejidad (flujo 10) no se re-evalúa acá — se re-evalúa en la
+// próxima transición a READY/REVIEW, que ya lee la versión extendida.
 function assertWriteSetExtension(current: readonly string[], updates: AmendPacketUpdates): void {
   if (updates.writeSet === undefined) return;
   const updated = new Set(updates.writeSet);
@@ -63,6 +70,13 @@ function replaceDependencies(store: Store, definition: PacketDefinition): void {
   }
 }
 
+// Dos comportamientos completamente distintos según el estado, no un
+// único camino con validaciones condicionales: en ACTIVE, sólo se toca
+// write_set (campo por campo, con el chequeo de superset de arriba) y se
+// deja un evento auditable; en DRAFT/READY, se puede reescribir
+// título/body/dependencias/write_set libremente (todavía no hay trabajo
+// en curso que proteger). Cualquier otro estado se rechaza en
+// assertAmendable antes de llegar acá.
 export function amendPacket(
   store: Store,
   _docRoot: string,
