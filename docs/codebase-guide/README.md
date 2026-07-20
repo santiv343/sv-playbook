@@ -28,7 +28,7 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 7. [`flows/flow-07-serve-console.md`](./flows/flow-07-serve-console.md) — consola operativa HTTP ✅ (hallazgo real: F-002)
 8. [`flows/flow-08-gateway-dispatch.md`](./flows/flow-08-gateway-dispatch.md) — dispatch a agentes externos ✅
 9. [`flows/flow-09-error-handling.md`](./flows/flow-09-error-handling.md) — manejo de errores (transversal) ✅ (hallazgo real: F-004)
-10. `flows/flow-10-complexity-checkpoint.md` — checkpoint de complejidad — *pendiente*
+10. [`flows/flow-10-complexity-checkpoint.md`](./flows/flow-10-complexity-checkpoint.md) — checkpoint de complejidad ✅
 11. `flows/flow-11-secondary-flows.md` — backup/restore/rebuild, sprints, adopt, reconcile — *pendiente*
 
 ### Cierre
@@ -36,7 +36,7 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 
 ## Estado del recorrido
 
-**Etapa actual: 10 — Manejo de errores transversal.** Completada, ver `flows/flow-09-error-handling.md`. 3er hallazgo de código (F-004) + 1 hallazgo de proceso (F-003).
+**Etapa actual: 11 — Checkpoint de complejidad.** Completada, ver `flows/flow-10-complexity-checkpoint.md`.
 
 ## Reglas de esta guía (para quien la siga escribiendo)
 
