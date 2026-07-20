@@ -11,6 +11,13 @@ function writeSetFromDefinitionJson(definitionJson: string): string[] {
   return WorkDefinitionValueSchema.parse(parseJson(definitionJson)).writeSet;
 }
 
+// El checkpoint de complejidad (flujo 10) bloquea una transición si el
+// write_set candidato es "novedoso" contra TODOS los write_sets previos del
+// resto de packets (detectNovelty), o si el tipo/algún path matchea las
+// listas de config que fuerzan decisión humana explícita. Se re-evalúa en
+// cada llamada — no cachea — así que un amend que extiende el write_set
+// (ver amend.ts) puede volver a activar la exigencia en la próxima
+// transición, aunque assertCheckpointClear no se llame desde el propio amend.
 export function assertCheckpointClear(store: Store, packetId: string): void {
   const config = loadConfig(store.repoRoot).tasks.complexityCheckpoint;
   if (!config.enabled) return;

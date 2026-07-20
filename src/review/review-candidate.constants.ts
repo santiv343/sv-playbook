@@ -1,3 +1,7 @@
+// Los schemas v1/v2/v3 son ADITIVOS y nunca se editan una vez que hay
+// artefactos reales en algún store (ensureManagedArtifactContract lo hace
+// cumplir) — cada versión nueva sólo agrega campos opcionales, así un
+// artefacto viejo sigue validando contra su propio contractRef congelado.
 const REVIEW_CANDIDATE_NAME = 'review-candidate';
 // v1 and v2 are frozen: immutable artifacts in live stores reference them, and
 // ensureManagedArtifactContract refuses in-place schema drift once artifacts exist.

@@ -9,6 +9,12 @@ function outputTail(current: string, chunk: string): string {
   return `${current}${chunk}`.slice(-PREFLIGHT_VERIFY_OUTPUT_TAIL_CHARACTERS);
 }
 
+// Timeout de "sin output", no de duración total: resetTimer() se reinicia
+// en CADA chunk de stdout/stderr, así que un comando de verify que tarda
+// mucho pero sigue imprimiendo progreso nunca dispara el timeout — sólo lo
+// dispara quedarse en silencio noOutputTimeoutMs. outputTail() sólo retiene
+// los últimos N caracteres (PREFLIGHT_VERIFY_OUTPUT_TAIL_CHARACTERS) para no
+// acumular un log gigante en memoria.
 export function executePreflightCommand(
   command: string,
   worktree: string,

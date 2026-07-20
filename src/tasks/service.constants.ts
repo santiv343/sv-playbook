@@ -59,6 +59,9 @@ export const TASK_TYPE_PREFIX: Record<string, string> = {
   chore: 'CHORE',
 };
 
+// El mapa de transiciones legales del ciclo de vida (flujo 03 de la guía).
+// Notar que DONE y DROPPED no aparecen como claves — son estados terminales,
+// no hay transición SALIENTE definida desde ellos en este mapa.
 export const ALLOWED: ReadonlyMap<string, readonly PacketStatus[]> = new Map([
   [STATUS.DRAFT, [STATUS.READY, STATUS.DROPPED]],
   [STATUS.READY, [STATUS.ACTIVE, STATUS.DROPPED, STATUS.DRAFT]],

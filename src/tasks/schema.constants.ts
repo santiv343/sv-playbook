@@ -21,6 +21,10 @@ export const packetDependencies = sqliteTable('packet_deps', {
   dependsOnId: text('depends_on_id').notNull().references(() => packets.id),
 }, (table) => [primaryKey({ columns: [table.packetId, table.dependsOnId] })]);
 
+// packet_definitions guarda CADA versión del "definition" de un packet
+// (title/writeSet/dependsOn/etc, ver work-definitions.ts) con su digest —
+// nunca se pisa una fila, sólo se agregan versiones nuevas. Es lo que le da
+// sentido a WorkDefinitionReference (id@version) como puntero inmutable.
 export const packetDefinitions = sqliteTable('packet_definitions', {
   packetId: text('packet_id').notNull().references(() => packets.id),
   version: integer('version').notNull(),
@@ -38,6 +42,11 @@ export const taskEvents = sqliteTable('events', {
   at: text('at').notNull(),
 });
 
+// answeredAgainstVersion ata la respuesta a una versión PUNTUAL del
+// work_definition (ver checkpoint-gate.ts): si el packet se amenda después
+// de contestar, la decisión queda "vieja" contra la versión nueva y el
+// checkpoint la vuelve a exigir — evita que una respuesta borrosa cubra un
+// write_set que cambió después de contestada.
 export const decisions = sqliteTable(DATABASE_TABLE.DECISIONS, {
   id: text(DATABASE_COLUMN.ID).primaryKey(),
   question: text(DATABASE_COLUMN.QUESTION).notNull(),

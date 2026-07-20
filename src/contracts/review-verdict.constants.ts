@@ -14,6 +14,13 @@ export const REVIEW_VERDICT_ERROR = {
   INVALID: 'REVIEW_VERDICT_INVALID',
 } as const;
 
+// Dos representaciones del MISMO contrato, no dos contratos: el schema Zod
+// (ReviewVerdictEnvelopeSchema) valida en runtime dentro del proceso Node;
+// el JSON Schema (REVIEW_VERDICT_ENVELOPE_JSON_SCHEMA, más abajo) es lo que
+// se le muestra a un adapter/agente externo que no corre Zod. Un test
+// (review-verdict.test.ts) es quien garantiza que ambos acepten/rechacen
+// exactamente los mismos valores — cambiar uno sin el otro rompe esa
+// garantía en silencio.
 export const ReviewVerdictEnvelopeSchema = s.object({
   kind: s.literal(REVIEW_VERDICT_KIND),
   payload: s.object({
