@@ -142,3 +142,24 @@ test('addContextItem accepts a role selector value that is a real role', async (
   });
   store.close();
 });
+
+test('addContextItem rejects a dependency reference that does not exist', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-context-missing-dependency-'));
+  const store = openStore(root);
+  replaceContextPrecedence(store, ['taste']);
+
+  assert.throws(
+    () => {
+      addContextItem(store, {
+        id: 'HJ-TEST', version: 1, kind: 'taste', status: CONTEXT_ITEM_STATUS.ACTIVE,
+        strength: CONTEXT_ITEM_STRENGTH.MANDATORY, semanticKey: 'hj-test', body: 'test body',
+        provenance: 'test', dependencies: ['MISSING@1'],
+      });
+    },
+    (error: unknown) => error instanceof ContextError
+      && error.code === CONTEXT_ERROR.MISSING_REFERENCE
+      && error.message.includes('MISSING@1'),
+  );
+  assert.equal(loadContextCatalog(store).items.length, 0);
+  store.close();
+});
