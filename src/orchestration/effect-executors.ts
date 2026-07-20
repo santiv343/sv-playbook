@@ -7,6 +7,11 @@ import { COORDINATOR_ERROR } from './coordinator.constants.js';
 import type { RuntimeWorkflowOperation, WorkflowEffectExecutor } from './coordinator.types.js';
 import type { WorkflowEffect } from './service.types.js';
 
+// Adapta un WorkflowEffect (la unidad de trabajo del motor de
+// orquestación durable, ver coordinator.ts) al mundo del gateway (flujo
+// 8): arma el RunSpec correspondiente y despacha un agente real. El
+// output del agente se devuelve tal cual — WorkflowCoordinator es quien
+// decide qué hacer con él (completar el efecto o clasificar el fallo).
 export class AgentWorkflowEffectExecutor implements WorkflowEffectExecutor {
   constructor(
     private readonly store: Store,
@@ -24,6 +29,11 @@ export class AgentWorkflowEffectExecutor implements WorkflowEffectExecutor {
   }
 }
 
+// La contraparte determinista de AgentWorkflowEffectExecutor: un step
+// `executor: RUNTIME` no llama a ningún agente, ejecuta una operación
+// mecánica ya registrada (`operations`, ver operation-registry.ts) —
+// HJ-002 aplicado al motor de workflows: si algo es determinista, corre
+// como código, no como turno de agente.
 export class RuntimeWorkflowEffectExecutor implements WorkflowEffectExecutor {
   constructor(private readonly operations: ReadonlyMap<string, RuntimeWorkflowOperation>) {}
 
