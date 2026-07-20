@@ -1,3 +1,7 @@
+// GAP_REQUIREMENT enumera lo mínimo que un repo AJENO necesita tener antes
+// de poder adoptar sv-playbook de verdad (config, CI, verify command,
+// protección de rama) — GapReport es el resultado de auditar un repo
+// candidato contra esa lista, uno por uno, antes de correr el bootstrap.
 export const GAP_STATUS = {
   PRESENT: 'present',
   MISSING: 'missing',
