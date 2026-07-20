@@ -65,6 +65,10 @@ function recordTransition(store: Store, packetId: string, from: string, to: stri
   store.db.prepare(INSERT_EVENT_SQL).run(sessionId ?? null, packetId, EVENT_TRANSITION, `${from}->${to}`, now());
 }
 
+// Camino de creación "nativa" (vía CLI, no import de archivo): el packet
+// nace directo en DB, sin path a un .md (D4 — los packets ya no viven como
+// archivos, ver docs/backlog.md). Comparar con upsertPacketFile/
+// importPacketFile más abajo, que sí parsean un documento existente.
 export function createPacket(store: Store, _docRoot: string, def: PacketDefinition, body: string, type?: string): void {
   const exists = store.db.prepare(EXISTS_SQL).get(def.id);
   if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`, 'existing packet file? use task import <path>');
@@ -202,6 +206,10 @@ function ourGlobs(store: Store, packetId: string): string[] {
 function conflictsWith(ours: string[], row: unknown): boolean {
   return parseGlobs(stringColumn(row, 'write_set')).some((b) => ours.some((a) => overlaps(a, b)));
 }
+// Se corre al pasar un packet a READY: compara su write_set contra el de
+// todo packet ya READY/ACTIVE. Dos packets con globs superpuestos no pueden
+// avanzar en paralelo — evita que dos agentes reciban permiso de tocar el
+// mismo archivo al mismo tiempo, sin necesidad de coordinación entre ellos.
 function checkWriteSetConflict(store: Store, packetId: string): void {
   const ours = ourGlobs(store, packetId);
   if (ours.length === 0) return;
@@ -210,6 +218,11 @@ function checkWriteSetConflict(store: Store, packetId: string): void {
     if (conflictsWith(ours, row)) throw new LifecycleError(`write_set conflict with ${stringColumn(row, 'id')}`);
   }
 }
+// Al pasar ACTIVE -> REVIEW: compara los archivos REALMENTE cambiados en la
+// rama (vía git diff contra la base configurada) contra el write_set
+// declarado. El write_set es una promesa hecha al crear el packet;
+// gateReview es la verificación mecánica de que esa promesa se cumplió — un
+// agente no puede autodeclarar cumplimiento, el CLI lo comprueba contra git.
 function gateReview(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
   const lease = leaseOf(store, packetId);
@@ -227,11 +240,19 @@ function gateReview(store: Store, packetId: string, from: string, to: string): v
   const offending = changed.filter((file) => !glbs.some((glob) => overlaps(glob, file)));
   if (offending.length > 0) throw new LifecycleError(`write_set violation: branch changed files outside write_set: ${offending.join(', ')}`);
 }
+// Al pasar a DONE: si el tipo de packet declara evidencia obligatoria
+// (ej. "corré verify y pegá el output"), exige que exista al menos un
+// evento EVENT_EVIDENCE registrado — evidencia se registra con un comando
+// del CLI, nunca se puede fabricar a mano (PRINCIPLE-001: nada de reclamos
+// sin respaldo de comando real).
 const gateEvidence = (store: Store, packetId: string, to: string): void => {
   if (to !== STATUS.DONE) return;
   const { evidenceRequired } = loadWorkDefinition(store, packetId).value;
   if (evidenceRequired.length > 0 && store.db.prepare("SELECT 1 FROM events WHERE packet_id = ? AND command = ? LIMIT 1").all(packetId, EVENT_EVIDENCE).length === 0) throw new LifecycleError(`missing required evidence: ${evidenceRequired.join(', ')}`);
 };
+// Camino "legacy" (pre-candidatos-de-review): si este packet no requiere el
+// flujo asíncrono de candidato de review (reviewCandidateRequired), corre
+// verify de forma síncrona acá mismo antes de dejar pasar a REVIEW.
 function gateVerify(store: Store, packetId: string, from: string, to: string): void {
   if (from !== STATUS.ACTIVE || to !== STATUS.REVIEW) return;
   if (reviewCandidateRequired(store, to)) return;
@@ -239,6 +260,13 @@ function gateVerify(store: Store, packetId: string, from: string, to: string): v
   if (lease === undefined) return;
   verifyLegacyReviewSync(lease.worktree);
 }
+// El corazón de la máquina de estados: ALLOWED (service.constants.ts) es la
+// tabla de transiciones legales por status. `to === ACTIVE` está prohibido
+// acá a propósito — activar siempre pasa por startPacket (toma un lease),
+// nunca por un move genérico, porque activar sin lease dejaría dos sesiones
+// trabajando el mismo packet sin dueño. El orden de los gates importa: el
+// checkpoint de complejidad corre antes que el resto porque es la puerta
+// más cara de saltar (aprobación humana).
 export function validateMove(
   store: Store,
   sessionId: string | undefined,
@@ -274,6 +302,11 @@ export function persistMove(
   });
 }
 
+// validateMove sólo verifica gates de lectura; movePacket agrega la
+// verificación síncrona de review legacy y la captura de evidencia antes de
+// persistir. Si el packet requiere el flujo asíncrono de candidato de
+// review, se rechaza acá — ese camino tiene su propia orquestación fuera de
+// esta función (ver src/review/, src/promotion/).
 export function movePacket(store: Store, sessionId: string | undefined, packetId: string, to: PacketStatus): string {
   const from = validateMove(store, sessionId, packetId, to);
   if (reviewCandidateRequired(store, to)) {
@@ -294,6 +327,11 @@ export function recoverPacket(store: Store, packetId: string): RecoveryReport {
     lastTransitions: transitionRows.map((row) => `${stringColumn(row, TRANSITION_COLUMN.AT)} ${stringColumn(row, TRANSITION_COLUMN.FROM_STATUS)}->${stringColumn(row, TRANSITION_COLUMN.TO_STATUS)} (${stringColumn(row, DATABASE_COLUMN.SESSION_ID)})`),
     lastNotes: noteRows.map((row) => `${stringColumn(row, TRANSITION_COLUMN.AT)} ${stringColumn(row, 'detail')}`) };
 }
+// Recuperación tras un worker muerto o colgado: un lease "stale" (heartbeat
+// vencido, ver leaseOf/leaseTtlMs) se puede tomar sin --force; uno "live"
+// requiere --force explícito — evita que un segundo agente le robe el
+// packet a uno que sigue trabajando activamente sólo porque hubo un
+// heartbeat lento.
 export function takeoverPacket(
   store: Store, sessionId: string, worktree: string,
   packetId: string, force: boolean,
