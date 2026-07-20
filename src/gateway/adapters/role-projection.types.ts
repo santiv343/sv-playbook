@@ -15,6 +15,12 @@ export interface RoleProjectionCandidate extends RoleProjectionDraft {
   readonly artifactDigest: string;
 }
 
+// Escalera de tipos por cuánto está resuelto: Draft (compilado, sin
+// digests todavía) -> Candidate (con profileDigest+artifactDigest, listo
+// para comparar/persistir). RoleProjectionAdapter es el contrato que
+// OpenCode implementa (opencode-projection.ts) — inspect lee lo persistido,
+// inspectEffective recompila contra el server real (async), compile arma
+// un draft nuevo desde cero.
 export interface RoleProjectionAdapter {
   readonly id: string;
   inspect(repoRoot: string, profiles: readonly ExecutionProfile[]): AdapterRoleProjection;
