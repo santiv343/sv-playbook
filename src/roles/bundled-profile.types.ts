@@ -1,5 +1,10 @@
 import type { RolePolicyInput } from './catalog.types.js';
 
+// Tipos de INPUT para construir el catálogo bundled (bundled-profile.constants.ts)
+// — más livianos que RoleCatalogEntry (roles/catalog.types.ts): policy
+// omite roleId (se infiere de dónde se usa), no incluye contextItemRef ni
+// digests todavía porque eso se resuelve recién al bootstrapear
+// (bundled-profile-bootstrap.ts).
 export interface BundledRoleDefinition {
   readonly id: string;
   readonly mission: string;
