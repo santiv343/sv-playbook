@@ -9,6 +9,13 @@ import { EMPTY_SIZE } from '../../platform.constants.js';
 import type { Command, Io } from '../command.types.js';
 import { WORKSPACE_SUBCOMMAND, WORKSPACE_USAGE } from './workspace.constants.js';
 
+// `workspace classify` responde "¿de quién es este archivo sucio?" —
+// cruza el `git status` real del worktree contra los write_sets de todos
+// los packets activos/planificados (classifyWorkspace en
+// workspace/classification.ts). CURRENT/PLANNED/AMBIGUOUS/TERMINAL/ORPHAN
+// son las 5 categorías de ownership: un archivo modificado que nadie
+// reclama (ORPHAN) o que dos packets reclaman a la vez (AMBIGUOUS) son las
+// señales que este comando existe para superficie.
 function renderHuman(report: WorkspaceClassificationReport, io: Io): void {
   const summary = report.summary;
   io.out(`paths: ${report.paths.length} | current ${summary[WORKSPACE_OWNERSHIP.CURRENT]} | planned ${summary[WORKSPACE_OWNERSHIP.PLANNED]} | multiple ${summary[WORKSPACE_OWNERSHIP.AMBIGUOUS]} | terminal-only ${summary[WORKSPACE_OWNERSHIP.TERMINAL]} | orphan ${summary[WORKSPACE_OWNERSHIP.ORPHAN]}`);

@@ -13,6 +13,12 @@ function parseSchema(value: string, contractRef: string): Readonly<Record<string
   return Object.fromEntries(Object.entries(parsed));
 }
 
+// El "catálogo de lanzamiento" son las definiciones de workflow que se
+// pueden INICIAR desde afuera (p.ej. desde la consola operativa) — el JOIN
+// triple filtra a definiciones ACTIVE cuyo primer step (startStepKey) tiene
+// un contrato de input ACTIVO y resuelve su JSON Schema real, así el
+// consumidor (la UI de serve/) puede armar un formulario de input válido
+// sin adivinar qué campos espera cada workflow.
 export function readWorkflowLaunchCatalog(store: Store): WorkflowLaunchDefinition[] {
   return store.orm.select({
     id: workflowDefinitions.id,
