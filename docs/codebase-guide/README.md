@@ -13,6 +13,9 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 
 ## Índice
 
+### Para empezar (sin necesitar saber programar)
+- [`explicacion-simple.md`](./explicacion-simple.md) — qué es esto y cómo funciona, en criollo, con diagramas y sin jerga. Empezá por acá si no sos programador/a.
+
 ### Fundamentos
 - [`architecture.md`](./architecture.md) — visión general, diagrama de capas, tecnologías
 - [`repository-map.md`](./repository-map.md) — árbol de carpetas, responsabilidad de cada una
