@@ -4,7 +4,26 @@
 > guía. **Nada de esto se implementa desde acá** — son observaciones para
 > que el equipo decida qué hacer, cuándo corresponda.
 
-## F-006 (el más importante hasta ahora): `decision answer` probablemente rechaza a un humano real por default — invierte el modelo de confianza documentado
+## F-006 (CONFIRMADO EN VIVO): `decision answer` rechaza a un humano real por default — invierte el modelo de confianza documentado
+
+**✅ Confirmado con ejecución real en este mismo repo, 2026-07-20**:
+
+```
+$ ls .svp-session-role
+ls: cannot access '.svp-session-role': No such file or directory
+
+$ node bin/sv-playbook.js decision ask "prueba F-006 en vivo, sin session-role file"
+asked DEC-001
+
+$ node bin/sv-playbook.js decision answer DEC-001 "confirmado"
+error: decision DEC-001 can only be answered in a human session
+EXIT=1
+```
+
+Sesión de terminal real, sin ningún `.svp-session-role` (el caso normal),
+rechazada exactamente como predecía el análisis de código de abajo. El
+`DEC-001` de prueba queda en el store local (no versionado, no afecta a
+nadie más) — no hay comando `decision delete`.
 
 **Encontrado en**: revisión cruzada de patrones (no archivo por archivo) entre
 `src/cli/destructive-gate.ts` y `src/cli/commands/decision.ts`, 2026-07-20.
