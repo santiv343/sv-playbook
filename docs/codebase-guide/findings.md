@@ -118,3 +118,45 @@ build y typecheck verificados en verde).
 
 **Posible acción**: ninguna — esto ya se corrigió en esta misma sesión.
 Queda documentado como recordatorio de proceso.
+
+## F-004: `class UsageError extends Error {}` duplicada idéntica en 14 archivos de comandos
+
+**Encontrado en**: Etapa 10 (`flows/flow-09-error-handling.md`), 2026-07-20.
+
+**Qué pasa**: 14 archivos bajo `src/cli/commands/` (`constitution.ts`,
+`context.ts`, `config.ts`, `decision.ts`, `contract.ts`, `dispatch.ts`,
+`execution-profile.ts`, `promotion.ts`, `review.ts`, `packet.ts`,
+`sprint.ts`, `role.ts`, `workflow-policy.ts`, `task.ts`) definen, cada
+uno por su cuenta, la línea idéntica:
+
+```ts
+class UsageError extends Error {}
+```
+
+Confirmado con grep — no es una variante con distinto comportamiento por
+archivo, es literalmente la misma declaración de una línea, copiada 14
+veces. No existe una `UsageError` compartida en `src/cli/command.errors.ts`
+ni en `command.types.ts` (ese archivo no existe hoy).
+
+**Por qué importa**: es exactamente el defecto que PRINCIPLE-011 nombra
+explícitamente como instant-fail de review ("uniones duplicadas, literales
+de dominio dispersos... son todos el mismo defecto"). Cualquier cambio
+futuro al contrato de `UsageError` (agregar un campo, cambiar el nombre)
+requeriría tocar 14 archivos en sincronía, y nada mecánico lo detectaría
+si uno queda desalineado — hoy simplemente son 14 clases NOMINALMENTE
+iguales pero TYPESCRIPT-mente distintas (cada `catch (error) { if (error
+instanceof UsageError) ... }` sólo reconoce la `UsageError` de SU PROPIO
+archivo; un objeto lanzado por la `UsageError` de `task.ts` no pasaría un
+`instanceof` en `role.ts`, aunque hoy esto no cause bugs porque cada
+comando sólo usa la suya).
+
+**Estado**: sin fix, no encontrado en `docs/backlog.md` (grep rápido, no
+exhaustivo).
+
+**Posible acción** (no implementada, a decidir): extraer una única
+`UsageError` a `src/cli/command.errors.ts` (o agregarla a
+`command.types.ts`) y hacer que los 14 archivos la importen — un gate de
+lint (`playbook/no-string-literal-comparison` ya existe como precedente
+de este tipo de gate; se podría agregar uno específico para detectar
+declaraciones de clase duplicadas, o simplemente resolverlo por
+convención + `check` de duplicación de strings si aplicara).

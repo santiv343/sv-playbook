@@ -27,16 +27,16 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 6. [`flows/flow-06-daemon-lifecycle.md`](./flows/flow-06-daemon-lifecycle.md) — daemon: ownership, forwarding, shutdown ✅ (gap real documentado: ver nota al inicio del archivo)
 7. [`flows/flow-07-serve-console.md`](./flows/flow-07-serve-console.md) — consola operativa HTTP ✅ (hallazgo real: F-002)
 8. [`flows/flow-08-gateway-dispatch.md`](./flows/flow-08-gateway-dispatch.md) — dispatch a agentes externos ✅
-9. `flows/flow-09-error-handling.md` — manejo de errores (transversal) — *pendiente*
+9. [`flows/flow-09-error-handling.md`](./flows/flow-09-error-handling.md) — manejo de errores (transversal) ✅ (hallazgo real: F-004)
 10. `flows/flow-10-complexity-checkpoint.md` — checkpoint de complejidad — *pendiente*
 11. `flows/flow-11-secondary-flows.md` — backup/restore/rebuild, sprints, adopt, reconcile — *pendiente*
 
 ### Cierre
-- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — 2 hallazgos hasta ahora (F-001, F-002)
+- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — 4 hallazgos hasta ahora (F-001..F-004)
 
 ## Estado del recorrido
 
-**Etapa actual: 9 — Gateway dispatch.** Completada, ver `flows/flow-08-gateway-dispatch.md`.
+**Etapa actual: 10 — Manejo de errores transversal.** Completada, ver `flows/flow-09-error-handling.md`. 3er hallazgo de código (F-004) + 1 hallazgo de proceso (F-003).
 
 ## Reglas de esta guía (para quien la siga escribiendo)
 
