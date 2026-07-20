@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openStore, commonRoot } from '../dist/db/store.js';
-import { addContextItem, loadContextCatalog, replaceContextPrecedence } from '../dist/context/repository.js';
+import { bootstrapVersionedContextItem, replaceContextPrecedence } from '../dist/context/repository.js';
 import { CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from '../dist/context/context.constants.js';
 import { readMarkdownSection } from '../dist/context/importers/markdown.js';
 import { CONTEXT_PRECEDENCE } from './bootstrap-context.constants.mjs';
@@ -39,21 +39,9 @@ try {
   replaceContextPrecedence(store, CONTEXT_PRECEDENCE);
   console.log('context precedence set');
 
-  const catalog = loadContextCatalog(store);
-  const activeRefs = new Set(
-    catalog.items
-      .filter((item) => item.kind === kind && item.status === CONTEXT_ITEM_STATUS.ACTIVE)
-      .map((item) => item.id),
-  );
-
   for (const principle of principles) {
-    if (activeRefs.has(principle.id)) {
-      console.log(`skip ${principle.id}: active ${kind} item already exists`);
-      continue;
-    }
-
     const body = readMarkdownSection(bodyFile, principle.heading);
-    addContextItem(store, {
+    const result = bootstrapVersionedContextItem(store, {
       id: principle.id,
       version: 1,
       kind,
@@ -65,10 +53,11 @@ try {
       tags: [],
       selectors: {},
       dependencies: [],
-      supersedes: [],
       capabilities: {},
     });
-    console.log(`added context ${principle.id}@1`);
+    console.log(result.changed
+      ? `added context ${principle.id}@${result.version}`
+      : `skip context ${principle.id}@${result.version}`);
   }
 } finally {
   store.close();

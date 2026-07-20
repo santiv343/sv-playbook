@@ -6,7 +6,7 @@ import { CAPABILITY_EFFECT, CONTEXT_ERROR, CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STR
 import { BUNDLED_ROLE_CONTEXT_KIND, BUNDLED_ROLE_ID } from '../roles/bundled-profile.constants.js';
 import { REFERENCE_VERSION_SEPARATOR } from '../platform.constants.js';
 import { ContextError } from './context.errors.js';
-import { compareOrdinal } from './digest.js';
+import { compareOrdinal, digest } from './digest.js';
 import type { CapabilityEffect, ContextItemInput, ContextItemStatus, ContextItemStrength, StoredContextItem } from './context.types.js';
 import type { ContextCatalog } from './repository.types.js';
 import { contextItems, contextPrecedence } from './schema.constants.js';
@@ -139,6 +139,27 @@ export function addContextItem(store: Store, item: ContextItemInput): void {
     store.db.exec('ROLLBACK');
     throw error;
   }
+}
+
+type BootstrapContextItemInput = Omit<ContextItemInput, 'version' | 'supersedes'>;
+
+export function bootstrapVersionedContextItem(
+  store: Store,
+  item: BootstrapContextItemInput,
+): { readonly changed: boolean; readonly version: number } {
+  const matchingItems = loadContextCatalog(store).items.filter((stored) => stored.id === item.id);
+  const active = matchingItems.find((stored) => stored.status === CONTEXT_ITEM_STATUS.ACTIVE);
+  if (active !== undefined && digest(active.body) === digest(item.body)) {
+    return { changed: false, version: active.version };
+  }
+
+  const version = Math.max(0, ...matchingItems.map((stored) => stored.version)) + 1;
+  addContextItem(store, {
+    ...item,
+    version,
+    supersedes: active === undefined ? [] : [`${active.id}@${active.version}`],
+  });
+  return { changed: true, version };
 }
 
 export function replaceContextPrecedence(store: Store, kinds: readonly string[]): void {
