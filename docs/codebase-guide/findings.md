@@ -1,5 +1,75 @@
 # Hallazgos
 
+## F-009 (CONFIRMADO EN VIVO): el header de `content/principles.md` dice la dirección de generación AL REVÉS
+
+**Encontrado en**: al ir a agregar un principio nuevo, 2026-07-20.
+
+**Qué pasa**: `content/principles.md` línea 1 dice `<!-- GENERATED FROM
+context_items — DO NOT EDIT -->` — es decir, afirma que este archivo se
+genera A PARTIR de la base de datos y que editarlo a mano no tiene
+efecto. Verificado leyendo `scripts/bootstrap-principles.mjs`: la
+dirección real es la OPUESTA — el script lee secciones de
+`content/principles.md` (`readMarkdownSection(bodyFile, principle.heading)`)
+y las inserta en `context_items` vía `addContextItem`. **El markdown es
+la fuente autoral real; la DB es la derivada.** Coincide con lo ya
+documentado (correctamente) en `flows/flow-05-context-coldstart.md`.
+
+**Por qué importa**: un comentario de "no editar, esto es generado" que
+apunta en la dirección incorrecta es peligroso — puede espantar a un
+editor legítimo de tocar la fuente de verdad real, pensando que sus
+cambios se van a perder, cuando en realidad SON los cambios que
+importan (y sólo falta correr el bootstrap + `instructions --write`
+para propagarlos). Comparar con `src/constitution/constitution.ts`
+(`regenerateExport`), donde el mismo tipo de aviso SÍ es correcto — ahí
+la dirección real es DB -> markdown.
+
+**Estado**: corregido en el mismo commit que agrega PRINCIPLE-016 (ver
+más abajo) — se arregló el comentario del header para reflejar la
+dirección real.
+
+## F-008 (CONFIRMADO EN VIVO, en este mismo repo): `relocateStoreIfNeeded` deja un store viejo huérfano en `.svp/`, sin avisar, cuando ya existe uno externo
+
+**Encontrado en**: tanda de comentarios en `src/db/store-migration-relocate.ts`, 2026-07-20 — confirmado inspeccionando el propio checkout de esta sesión.
+
+**Qué pasa**: `relocateStoreIfNeeded(repoRoot, commonRootPath)`
+(`src/db/store-migration-relocate.ts`) migra `.svp/playbook.sqlite` a la
+ubicación externa SÓLO la primera vez (`if (existsSync(externalPath))
+return;` — si el destino externo ya existe, no hace nada). No borra, no
+avisa, no compara si el archivo en `.svp/` sigue teniendo datos.
+
+**Confirmado en vivo, en este propio repo** (`sv-playbook`, este mismo
+checkout):
+
+```
+$ ls -la .svp/playbook.sqlite
+-rw-r--r-- 929792 jul. 19 04:22 .svp/playbook.sqlite      # ← huérfano, congelado
+
+$ ls -la "$LOCALAPPDATA/sv-playbook/<hash-del-repo>/playbook.sqlite"
+-rw-r--r-- 995328 jul. 20 06:50 playbook.sqlite            # ← el real, vivo, el que usa el CLI
+```
+
+El archivo en `.svp/` quedó congelado desde ANTES de la migración a
+ubicación externa (más de un día de diferencia con el store real al
+momento de este hallazgo) — es un duplicado stale que nadie limpia.
+Está correctamente en `.gitignore` (`.gitignore:4`, confirmado con `git
+check-ignore -v`), así que no hay riesgo de que se commitee — pero sigue
+siendo espacio en disco desperdiciado, y sobre todo una trampa real: si
+alguien (humano o agente) inspecciona manualmente `.svp/playbook.sqlite`
+pensando que es el store vivo (como casi pasa durante esta misma sesión,
+al verificar F-006), va a ver datos viejos y sacar conclusiones
+equivocadas sobre el estado real del sistema.
+
+**Estado**: confirmado en vivo, no implementado ningún fix.
+
+**Posible acción** (no implementada, a decidir): después de migrar
+exitosamente (o al detectar que el destino externo ya existe pero el
+archivo in-tree TODAVÍA está presente), borrar o renombrar el archivo
+in-tree (ej. a `.svp/playbook.sqlite.migrated`) para que no quede
+ambiguo cuál es la fuente de verdad — o al mínimo, loguear una advertencia
+la primera vez que se detecta esta situación.
+
+---
+
 > Documentados a medida que se encuentran durante la redacción de la
 > guía. **Nada de esto se implementa desde acá** — son observaciones para
 > que el equipo decida qué hacer, cuándo corresponda.
