@@ -28,6 +28,15 @@ const HARNESSES: HarnessSpec[] = [
   { file: 'CLAUDE.md' },
 ];
 
+// El pipeline real de cold-start (flujo 05): toma la plantilla fija
+// (content/instructions/cold-start.md), sustituye placeholders de config
+// simples ({{tier}}, {{verifyCommand}}), y para el bloque de contexto
+// compila un context pack REAL para el rol human-interface — no es texto
+// hardcodeado, es el mismo compileContext() que arma contexto para
+// cualquier agente, aplicado acá al operador humano en su primer contacto
+// con el repo. AGENTS.md y CLAUDE.md reciben EXACTAMENTE el mismo render
+// (un solo `rendered`, dos destinos) — PRINCIPLE-004 (una fuente, N
+// espejos) en código.
 export async function renderInstructionsContent(root: string): Promise<string> {
   const config = loadConfig(root);
   const contentRoot = contentDir();
