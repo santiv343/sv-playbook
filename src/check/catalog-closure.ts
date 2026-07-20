@@ -70,6 +70,14 @@ function duplicateBindingViolations(profiles: readonly ProfileBinding[]): string
     .map(([key, roles]) => `${key}: projected agent bound to multiple roles ${[...roles].sort().join(', ')}`);
 }
 
+// "Cierre" del catálogo: tres axiomas que tienen que cumplirse a la vez
+// para que el sistema de roles esté completo y sin ambigüedad — (1) todo
+// rol REQUERIDO tiene al menos un perfil de ejecución habilitado (nadie
+// puede despachar ese rol si no); (2) ningún agente de un adapter está
+// atado a más de un rol a la vez (ambigüedad: ¿qué contexto le
+// corresponde?); (3) lo que cada adapter proyecta realmente coincide con
+// lo que los perfiles esperan — ni de menos (falta un agente) ni de más
+// (agente proyectado sin rol que lo reclame).
 export function checkCatalogClosure(store: Store, projections: readonly AdapterRoleProjection[]): CatalogClosureCheck {
   const requiredRoleCatalog = requiredRoleIds(store);
   const profiles = enabledProfiles(store);
