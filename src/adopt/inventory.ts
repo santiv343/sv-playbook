@@ -152,12 +152,20 @@ function resolveGitInfo(root: string): { remoteUrl: string | null; defaultBranch
   return { remoteUrl, defaultBranch };
 }
 
+// Punto de entrada del flujo de adopción (ver flujo 11): escanea un repo
+// EXISTENTE (que puede no tener nada de sv-playbook todavía) y arma un
+// reporte puramente descriptivo — este archivo no decide qué falta, sólo
+// observa qué hay. `analyzeGaps()` (adopt/gap.ts) es quien compara este
+// inventario contra lo mínimo requerido.
 export function inventoryRepo(root: string): InventoryReport {
   const pkg = readPackageJson(root);
 
   const scripts = field(pkg, 'scripts');
   const scriptsObj = typeof scripts === 'object' && scripts !== null && !Array.isArray(scripts) ? scripts : {};
 
+  // Prioridad de candidatos para "el comando que valida que todo anda":
+  // test > verify > ci — el orden importa porque muchos repos ya tienen
+  // un script `test` pero no necesariamente uno llamado `verify`.
   const testValue = stringOr(field(scriptsObj, 'test'), null);
   const verifyValue = stringOr(field(scriptsObj, 'verify'), null);
   const ciValue = stringOr(field(scriptsObj, 'ci'), null);
