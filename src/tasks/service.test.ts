@@ -31,6 +31,8 @@ import { STATUS } from './service.constants.js';
 import { setupServiceTest as setup } from './service.test.support.js';
 import { initTestRepo } from '../testkit.js';
 
+const MISSING_IMPORT_ID = 'IMP-MISSING';
+
 const def = (id: string, writeSet: string[] = ['src/**']) => ({ id, title: `Packet ${id}`, dependsOn: [], writeSet, requirements: [], evidenceRequired: ['final-sha'] });
 
 test('createPacket writes DB row in draft and does not write a markdown projection', async () => {
@@ -242,6 +244,19 @@ test('importPackets imports a new packet from a valid .md file', async () => {
   assert.equal(store.db.prepare('SELECT 1 FROM packets WHERE id = ?').get('README'), undefined);
 });
 
+test('importPackets rejects a dependency reference that does not exist', async () => {
+  const { root, store } = await setup();
+  await mkdir(join(root, 'docs', 'packets'), { recursive: true });
+  const content = `---\nid: ${MISSING_IMPORT_ID}\ntitle: Missing Dependency\ndepends_on: ["MISSING-001"]\nwrite_set: ["src/import/**"]\nrequirements: []\nevidence_required: ["final-sha"]\n---\n\nImported body text.`;
+  await writeFile(join(root, 'docs', 'packets', `${MISSING_IMPORT_ID}.md`), content, 'utf8');
+
+  assert.throws(
+    () => { importPackets(store, root); },
+    (error: unknown) => error instanceof LifecycleError && error.message.includes('MISSING-001'),
+  );
+  assert.equal(listPackets(store).find((packet) => packet.id === MISSING_IMPORT_ID), undefined);
+});
+
 test('importPackets is idempotent and updates deps on re-run', async () => {
   const { root, store } = await setup();
   store.db.prepare("INSERT INTO packets (id, title, path, status, write_set, created_at, updated_at) VALUES ('DEP-A', 'Dep A', '/tmp/dep', 'draft', '[]', datetime('now'), datetime('now'))").run();
@@ -354,4 +369,3 @@ test('createPacket does not write a .md file to disk', async () => {
   createPacket(store, root, def('NO-MD-001'), 'a');
   assert.equal(existsSync(join(root, 'docs', 'packets', 'NO-MD-001.md')), false);
 });
-

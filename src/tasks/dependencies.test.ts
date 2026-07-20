@@ -26,6 +26,7 @@ const TASK_ID = {
   START: 'TASK-001',
   READY: 'TASK-002',
   DROPPED: 'TASK-003',
+  MISSING: 'TASK-MISSING',
 } as const;
 
 function definition(id: string, dependsOn: readonly string[] = []) {
@@ -83,8 +84,8 @@ test('a dropped dependency unblocks ready and start', async () => {
 test('createPacket rejects a dependency reference that does not exist', async () => {
   const { root, store } = await setup();
   assert.throws(
-    () => { createPacket(store, root, definition('TASK-MISSING', ['MISSING-001']), 'dependent'); },
+    () => { createPacket(store, root, definition(TASK_ID.MISSING, ['MISSING-001']), 'dependent'); },
     (error: unknown) => error instanceof LifecycleError && error.message.includes('MISSING-001'),
   );
-  assert.equal(listPackets(store).find((packet) => packet.id === 'TASK-MISSING'), undefined);
+  assert.equal(listPackets(store).find((packet) => packet.id === TASK_ID.MISSING), undefined);
 });
