@@ -8,6 +8,12 @@ import { BACKUP_REASON } from '../../db/backup.constants.js';
 import { BACKUP_USAGE, STATE_SUBCOMMAND } from './backup.constants.js';
 import { loadConfig } from '../../config.js';
 
+// `backup state` es el disparador MANUAL de createStateBackup (db/backup.ts)
+// — el sistema también dispara backups automáticos en config.backup.onEvents
+// (done, force-takeover, restore, schema-mismatch), este comando es para
+// forzar uno bajo demanda. `--force` es lo mismo que allowFreshLeases: sin
+// él, un backup con leases activas (trabajo en curso) se rechaza para no
+// capturar un estado a medio escribir.
 export const command: Command = {
   name: 'backup',
   summary: 'Create local SQLite state snapshots',

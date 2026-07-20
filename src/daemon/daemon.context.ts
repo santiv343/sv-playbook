@@ -36,6 +36,16 @@ export function parseExecContext(parsed: object): ExecutionContext | null {
 // The client session reference is advisory: the runtime resolves the canonical
 // workspace and the authoritative persisted binding, rejecting outside-repo
 // workspaces and missing or mismatched claims before any command runs.
+// Modelo de confianza DISTINTO al de `.svp-session-role` (ver F-006 en
+// findings.md): acá el sessionId que manda el cliente es sólo un CLAIM
+// advisory — resolveAndBindWorkspace() es quien decide la verdad real
+// (ata sessionId<->cwd de forma persistida y autoritativa), y
+// workspaceWithinRepo() rechaza de entrada cualquier cwd fuera del repo
+// antes de intentar resolver nada. No hay contradicción con F-006 (ese
+// hallazgo es sobre IDENTIDAD humana vs agente en `decision answer`, esto
+// es sobre a qué WORKTREE pertenece un comando reenviado) — pero ambos
+// forman parte del mismo "quién confía en qué" que PRINCIPLE-016 pide
+// mapear explícitamente.
 export function enforceWorkspaceBinding(store: Store, repoRoot: string, ctx: ExecutionContext): void {
   if (!workspaceWithinRepo(repoRoot, ctx.cwd)) throw new Error('workspace is outside the repository');
   resolveAndBindWorkspace(store, ctx.sessionId, ctx.cwd);
