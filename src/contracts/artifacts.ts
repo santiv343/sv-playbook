@@ -137,6 +137,13 @@ function localizeReferences(value: unknown): unknown {
   }));
 }
 
+// Aplana un schema y sus dependencias ($ref a otros contratos activos) en
+// un único documento self-contained con todas las definiciones bajo $defs y
+// las referencias re-escritas a local (#/$defs/...) — Ajv necesita un solo
+// schema resoluble, no puede seguir referencias entre contratos separados
+// en tiempo de validación. Si dos contratos definen el mismo $defs con
+// contenido distinto, se rechaza como conflicto en vez de que uno pise al
+// otro silenciosamente.
 export function resolvedArtifactSchema(store: Store, ref: string): Readonly<Record<string, unknown>> {
   const schemas = activeSchemas(store);
   const root = schemas.find((entry) => entry.ref === ref)?.schema;
@@ -209,6 +216,11 @@ function handoffReferenceViolations(store: Store, activeRefs: ReadonlySet<string
   return violations;
 }
 
+// Gate de integridad del catálogo completo: todo contrato referenciado
+// desde un role_contract o un role_handoff tiene que existir y compilar.
+// Un rol o handoff apuntando a un contrato inexistente/roto quedaría
+// silenciosamente inoperable recién al intentar usarlo en runtime — este
+// check lo detecta antes, de forma proactiva.
 export function checkArtifactContracts(store: Store): ArtifactContractCheck {
   const schemas = activeSchemas(store);
   const activeRefs = new Set(schemas.map(({ ref }) => ref));
