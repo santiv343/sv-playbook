@@ -1,5 +1,10 @@
 import type { VerificationComponent } from './verification.types.js';
 
+// VERIFICATION_MANIFEST son los 4 componentes REALES que `npm run verify`
+// corre — incluye PLAYBOOK (`node bin/sv-playbook.js check`, los gates
+// propios del sistema) en pie de igualdad con typecheck/lint/test. Cambiar
+// qué se verifica es editar esta lista, no el runner (runner.ts, que es
+// genérico sobre cualquier VerificationComponent[]).
 export const VERIFICATION_COMPONENT = {
   TYPECHECK: 'typecheck',
   LINT: 'lint',
