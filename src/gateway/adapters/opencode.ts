@@ -146,6 +146,12 @@ export async function createOpenCodeSession(config: AdapterConfig, request: Adap
   return record(await responseJson(confirmed, 'confirm session'), 'session');
 }
 
+// Después de crear una sesión en OpenCode, se relee (createOpenCodeSession
+// hace un GET de confirmación) y se verifica CADA campo relevante contra lo
+// que se pidió — agent, directory, modelo, y la metadata run_id/operation_key
+// que se mandó al crearla. Esto detecta el caso raro donde OpenCode crea
+// una sesión distinta a la pedida (bug del servidor, colisión de id) antes
+// de que el adapter siga adelante creyendo que tiene la sesión correcta.
 export function verifySession(session: Record<string, unknown>, request: AdapterOperationRequest): string {
   const sessionId = requiredString(session.id, SESSION_ID_LABEL);
   const profile = request.runSpec.executionProfile;
@@ -163,6 +169,13 @@ export function verifySession(session: Record<string, unknown>, request: Adapter
   return sessionId;
 }
 
+// El messageId NO es aleatorio — es un digest determinístico del
+// operationKey. Esto hace que reintentar submitPrompt con el MISMO
+// operationKey (p.ej. tras un timeout de red sin saber si el POST llegó)
+// produzca el mismo messageId siempre, así OpenCode puede deduplicar del
+// lado del servidor si el mensaje ya se había recibido — el mismo
+// principio de idempotencia por identidad que el resto del sistema (specDigest,
+// dispatch identity) aplicado a nivel de protocolo HTTP con un tercero.
 function messageId(operationKey: string): string {
   return `msg_${digest(operationKey).slice('sha256:'.length)}`;
 }
@@ -314,6 +327,14 @@ function terminalOutput(lastAssistant: Record<string, unknown> | undefined, stat
   return messageOutput(lastAssistant);
 }
 
+// candidateOutput es DISTINTO de terminalOutput: sólo se calcula si el run
+// sigue RUNNING (la sesión sigue "busy"), buscando una respuesta assistant
+// YA completa dentro de la conversación en curso — el caso de un modelo que
+// terminó de responder pero la sesión sigue ocupada procesando algo más
+// (herramientas adicionales, otro turno). Le permite al gateway completar
+// desde ese candidato ANTES de que la sesión termine del todo, si ese
+// candidato ya pasa el contrato de output (ver GatewayCompletionReceipt en
+// gateway.types.ts, el comentario sobre "first completed in-flight response").
 function candidateOutput(assistants: readonly Record<string, unknown>[], state: AdapterRunObservation['state']): string | undefined {
   if (state !== ADAPTER_RUN_STATE.RUNNING) return undefined;
   for (const assistant of assistants) {
