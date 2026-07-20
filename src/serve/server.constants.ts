@@ -1,3 +1,7 @@
+// EVENT_STREAM es el content-type de Server-Sent Events — lo que sostiene
+// el push en vivo del dashboard operativo (ver F-002 en findings.md: ese
+// push manda el WorkflowDashboard completo en cada tick en vez de
+// incremental).
 export const CONTENT_TYPE = {
   HTML: 'text/html; charset=utf-8',
   JAVASCRIPT: 'text/javascript; charset=utf-8',
