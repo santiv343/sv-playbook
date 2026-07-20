@@ -59,6 +59,14 @@ export function generateIdFromType(store: Store, type: string): string {
   return `${prefix}-${String(Number.isNaN(num) ? 1 : num + 1).padStart(3, '0')}`;
 }
 function deleteDeps(store: Store, packetId: string): void { store.db.prepare('DELETE FROM packet_deps WHERE packet_id = ?').run(packetId); }
+function validateDependencyReferences(store: Store, packetId: string, dependencyIds: readonly string[]): void {
+  for (const dependencyId of dependencyIds) {
+    const dependency = store.orm.select({ id: packets.id }).from(packets).where(eq(packets.id, dependencyId)).get();
+    if (dependency === undefined) {
+      throw new LifecycleError(`packet ${packetId} depends on missing packet: ${dependencyId}`);
+    }
+  }
+}
 function recordTransition(store: Store, packetId: string, from: string, to: string, sessionId?: string): void {
   store.db.prepare('INSERT INTO transitions (packet_id, from_status, to_status, session_id, at) VALUES (?,?,?,?,?)').run(packetId, from, to, sessionId ?? null, now());
   store.db.prepare('UPDATE packets SET status = ?, updated_at = ? WHERE id = ?').run(to, now(), packetId);
@@ -69,6 +77,7 @@ export function createPacket(store: Store, _docRoot: string, def: PacketDefiniti
   const exists = store.db.prepare(EXISTS_SQL).get(def.id);
   if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`, 'existing packet file? use task import <path>');
   transact(store, () => {
+    validateDependencyReferences(store, def.id, def.dependsOn);
     store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, null, STATUS.DRAFT, body, JSON.stringify(def.writeSet), type ?? '', now(), now());
     for (const depId of def.dependsOn) {
       store.db.prepare('INSERT INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);

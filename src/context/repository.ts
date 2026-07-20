@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Store } from '../db/store.types.js';
 import { DATABASE_COLUMN } from '../db/schema-vocabulary.constants.js';
 import { numberColumn, stringColumn } from '../db/rows.js';
@@ -9,7 +9,7 @@ import { ContextError } from './context.errors.js';
 import { compareOrdinal } from './digest.js';
 import type { CapabilityEffect, ContextItemInput, ContextItemStatus, ContextItemStrength, StoredContextItem } from './context.types.js';
 import type { ContextCatalog } from './repository.types.js';
-import { contextPrecedence } from './schema.constants.js';
+import { contextItems, contextPrecedence } from './schema.constants.js';
 
 function refParts(ref: string): { id: string; version: number } {
   const separator = ref.lastIndexOf(REFERENCE_VERSION_SEPARATOR);
@@ -71,6 +71,16 @@ function validateSupersessions(store: Store, item: ContextItemInput, targets: re
   }
 }
 
+function validateDependencyReferences(store: Store, item: ContextItemInput, targets: readonly ReturnType<typeof refParts>[]): void {
+  for (const target of targets) {
+    const dependency = store.orm.select({ id: contextItems.id }).from(contextItems)
+      .where(and(eq(contextItems.id, target.id), eq(contextItems.version, target.version))).get();
+    if (dependency === undefined) {
+      throw new ContextError(CONTEXT_ERROR.MISSING_REFERENCE, `${itemRef(item)} depends on missing context item ${target.id}@${target.version}`);
+    }
+  }
+}
+
 function supersedeTargets(store: Store, targets: readonly ReturnType<typeof refParts>[], updatedAt: string): void {
   const statement = store.db.prepare('UPDATE context_items SET status = ?, updated_at = ? WHERE id = ? AND version = ?');
   for (const target of targets) {
@@ -104,6 +114,7 @@ export function addContextItem(store: Store, item: ContextItemInput): void {
   store.db.exec(BEGIN_WRITE);
   try {
     validateKindPrecedence(store, item);
+    validateDependencyReferences(store, item, dependencies.map(([,, id, version]) => ({ id, version })));
     validateSupersessions(store, item, supersessionTargets);
     store.db.prepare(`INSERT INTO context_items
       (id, version, kind, status, strength, semantic_key, body, provenance, created_at, updated_at)
