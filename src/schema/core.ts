@@ -3,6 +3,11 @@ import type { Schema, ObjectShape } from './core.types.js';
 
 const MIN_NON_EMPTY_STRING_LENGTH = 1;
 
+// Un validador propio, tipo-Zod-liviano, sin dependencia externa —
+// s.object/s.array/etc devuelven un `Schema<T>` con un único método
+// `.parse()` que tira SchemaError con un `path` acumulado (parseField/array
+// agregan la key/índice al path del hijo que falló) — así un error en un
+// campo anidado profundo trae el camino completo, no sólo "algo falló".
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -140,6 +145,12 @@ export function object<T extends Record<string, Schema<unknown>>>(
   };
 }
 
+// El marcador `_optional: true` es lo que parseField() usa para decidir si
+// OMITIR la key del resultado cuando el valor es undefined, en vez de
+// escribir `key: undefined` explícito — así un objeto parseado con campos
+// opcionales ausentes tiene EXACTAMENTE las keys que vinieron, útil para
+// comparar por digest/canonicalJson sin que `{a:1}` y `{a:1,b:undefined}`
+// produzcan JSON distinto.
 export function optional<T>(schema: Schema<T>): Schema<T | undefined> & { readonly _optional: true } {
   return {
     _optional: true as const,

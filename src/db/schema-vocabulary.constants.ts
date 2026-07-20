@@ -1,3 +1,7 @@
+// Nombres de columna compartidos entre 2+ tablas (PRINCIPLE-011: single
+// source para cada literal) — evita que "created_at" se escriba como string
+// suelto en 10 archivos de *.schema.constants.ts distintos y alguno lo
+// tipee "createdAt" o "created_On" por error de tipeo no detectado.
 export const DATABASE_COLUMN = {
   ACTIVATED_AT: 'activated_at',
   ADAPTER_ID: 'adapter_id',

@@ -11,6 +11,15 @@ export const RUN_SPEC_RETRY_OF_COLUMN = 'retry_of_run_spec_id';
 export const EXECUTION_PROFILES_TABLE = 'execution_profiles';
 export const MAX_RUN_DURATION_COLUMN = 'max_run_duration_ms';
 
+// El módulo de "contexto" (context_items + context_packs) es la base de
+// datos de TODO lo que se le puede dar de comer a un agente como material
+// de referencia — principios, convenciones, guías — con precedencia
+// (context_precedence), capacidades otorgadas/denegadas por ítem
+// (context_item_capabilities) y supersesión versionada
+// (context_item_supersessions, para cuando un ítem reemplaza a otro). Un
+// context_pack es una SELECCIÓN congelada de ítems para un run puntual —
+// existe justamente para que rendirse un RunSpec sea reproducible incluso
+// si el catálogo de contexto sigue evolucionando después.
 export const CONTEXT_STORE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS context_items (
   id TEXT NOT NULL,

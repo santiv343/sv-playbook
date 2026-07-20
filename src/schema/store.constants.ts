@@ -3,6 +3,11 @@ import { PACKET_STATUSES } from '../tasks/service.constants.js';
 
 export const PacketStatusSchema = s.enu(PACKET_STATUSES);
 
+// Estos *RowSchema son la contraparte de validación runtime de las tablas
+// de tasks/schema.constants.ts — se usan donde una fila de SQLite cruda
+// (de store.db.prepare, no de store.orm) necesita verificarse contra su
+// forma esperada antes de usarse como datos de confianza (p.ej. en
+// migraciones o inspección, no en el camino caliente del ORM).
 export const PacketRowSchema = s.object({
   id: s.string(),
   title: s.string(),
