@@ -3,6 +3,10 @@ export interface Io {
   err(line: string): void;
 }
 
+// El contrato que TODO comando registrado implementa — destructive/
+// destructiveSubcommands es lo que engancha destructive-gate.ts sin que
+// cada comando individual tenga que implementar su propio chequeo de
+// confirmación.
 export interface Command {
   name: string;
   summary: string;

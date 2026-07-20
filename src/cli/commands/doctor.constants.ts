@@ -1,3 +1,6 @@
+// MIN_NODE_MAJOR/MINOR (22.13) es el piso real de Node que sv-playbook
+// necesita (ver package.json engines) — nodeVersionOk() en doctor.ts lo usa
+// para el primer chequeo, antes de siquiera intentar abrir un store.
 export const DOCTOR_USAGE = 'Usage: sv-playbook doctor [--json]';
 export const MIN_NODE_MAJOR = 22;
 export const MIN_NODE_MINOR = 13;
