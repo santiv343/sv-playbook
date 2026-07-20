@@ -69,6 +69,13 @@ function hasRoleContext(state: CatalogState, role: CatalogState['roles'][number]
     && selector.value === role.roleId);
 }
 
+// El validador de catálogo de roles carga TODO el estado relevante de una
+// (loadCatalogState) y valida en memoria, no query por query — más caro en
+// I/O inicial pero permite chequear invariantes CRUZADAS (p.ej.
+// hasRoleContext exige que el context_item del rol esté ACTIVE Y tenga un
+// selector que apunte de vuelta al mismo roleId) sin N+1 queries. Cada
+// addViolation es una regla independiente — el catálogo puede tener
+// múltiples violaciones simultáneas, se acumulan todas antes de reportar.
 function roleViolations(state: CatalogState): string[] {
   return state.roles.flatMap((role) => {
     const violations: string[] = [];

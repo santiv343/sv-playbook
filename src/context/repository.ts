@@ -98,6 +98,14 @@ function validateKindPrecedence(store: Store, item: ContextItemInput): void {
   }
 }
 
+// Un context_item es inmutable una vez creado (id+version es la PK) — no
+// hay updateContextItem. "Cambiar" un ítem significa crear una versión
+// nueva y opcionalmente supersede-ar la vieja (validateSupersessions exige
+// que el target siga ACTIVE y tenga el MISMO semanticKey — no se puede
+// "reemplazar" un ítem por otro de significado distinto, eso sería
+// engañoso). BEGIN_WRITE es manual (`BEGIN IMMEDIATE`, no
+// store.orm.transaction) porque el insert final baja a SQL crudo con
+// múltiples statements de tablas hijas (tags/selectors/deps/etc).
 export function addContextItem(store: Store, item: ContextItemInput): void {
   validateInput(item);
   validateSelectorRoles(item);

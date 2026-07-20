@@ -40,6 +40,12 @@ import {
   WORKFLOW_STATUS,
 } from './orchestration.constants.js';
 
+// Implementación concreta de WorkflowRepositoryPort contra Drizzle. Notar
+// saveDefinition(): retirar la definición ACTIVE anterior y crear la nueva
+// va en UNA transacción — nunca hay una ventana donde exista más de una
+// definición ACTIVE para el mismo id (el índice único parcial
+// workflow_definition_one_active en el schema lo refuerza a nivel SQL
+// también, doble cinturón).
 export class DrizzleWorkflowRepository implements WorkflowRepositoryPort {
   constructor(private readonly store: Store) {}
 

@@ -65,6 +65,13 @@ function storedAgentActivity(receiptJson: string | null): AgentRunActivity {
   return typeof activity === 'string' ? STORED_AGENT_ACTIVITY[activity] ?? AGENT_RUN_ACTIVITY.UNKNOWN : AGENT_RUN_ACTIVITY.UNKNOWN;
 }
 
+// La consola operativa (flujo 07/08) lee este módulo para armar el
+// dashboard en vivo — todo acá es de SOLO LECTURA, proyecciones planas
+// pensadas para UI, no para lógica de negocio (por eso storedGatewayRunStatus
+// usa un switch exhaustivo con default throw, en vez de un cast: si
+// GATEWAY_RUN_STATUS gana un valor nuevo y este switch no se actualiza,
+// falla ruidoso en vez de mostrar un estado silenciosamente incorrecto en
+// la consola).
 function readAgentRuns(store: Store): AgentRunView[] {
   return store.orm.select({
     runSpecId: gatewayRunState.runSpecId,

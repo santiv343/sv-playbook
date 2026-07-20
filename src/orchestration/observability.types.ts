@@ -75,6 +75,10 @@ export interface WorkflowEventView {
   createdAt: string;
 }
 
+// lastEventSeq es la clave de la paginación incremental del dashboard: el
+// caller pide "eventos desde seq X" (ver F-002 en findings.md — el bug real
+// es que server.ts NO pasa afterSeq al hacer el push por SSE, así que
+// siempre reenvía desde 0 el historial completo en cada tick).
 export interface WorkflowDashboard {
   workflows: readonly WorkflowRunView[];
   effects: readonly WorkflowEffectView[];
