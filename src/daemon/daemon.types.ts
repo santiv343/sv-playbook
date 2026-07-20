@@ -36,6 +36,12 @@ export interface DaemonExecResponse {
   daemonVersion: string;
 }
 
+// activeHandlers + drainLatch implementan drenaje ("graceful shutdown"): al
+// llamar startDrain() (daemon.lifecycle.ts), el server deja de aceptar
+// pedidos nuevos pero espera a que activeHandlers quede vacío (todo handler
+// HTTP en curso termine) antes de considerar drained=true. finalizeOnce no
+// depende de esto directamente — es trackHandler/startDrain quienes lo usan
+// para no cortar una request a mitad de camino.
 export interface TerminationState {
   stopping: boolean;
   drained: boolean;

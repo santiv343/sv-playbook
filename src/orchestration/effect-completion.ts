@@ -38,6 +38,12 @@ function pointerValue(value: unknown, pointer: string): unknown {
   return current;
 }
 
+// Ruteo por JSON Pointer + igualdad canónica: cada ruta guarda un puntero
+// hacia un campo del output y el valor esperado (equalsJson); la primera
+// ruta cuyo pointer resuelve a un valor canónicamente igual gana. Un
+// outputPointer null es un catch-all (matchea cualquier output) — por eso
+// el orden en que se evalúan las rutas importa y routes() debe devolverlas
+// ya ordenadas por prioridad.
 function routeMatches(route: StoredWorkflowRoute, output: unknown): boolean {
   if (route.outputPointer === null) return true;
   if (route.equalsJson === null) throw new ContextError(WORKFLOW_ERROR.INVALID_DEFINITION, 'stored route predicate is incomplete');
@@ -99,6 +105,13 @@ export function completeWorkflowEffect(store: Store, input: CompleteWorkflowEffe
   return completeClaimedEffect(store, repo, effect, input.leaseOwner, input.output);
 }
 
+// Camino de dos pasos, no uno: claimHuman() primero adquiere el lease sobre
+// el efecto pending (compare-and-swap, puede fallar con
+// EFFECT_CLAIM_CONFLICT si dos humanos contestan a la vez), y RECIÉN
+// entonces completeClaimedEffect() lo completa con el mismo leaseOwner. Esto
+// reutiliza exactamente la misma ruta de completar/rutear que un efecto
+// agent/runtime — humano no es un atajo paralelo, es el mismo pipeline con
+// otro executor.
 export function resolveHumanWorkflowEffect(
   store: Store,
   input: ResolveHumanWorkflowEffectInput,

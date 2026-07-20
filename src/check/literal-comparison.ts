@@ -42,6 +42,12 @@ function violation(source: LiteralComparisonSource, sourceFile: ts.SourceFile, n
   };
 }
 
+// Gate de PRINCIPLE-011 (single source of truth): busca comparaciones contra
+// un NÚMERO literal (`x > 350`, `case 3:`) via el AST de TypeScript, no
+// regex sobre texto — evita falsos positivos en comentarios/strings. Sólo
+// detecta el patrón sintáctico; no sabe si el número "debería" ser una
+// constante nombrada — esa decisión la toma el baseline (evaluateSourceBaseline)
+// comparando contra violaciones ya aceptadas previamente.
 export function inspectLiteralComparisons(source: LiteralComparisonSource): LiteralComparisonViolation[] {
   const sourceFile = ts.createSourceFile(source.path, source.source, ts.ScriptTarget.Latest, true);
   const violations: LiteralComparisonViolation[] = [];

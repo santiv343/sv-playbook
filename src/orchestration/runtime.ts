@@ -29,6 +29,12 @@ class RecoveringWorkflowRuntime implements WorkflowRuntimeWorker {
   }
 }
 
+// Antes de arrancar el coordinator, recovery corre reconcileOrphanedGatewayRuns
+// (runs de gateway que quedaron colgados de una caída previa del proceso) —
+// RecoveringWorkflowRuntime.start() encadena recover().then(() => coordinator.start()),
+// así que el coordinator nunca reclama efectos nuevos mientras hay huérfanos
+// sin reconciliar. validateWorkflowRuntimeBindings corre ANTES de todo esto,
+// sincrónicamente, para fallar rápido si falta un adapter/operación.
 export function createWorkflowRuntime(
   store: Store,
   repoRoot: string,

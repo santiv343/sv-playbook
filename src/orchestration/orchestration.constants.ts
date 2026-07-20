@@ -1,3 +1,8 @@
+// Vocabulario central del motor de workflows (flujo de orquestación aparte
+// del ciclo de vida de packets — dos state machines distintas en el mismo
+// repo, no confundir). HUMAN es un executor de PRIMERA CLASE acá (no un caso
+// especial): un paso HUMAN se resuelve vía resolveHumanWorkflowEffect
+// (effect-completion.ts) con su propio lease corto (HUMAN_EFFECT_LEASE_MS).
 export const WORKFLOW_EXECUTOR = {
   AGENT: 'agent',
   RUNTIME: 'runtime',
