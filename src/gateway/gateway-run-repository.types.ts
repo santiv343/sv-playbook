@@ -8,6 +8,11 @@ export interface GatewayRunIdentity {
   messageId: string;
 }
 
+// progressChanged en GatewayObservationRecord es lo que decide si esta
+// observación genera un evento en gateway_run_events o sólo actualiza el
+// snapshot mutable — sin eso, cada poll (varios por segundo mientras el
+// run está activo) inflaría el historial de eventos con filas idénticas al
+// último progreso; sólo cambios REALES de progreso se auditan.
 export interface GatewayObservationRecord extends GatewayRunIdentity {
   progressToken: string;
   observedToolIds: readonly string[];
