@@ -106,6 +106,13 @@ function mappingKey(roleId: string, classId: string): string {
   return `${roleId}:${classId}`;
 }
 
+// Reconciliar el vocabulario de escalación es un problema de COBERTURA
+// EXACTA: `packet.sourceReconciliation.unsupportedEscalations` es la lista
+// de (roleId, sourceClass) que el sistema real detectó como no mapeadas —
+// la propuesta tiene que cubrir CADA una (missing mapping si falta
+// alguna), no agregar mappings de más para clases que sí estaban
+// soportadas (unexpected mapping), y no mapear la misma clase dos veces
+// (duplicate mapping). Ningún subconjunto parcial pasa — es todo o nada.
 function coverageViolations(proposal: EscalationReconciliationProposal, packet: ProtocolWorkPacket): string[] {
   const expected = packet.sourceReconciliation.unsupportedEscalations.map(({ roleId, classId }) => mappingKey(roleId, classId));
   const actual = proposal.mappings.map(({ roleId, sourceClass }) => mappingKey(roleId, sourceClass));

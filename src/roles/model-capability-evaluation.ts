@@ -38,6 +38,13 @@ import type {
   ModelCapabilityEvaluationSummary,
 } from './model-capability-evaluation.types.js';
 
+// El scoring es DOBLE, no sólo "¿la respuesta es correcta?": compara el
+// output completo contra MODEL_CAPABILITY_EVALUATION_EXPECTED por igualdad
+// canónica exacta (ni un campo de más/menos pasa), Y separadamente falla si
+// el modelo usó CUALQUIER tool — el prompt (model-capability-evaluation.constants.ts)
+// dice explícitamente "Do not use tools", así que usar una es en sí mismo
+// una violación de la evaluación, sin importar si la respuesta final daba
+// bien.
 export function scoreModelCapabilityOutput(
   output: unknown,
   observedToolIds: readonly string[],
@@ -61,6 +68,12 @@ function modelIdentity(profile: ExecutionProfile): string {
   });
 }
 
+// Evalúa por IDENTIDAD DE MODELO (provider+model+variant), no por rol ni
+// por execution profile — si dos roles distintos usan el mismo modelo
+// exacto, sólo se evalúa una vez (el primer profile encontrado, orden
+// estable por id). Esto evita pagar el costo de evaluación N veces para el
+// mismo modelo subyacente sólo porque está configurado bajo perfiles
+// distintos.
 function representativeProfiles(store: Store): ExecutionProfile[] {
   const selected = new Map<string, ExecutionProfile>();
   for (const profile of listExecutionProfiles(store).filter(({ enabled }) => enabled)) {
@@ -115,6 +128,12 @@ function operationRequest(runSpec: RunSpec, directory: string): AdapterOperation
   };
 }
 
+// Polling manual hasta estado terminal — a diferencia del gateway "real"
+// (gateway-lifecycle.ts, que persiste el progreso en gateway_run_state para
+// sobrevivir un crash del proceso), esta evaluación es efímera: corre en
+// memoria, sin persistir observaciones intermedias, porque es un chequeo
+// de arranque/diagnóstico, no un run de producción que otro proceso pueda
+// necesitar retomar.
 async function terminalObservation(
   adapter: AgentAdapter,
   request: AdapterOperationRequest,
