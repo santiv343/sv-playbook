@@ -1,225 +1,125 @@
-# Reorganización sv-playbook — estado y próximos pasos
+# Estado del proyecto — foto asentada 2026-07-19
 
-> Archivo vivo. Se actualiza cada vez que avanzamos, no al final de la sesión.
-> Si te perdiste, pedí "revisá REORG.md" — ahí está la foto completa, no hace
-> falta reconstruirla del chat.
+> Reemplaza la versión anterior de este documento, que quedó desactualizada
+> tras el trabajo de la semana del 2026-07-13 al 2026-07-19. Si volvés
+> después de perderte, empezá acá.
 
-## Objetivo del esfuerzo
+## Qué hay hoy, en `main`, funcionando
 
-El founder reportó que sv-playbook (el propio repo) quedó "vibe-codeado":
-frontend desconectado de su mockup, roles con dos modelos conviviendo a
-medias, complejidad sin freno. Se decidió: (1) desacoplar el sistema en
-piezas independientes (originalmente 3, reencuadrado a 4 — ver abajo), y
-(2) construir un mecanismo que impida que esto se repita — en cualquier
-proyecto que use sv-playbook, no solo este.
+- **Packets 100% en la DB SQLite** (decisión D4). Ya no existen archivos
+  `.md` de packets en git — se eliminaron 188 archivos. Historial y diffs
+  vía `packet history`/`packet diff`.
+- **Checkpoint de complejidad**: gate de aprobación humana antes de que un
+  packet toque territorio arquitectónicamente nuevo, con detección
+  automática de novedad (no rutas pre-declaradas). Diseño en
+  `docs/superpowers/specs/2026-07-16-complexity-checkpoint-design.md`.
+- **`.svp/` vive fuera del repo** (relocalizado, ya no en el árbol git),
+  con path canonicalizado (Windows short/long paths resuelven al mismo
+  store).
+- **Daemon de escritor único (STORE-003)**: ownership por PID+nonce
+  (resistente a reuso de PID tras un crash), timeout completo en el
+  forwarding (no sólo de conexión), recuperación verificada ante
+  `SIGKILL`.
+- **Detección de daemon con build desactualizado**: si el daemon corre
+  código viejo, se niega a reenviar comandos nuevos en vez de fallar en
+  silencio.
+- **Migración de stores viejos (pre-GATE-012)** corregida: preserva
+  constraints reales (UNIQUE/FK) o falla con error explícito — nunca
+  fabrica datos ni deja el schema roto en silencio.
+- **`write_set` de un packet activo** se puede extender (nunca reducir),
+  con evento de auditoría real (quién, cuándo) y sin condición de carrera.
+- **Contexto y cold-start**: los 15 principios + HJ-001..021 (taste
+  humano) están cargados en `context_items` (DB), no sólo en `.md`.
+  `AGENTS.md`/`CLAUDE.md` se generan combinando eso con el catálogo de
+  roles vía `compileContext` — un agente que abre sesión ya sabe su rol,
+  misión y límites, generado, no prosa genérica.
+- **Catálogo de 9 roles** (`human-interface`, `planner`, `refuter`,
+  `delivery-orchestrator`, `implementer`, `reviewer`, `advisor`,
+  `arbiter`, `investigator`) totalmente definido en DB, con auto-reparación
+  si el catálogo falta.
+- **CLI autodescubrible**: `Command.usage` obligatorio (gate mecanizado),
+  `describe --json` lo expone completo, `content/cli.md` dejó de duplicar
+  a mano lo que ahora es generado.
+- **Scanner de secretos** (`check secrets`) integrado al pipeline.
+- **Gates de deuda técnica monótonamente decrecientes** (duplicate-strings,
+  literal-comparisons, ORM-boundary, max-lines) — no pueden empeorar sin
+  que el gate lo note.
 
-## Las piezas del desacople (visión de largo plazo, sin arrancar todavía salvo la transversal)
+## Qué está diseñado pero no construido
 
-**Reencuadrado 2026-07-17 (IDEA-100) — de 3 piezas a 4.** La descomposición
-original asumía que el núcleo solo necesitaba ser agnóstico de agente/
-harness. Diseñando IDEA-051 se encontró que el núcleo hoy también carga
-opinión específica de CÓDIGO (los gates `maxLines`/`complexity`/
-`cognitiveComplexity` en `playbook.config.json`, la convención
-`.types`/`.constants`/`.errors`) — pero sv-playbook tiene que poder
-gobernar trabajo que no es código (escribir, diseñar, etc.). El código es
-en sí mismo un addon, no algo que el núcleo deba asumir.
+- Nada en esta categoría al día de hoy — lo único que quedaba
+  (`serve-shutdown-lifecycle`) se re-scopeó y quedó como investigación en
+  curso (ver abajo, paquete 3).
 
-1. **Núcleo** — máquina de estados tipo Jira (`tasks`/`packets`,
-   `promotion`, `review`, leases). Debe funcionar sin saber que existen
-   agentes, UI, NI código — un packet puede no ser "programar" nada.
-2. **Addon de código** (nuevo, IDEA-100) — gates de calidad tipo ESLint
-   (`maxLines`, `complexity`, layout de módulos). Se acopla a la config
-   de linter que ya tenga el proyecto en vez de reinventar umbrales —
-   pendiente de diseño, IDEA-051/052 se replantean bajo este addon.
-3. **Addon agéntico** — conecta el núcleo con agentes reales vía adapters
-   por harness (OpenCode, Codex, Claude Code, APIs). Candidato: wrapper MCP
-   (IDEA-093).
-4. **Frontend** — vistas de valor agregado (métricas, telemetría). La CLI
-   debe alcanzar para todo lo operativo; el front es sobre eso.
+## Investigaciones en curso (dispatchadas 2026-07-19)
 
-Se decidió atacar primero un mecanismo **transversal a las 4**: el
-checkpoint de aprobación humana (ver abajo), porque previene que el resto
-del trabajo repita el patrón de deriva silenciosa.
+Ver `docs/backlog.md` IDEA-110, IDEA-119, IDEA-065, IDEA-123, y el handoff
+`%TEMP%\opencode\handoff-indispensable-ahora.md` para el detalle completo
+de cada paquete. Resumen:
 
-## Hecho
+1. **Auditoría de integridad referencial** (IDEA-119) — mismo patrón de
+   bug visto dos veces esta sesión (referencia a otra entidad sin validar,
+   falla en silencio más adelante). Entregable: plan RED-first.
+2. **Auditoría de boundary de errores** (IDEA-110) — 24 `catch` genéricos
+   sin verificar si mapean bien a exit codes tipados. Entregable: plan
+   RED-first.
+3. **Re-investigación de `serve-shutdown-lifecycle`** (IDEA-065) — el plan
+   viejo asumía una topología de dos procesos que no existe en el código
+   actual (verificado 2026-07-19). Hay que confirmar si el bug del
+   servidor huérfano puede pasar por otra vía, o cerrar la idea como
+   resuelta-no-aplica.
+4. **Causa raíz del drift CI-vs-local** (IDEA-123) — el mismo commit
+   pasaba limpio en cualquier configuración local pero fallaba
+   consistentemente en GitHub Actions. Se parchó el síntoma, no se
+   encontró la causa. Diagnóstico puro, sin fix garantizado al final.
 
-- **Checkpoint y SOT de contexto/cold-start, mergeados y funcionando**
-  (2026-07-18): los dos planes de la sección anterior se ejecutaron,
-  pasaron CI, y están en `main` — `verify` confirmado en verde
-  (483-486 tests según el momento). El agente reusó una rama vieja por
-  error una vez (conflicto real, resuelto) y en otro momento hizo un
-  `rm -rf .svp/` manual para probar el store limpio, borrando su propio
-  backup casero después — se perdió el historial operativo local de la
-  sesión (no el código, no el trabajo, solo el registro de eventos/leases
-  de este `.svp/` puntual). Auditoría completa del backlog a raíz de
-  esto (ver abajo).
-- **Auditoría de los 13 "strong candidate" del backlog** (2026-07-18):
-  a pedido del founder tras el incidente de `.svp/`, se revisaron contra
-  el código real los 13 ítems marcados como diagnosticados-con-incidente-
-  real-pero-nunca-hechos. 3 ya estaban resueltos sin marcar (IDEA-023,
-  025, 026), 2 quedaron obsoletos por el cambio a packets-en-DB
-  (IDEA-064, 088), 7 siguen genuinamente abiertos (IDEA-011, 033, 059,
-  060, 065, 087, 089). Plan escrito para el más urgente: **IDEA-033**
-  (sacar `.svp/` del árbol del repo) —
-  `docs/superpowers/plans/2026-07-18-relocate-svp-outside-repo.md`,
-  4 tareas, resuelve la causa raíz del incidente de hoy en vez de agregar
-  un segundo mecanismo de protección encima.
-- **Plan de bootstrap de contexto + cold-start con rol** (2026-07-17):
-  `docs/superpowers/plans/2026-07-17-context-bootstrap-cold-start.md` —
-  5 tareas. Reencuadrado 3 veces en la misma sesión hasta llegar al
-  diseño correcto: no es "roles a DB" (ya estaban), es reusar
-  `compileContext()` (la función que YA arma el paquete de contexto para
-  workers despachados) para inyectar el contexto del rol `human-interface`
-  directo en `AGENTS.md`/`CLAUDE.md`. En el camino se encontró que
-  `content/principles.md` y `content/taste/*.md` (incluido HJ-001..021,
-  escrito con selectores de rol pensados exactamente para esto) **nunca
-  se cargaron a la DB** — ningún context pack de hoy, ni siquiera el de
-  workers ya despachados, tiene la riqueza real del proyecto. Se auditó
-  el dominio `context` a pedido del founder (tablas, DTOs, validación) y
-  está sólido — solo faltaba contenido. Se encontró y se suma al plan un
-  hueco real de integridad referencial: los selectores de rol no
-  validaban contra el catálogo real (typo = falla silenciosa).
-- **Checkpoint en ejecución** (2026-07-17): un agente despachado por el
-  founder está corriendo `docs/superpowers/plans/2026-07-17-complexity-checkpoint.md`
-  — Tarea 1 commiteada, Tareas 2/3 en progreso al momento de este
-  registro. Este documento (y esta sesión) NO tocan código mientras eso
-  corre — solo investigación/diseño/docs, en paralelo.
-- **Plan de implementación del SOT de comandos** (2026-07-17):
-  `docs/superpowers/plans/2026-07-17-self-discoverable-cli.md` — 6 tareas.
-  Resuelve IDEA-111 (describe/skills/MCP/cli.md deben derivar de una sola
-  fuente generada, hoy `content/cli.md` es prosa a mano que ya se
-  encontró desactualizada una vez). 14 de 25 comandos no tienen ningún
-  string de uso declarado en código — se relevaron los 25 antes de
-  escribir el plan.
-- **Plan de implementación del checkpoint** (2026-07-17):
-  `docs/superpowers/plans/2026-07-17-complexity-checkpoint.md` — 11 tareas
-  RED-first, spec aprobado y autorevisado. Listo para ejecutar.
-- **Investigación completa del repo** (2026-07-16): confirmado que `src/tasks/`
-  ya está casi desacoplado (casi sin imports salientes hacia gateway/roles/
-  orchestration/context) — la dirección de dependencia correcta ya existe.
-  Encontrada la divergencia real front-vs-mockup, la deriva de modelo de
-  roles (HJ-020), y que `PRINCIPLE-005`/`PRINCIPLE-015`/`HJ-015` ya
-  anticipaban este problema en prosa, nunca mecanizados como gate.
-- **Decisiones de arquitectura tomadas** para el checkpoint (detalle completo
-  en `docs/superpowers/specs/2026-07-16-complexity-checkpoint-design.md`):
-  reusar el comando `decision` (hoy desconectado) en vez de crear un
-  subsistema nuevo; packets pasan 100% a DB con historial append-only, sin
-  plano git; todo por CLI, sin UI de revisión nueva; `decision answer`
-  exige sesión humana (reusa `.svp-session-role`).
-- **Limpieza de `docs/`** (2026-07-16/17): de ~220 archivos a 6 vivos
-  (`VISION.md`, `how-it-works.md`, `anatomy.md`, `QUICKSTART.md`,
-  `backlog.md`, este archivo) + `ARCHIVE.md` (historia consolidada) + 185
-  packets intactos (esperan la migración a DB) + mockup del front +
-  specs activos. Efecto colateral encontrado y arreglado: el gate de
-  comandos sugeridos (`src/check/suggested-command.constants.ts`) no conocía
-  la carpeta nueva de specs ni sabía que se borró `docs/constitution/` —
-  corregido, `lint` y `test` verificados en verde (502 tests).
-- **Hallazgos registrados en `docs/backlog.md`** durante la investigación:
-  IDEA-091 (flag muerto en `decision.ts`), IDEA-092 (73 tablas en la DB, hay
-  que auditarlas — cluster `protocol_*` sin documentar), IDEA-093 (wrapper
-  MCP), IDEA-094 (propuesta de daemon sin resolver, rescatada del docs
-  cleanup), IDEA-095 (QUICKSTART.md tiene lenguaje de roles superseded y
-  describe la durabilidad al revés de la decisión D4).
+## Triage del resto del backlog (119 ideas registradas, ver `docs/backlog.md`)
 
-## En progreso
+De 119 entradas, 83 siguen sin tocar (`unvalidated`), 7 pateadas
+explícitamente a una v2 futura, y un puñado resueltas/obsoletas. La
+enorme mayoría de lo discutido esta semana **todavía no es código**.
+Clasificación acordada 2026-07-19:
 
-Diseño detallado del checkpoint de aprobación humana
-(`docs/superpowers/specs/2026-07-16-complexity-checkpoint-design.md`).
+**Puede esperar** (real, pero sin dolor activo con un solo proyecto usando
+playbook):
+- Configurabilidad real (columnas de kanban, tiers, tipos de packet,
+  checklist de review) — IDEA-053/054/055/056/057.
+- Auditoría de las 73 tablas de la DB (IDEA-092).
+- Agnosticismo de dominio — sacar del núcleo lo que asume "el trabajo es
+  código" (IDEA-100).
+- Fallback de modelos por agente (IDEA-122).
 
-**Hallazgo importante (2026-07-17):** la Pieza 1 (packets versionados en DB)
-casi no requería trabajo nuevo — `packet_definitions` y `packet_deps` ya
-existían y ya cubren el 100% de los 189 packets vivos (verificado
-consultando la DB directo). El diseño original se corrigió en el momento
-para no reinventar lo que ya estaba construido; ese mismo hallazgo generó
-la decisión D8: todo packet que declare algo "nuevo" debe adjuntar
-evidencia de búsqueda previa antes de aprobarse — mismo nivel de
-obligatoriedad que el RED test.
+**Nice to have / largo plazo** (explícitamente pateado por el founder, o
+sin urgencia):
+- Búsqueda semántica sobre packets (IDEA-116).
+- Wrapper MCP del CLI (IDEA-093).
+- Ruteo/dispatch de agentes (IDEA-106) — el founder pidió análisis
+  profundo dedicado, no apurarlo.
+- Onboarding (`init`)/adopción (`adopt`) desde cero — IDEA-107/108/115,
+  el founder fue explícito: pensarlo bien, sin apuro de timing.
+- Renombrar `task`→`packet` en todo el CLI (IDEA-096) — cosmético,
+  scopeado pero no ejecutado.
 
-**Decisión de vocabulario (D9, 2026-07-17):** "packet" es el sustantivo
-canónico de "unidad de trabajo"; "task" (hoy el nombre del comando CLI)
-se renombra a `packet` como su propio trabajo aparte (**IDEA-096**, no
-parte de este diseño). Motivo: "task" ya significaba 3 cosas distintas
-(comando CLI, prefijo de ID de 9 packets existentes, palabra genérica en
-prosa) — en Jira el genérico es "Issue" y "Task" es solo un tipo, nunca el
-nombre general. Los comandos nuevos de este diseño ya usan `packet *`.
+## Disciplina que se reafirmó esta semana (no repetir los mismos errores)
 
-Falta bajar a detalle:
-- [ ] Qué es exactamente configurable (formato, defaults)
-- [ ] Manejo de errores / casos límite
-- [ ] Testing / evidencia requerida
-- [ ] Dejar de generar `docs/packets/*.md` como export
-
-## Auditoría de config de toda la app (2026-07-17, hecha rápido, no diferida)
-
-El founder pidió revisar YA qué es config vs. hardcodeado en toda la app,
-no solo en el checkpoint. Ya existía un 90% del trabajo hecho en
-`docs/backlog.md` (IDEA-050 a IDEA-058, de una auditoría previa nunca
-re-verificada). Re-chequeado contra el código real:
-- **Ya resueltas y no marcadas** (bug de proceso, corregido): IDEA-050
-  (roles — catálogo DB-versionado bundled/custom), IDEA-051 (umbrales de
-  gates — ya en `playbook.config.json`).
-- **Genuinamente abiertas**: IDEA-053 (máquina de estados/columnas,
-  hardcodeada en `service.constants.ts`), IDEA-055 (definiciones de tier,
-  enum fijo), IDEA-057 (secciones requeridas del template, array literal
-  en `check.ts`).
-- **Parciales**: IDEA-052 (layout de módulos — hay on/off, no la regla en
-  sí), IDEA-054 (tipos de packet — texto libre mas no registro formal),
-  IDEA-058 (ruteo de dispatch — DB-driven, fallback sin confirmar).
-- **Ambigua**: IDEA-056 (checklist de review — vive en `content/`, prosa
-  editable; ¿cuenta como "config" o hace falta estructurarla?).
-
-Meta-hallazgo (**IDEA-098**): el backlog no tiene ningún mecanismo que
-fuerce re-verificar una entrada vieja antes de citarla como vigente —
-2 de 9 estaban resueltas hace tiempo y nadie las cerró.
-
-## Pendiente (después del diseño actual)
-
-- **IDEA-096** — rename `task` → `packet` en todo el CLI (comando de
-  347 líneas, 28 módulos internos que importan `tasks/`, 9 archivos de
-  `content/`+`docs/QUICKSTART.md`+`AGENTS.md` con ejemplos de `task *`).
-  Su propio packet, no se mezcla con el checkpoint.
-- Pieza 2 del checkpoint: enlace `decision` ↔ `packet` + gate en
-  `task move ready` (futuro `packet move ready`) + exigencia de sesión
-  humana en `decision answer`.
-- **Deriva de roles (HJ-020), corregida dos veces el mismo día
-  (IDEA-113):** primera lectura (incorrecta): "faltan charters de los
-  roles nuevos". Segunda lectura, correcta, tras leer
-  `bundled-profile.constants.ts` entero: el modelo nuevo (9 roles —
-  human-interface/advisor/planner/refuter/arbiter/delivery-orchestrator/
-  investigator/implementer/reviewer) **ya está completamente definido**,
-  con mission, juicio exclusivo, prohibiciones y grafo de handoffs — más
-  rico que la prosa vieja. El problema real: `docs roles/<role>`
-  (`src/content.ts`) es 100% filesystem, no sabe leer la DB — hoy
-  `docs roles/human-interface` da "Unknown topic" aunque el rol funciona
-  y está vivo en el catálogo. La resolución es retirar los 5 `.md` viejos
-  (`content/roles/*.md` — describen el modelo superseded) y hacer que
-  `docs roles/*` (y el cold-start, IDEA-114) lean del catálogo DB en vez
-  del filesystem — mismo patrón "generar desde la fuente real" que
-  IDEA-111.
-- Auditoría de las 73 tablas de la DB (IDEA-092) — candidatos a duplicar
-  conceptos: `packets`/`packet_definitions`/`task_costs`/`sprints`.
-- Reescritura de `QUICKSTART.md` (IDEA-095), bloqueada hasta que la
-  migración de packets a DB esté implementada.
-- Subproyecto 1 completo (núcleo desacoplado, formalizado con contrato
-  público explícito, ahora agnóstico de dominio — ver IDEA-100).
-- **IDEA-100** — addon de código (gates tipo ESLint separados del núcleo).
-  El hallazgo más grande de la sesión, reencuadra las 3 piezas en 4.
-- Subproyecto agéntico (renombrado de "2" con el reencuadre) — evaluar
-  wrapper MCP (IDEA-093); **IDEA-109** (config por rol/agente/modelo,
-  ya existe `execution-profile`, verificar cobertura real); **IDEA-106**
-  (ruteo de agentes — el founder pidió análisis profundo, no apurarlo).
-- Subproyecto frontend — reconciliar con `docs/design/serve-mockup.html`
-  o descartarlo a conciencia.
-- **IDEA-107/108** — cómo se setea el "norte" (visión/principios) al
-  arrancar un proyecto de cero (`init`, nunca construido) vs. al adoptar
-  uno existente (`adopt`, parcialmente construido, caso real: Aurora). El
-  founder fue explícito: pensarlo bien, no perderlo, sin apuro de timing.
-- IDEA-101 a IDEA-106 — refinamientos del founder sobre la auditoría de
-  config (ver arriba), cada uno necesita su propia conversación de scope.
+- **Nunca fabricar datos ni desactivar una validación para pasar un test
+  en verde** — pasó una vez (un fix de migración usaba un UUID inventado
+  y apagaba `PRAGMA foreign_keys` para esconderlo), se rechazó y se
+  rehizo bien.
+- **CI en verde no es evidencia suficiente** — hay que leer el código real
+  de cada PR antes de mergear, no sólo el estado de los checks.
+- **`git checkout`/`update-branch` de GitHub NO actualiza solo una rama
+  "behind" cuando el required-check es `strict`** — hay que forzarlo a
+  mano (`gh api -X PUT .../update-branch`) o el auto-merge queda en loop
+  infinito.
+- Cuando un merge combina dos features que tocan el mismo archivo, revisar
+  a mano que no queden bloques de código duplicados/muertos — el
+  auto-merge de git no garantiza que el resultado tenga sentido semántico.
 
 ## Cómo seguir si te perdiste
 
-1. Pedí "revisá REORG.md" — esto de acá es la foto.
-2. Para el detalle técnico del diseño en curso, pedí "revisá el spec" →
+1. Este documento es la foto de hoy.
+2. Para detalle técnico del checkpoint de complejidad:
    `docs/superpowers/specs/2026-07-16-complexity-checkpoint-design.md`.
-3. Para el historial de por qué se borró/consolidó algo, `docs/ARCHIVE.md`.
+3. Para el registro completo de ideas/incidentes: `docs/backlog.md`.
+4. Para por qué se borró/consolidó algo viejo: `docs/ARCHIVE.md`.
