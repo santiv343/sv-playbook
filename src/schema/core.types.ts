@@ -1,3 +1,8 @@
+// El truco de tipos detrás de s.object(): ObjectShape separa las keys en
+// requeridas vs opcionales (vía el marcador `_optional` que optional()
+// agrega en core.ts) y arma un tipo donde las opcionales llevan `?` — así
+// TypeScript exige los campos requeridos y permite omitir los opcionales,
+// coincidiendo exactamente con lo que parseField() hace en runtime.
 export interface Schema<T> {
   parse(value: unknown): T;
 }
