@@ -8,6 +8,10 @@ import { startDaemon } from '../../daemon/daemon.js';
 
 const USAGE = 'Usage: sv-playbook daemon [--port <N>]';
 
+export function daemonStartErrorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export const command: Command = {
   name: 'daemon',
   summary: 'Start the sv-playbook daemon (single blessed writer for the store)',
@@ -57,7 +61,7 @@ export const command: Command = {
           () => { resolve(EXIT.SYSTEM); },
         );
       }).catch((err: unknown) => {
-        io.err(`Failed to start daemon: ${String(err)}`);
+        io.err(`Failed to start daemon: ${daemonStartErrorDetail(err)}`);
         resolve(EXIT.SYSTEM);
       });
     });

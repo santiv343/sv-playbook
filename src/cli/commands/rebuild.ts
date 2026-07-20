@@ -198,7 +198,7 @@ export const command: Command = {
       return Promise.resolve(EXIT.OK);
     } catch (error) {
       io.err(`error: ${error instanceof Error ? error.message : String(error)}`);
-      return Promise.resolve(EXIT.GATE_FAIL);
+      return Promise.resolve(EXIT.SYSTEM);
     }
   },
 };
