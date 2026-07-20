@@ -54,6 +54,12 @@ const LOCAL_PORT: GitPromotionPort = {
       return false;
     }
   },
+  // `git update-ref <ref> <new> <old>` es una operación compare-and-swap:
+  // sólo mueve el ref si ACTUALMENTE apunta a `beforeSha` — si alguien más
+  // integró algo a `targetRef` entre que PromotionController leyó su SHA
+  // y este momento, el comando falla en vez de sobreescribir ese trabajo
+  // ajeno. Es la garantía real de que "integrar" nunca pisa un commit que
+  // no vio.
   fastForwardRef: (repoRoot, targetRef, beforeSha, candidateSha) => {
     execFileSync(GIT_EXECUTABLE, [
       GIT_COMMAND.UPDATE_REF,

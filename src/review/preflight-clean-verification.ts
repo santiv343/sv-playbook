@@ -128,6 +128,11 @@ function isWorktreeClean(worktree: string): boolean {
   return gitOutput(worktree, [GIT_ARGUMENT.STATUS, GIT_ARGUMENT.PORCELAIN]) === '';
 }
 
+// "Pasó" no alcanza con exit code 0 — después de correr el comando, el
+// worktree TIENE que seguir limpio (`isWorktreeClean`). Si el comando
+// generó archivos sin commitear (ej. un test que escribió output al
+// disco y lo dejó ahí), eso también es una falla — DIRTY_WORKTREE — por
+// más que el comando en sí haya terminado bien.
 async function commandPhase(
   phase: PreflightPhase,
   command: string,
@@ -268,6 +273,15 @@ async function configuredPhases(
   return [configuration, preparation, verification];
 }
 
+// "Clean" = corre en un git worktree DESCARTABLE creado desde el SHA
+// candidato (createCleanWorktree), no en el worktree de trabajo del
+// agente — así el resultado nunca puede estar contaminado por archivos
+// sin commitear, node_modules cacheado con estado raro, o cualquier
+// residuo que sólo existe en el checkout del agente. `phases` corre en
+// orden: configuration -> preparation -> verification -> cleanup, y el
+// cleanup SIEMPRE corre (bloque `finally`) aunque las fases anteriores
+// hayan fallado — el worktree temporal nunca debe quedar huérfano en
+// disco.
 export async function runCleanVerification(
   sourceWorktree: string,
   dependencyOverrides: Partial<CleanVerificationDependencies> = {},
