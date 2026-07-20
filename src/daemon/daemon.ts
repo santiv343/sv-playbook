@@ -1,5 +1,4 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { openStore, isDaemonRunning, setDaemonStore, setDaemonStarting, resolveStoreDir } from '../db/store.js';
@@ -7,8 +6,8 @@ import { readBuildDigest } from '../db/build-digest.js';
 import { assertExclusiveStoreLock } from '../db/inspection.js';
 import { DB_FILE, SVP_DIR } from '../db/store.constants.js';
 import { BUILD_DIGEST_HEALTH_FIELD, DAEMON_LOCK_FILE, DAEMON_ROUTE, DAEMON_TOKEN_FILE, DAEMON_VERSION } from './daemon.constants.js';
-import { HTTP_METHOD, NODE_ERROR_CODE, PROCESS_EVENT, TEXT_ENCODING } from '../platform.constants.js';
-import { nodeErrorCode } from '../platform.js';
+import { HTTP_METHOD, PROCESS_EVENT, TEXT_ENCODING } from '../platform.constants.js';
+import { generateToken, acquireLock, removeLock } from './daemon.lock.js';
 import { runWithContext, createContext } from '../runtime/context.js';
 import type { Store } from '../db/store.types.js';
 import type { DaemonInstance, DaemonDeps, TerminationState } from './daemon.types.js';
@@ -31,19 +30,6 @@ const ERR_REQ_READ_FAILED = 'request read failed';
 const ERR_INTERNAL = 'internal error';
 const ERR_METHOD_NOT_ALLOWED = 'method not allowed';
 const ERR_SHUTTING_DOWN = 'daemon is shutting down';
-
-function generateToken(): string {
-  return createHash('sha256').update(randomUUID()).digest('hex').slice(0, 32);
-}
-
-function writeLockFileAtomically(lockPath: string, pid: number, port: number): void {
-  const fd = openSync(lockPath, 'wx', 0o600);
-  try {
-    writeSync(fd, `${pid}\n${port}\n${new Date().toISOString()}\n`);
-  } finally {
-    closeSync(fd);
-  }
-}
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -234,10 +220,6 @@ interface ShutdownControl {
   wait(): Promise<void>;
 }
 
-function removeLock(lockPath: string): void {
-  try { unlinkSync(lockPath); } catch { /* best-effort */ }
-}
-
 function openDaemonStore(repoRoot: string, lockPath: string): Store {
   setDaemonStarting(true);
   try {
@@ -272,15 +254,7 @@ function initializeDaemonRuntime(repoRoot: string, port: number): DaemonRuntime 
   if (isDaemonRunning(repoRoot)) throw new Error('daemon is already running for this repo');
   const token = generateToken();
   const state = createTerminationState(lockPath, tokenPath);
-  try {
-    writeLockFileAtomically(lockPath, process.pid, port);
-  } catch (err: unknown) {
-    const isExisting = nodeErrorCode(err) === NODE_ERROR_CODE.ALREADY_EXISTS;
-    const message = isExisting
-      ? 'daemon is already running for this repo (lock file race)'
-      : `failed to create lock file: ${String(err)}`;
-    throw new Error(message);
-  }
+  acquireLock(lockPath, process.pid, port, token);
   const store = openDaemonStore(repoRoot, lockPath);
   setDaemonStore(store);
   state.store = store;
