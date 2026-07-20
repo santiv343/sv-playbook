@@ -1,3 +1,9 @@
+// DAEMON_LOCK_FILE es el archivo del compare-and-swap de daemon.lock.ts
+// (openSync 'wx'); DAEMON_TOKEN_FILE es el secreto que autentica requests
+// al daemon (leído por forwardToDaemonSync en client.ts). Los dos timeouts
+// documentados abajo (connect vs full-request) son deliberadamente
+// distintos: connect es sólo "¿el daemon está vivo y aceptando?", el
+// segundo cubre todo el ciclo hasta recibir la respuesta completa.
 export const DAEMON_DEFAULT_PORT = 4141;
 export const DAEMON_LOCK_FILE = '.svp-daemon.lock';
 export const DAEMON_TOKEN_FILE = '.svp-daemon-token';
