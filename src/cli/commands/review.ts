@@ -8,7 +8,7 @@ import { getCwd } from '../../runtime/context.js';
 import { runPreflight } from '../../review/preflight.js';
 import type { PreflightReport } from '../../review/preflight.types.js';
 import { PREFLIGHT_STATUS } from '../../review/preflight.types.js';
-import { getReviewCandidate, listReviewCandidates } from '../../review/review-candidate.js';
+import { getReviewCandidate, listReviewCandidates } from '../../review/review-candidate-read.js';
 
 import { REVIEW_CMD_NAME, REVIEW_PREFLIGHT_USAGE } from './review.constants.js';
 
