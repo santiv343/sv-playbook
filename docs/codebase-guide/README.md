@@ -25,18 +25,18 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 4. [`flows/flow-04-preflight-review-promotion.md`](./flows/flow-04-preflight-review-promotion.md) — preflight + review + promotion ✅
 5. [`flows/flow-05-context-coldstart.md`](./flows/flow-05-context-coldstart.md) — cold-start de contexto (`instructions --write`) ✅
 6. [`flows/flow-06-daemon-lifecycle.md`](./flows/flow-06-daemon-lifecycle.md) — daemon: ownership, forwarding, shutdown ✅ (gap real documentado: ver nota al inicio del archivo)
-7. `flows/flow-07-serve-console.md` — consola operativa HTTP — *pendiente*
+7. [`flows/flow-07-serve-console.md`](./flows/flow-07-serve-console.md) — consola operativa HTTP ✅ (hallazgo real: F-002)
 8. `flows/flow-08-gateway-dispatch.md` — dispatch a agentes externos — *pendiente*
 9. `flows/flow-09-error-handling.md` — manejo de errores (transversal) — *pendiente*
 10. `flows/flow-10-complexity-checkpoint.md` — checkpoint de complejidad — *pendiente*
 11. `flows/flow-11-secondary-flows.md` — backup/restore/rebuild, sprints, adopt, reconcile — *pendiente*
 
 ### Cierre
-- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — 1 hallazgo hasta ahora (F-001)
+- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — 2 hallazgos hasta ahora (F-001, F-002)
 
 ## Estado del recorrido
 
-**Etapa actual: 7 — Daemon lifecycle.** Completada, ver `flows/flow-06-daemon-lifecycle.md`. Encontró un gap real sin resolver en `main` (ver nota al inicio del archivo).
+**Etapa actual: 8 — Consola serve.** Completada, ver `flows/flow-07-serve-console.md`. Encontró un segundo hallazgo real (F-002, SSE sin acotar).
 
 ## Reglas de esta guía (para quien la siga escribiendo)
 
