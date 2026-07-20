@@ -27,6 +27,13 @@ export function parsePromotionRequest(input: unknown): PromotionRequest {
   }
 }
 
+// Adapter que le permite al motor de workflows (orchestration/) disparar
+// una promoción como un efecto RUNTIME más — implementa
+// RuntimeWorkflowOperation para que un workflow definido declarativamente
+// pueda tener un step `executor: runtime, operationId: promotion.execute`
+// (ver PROMOTION_OPERATION_ID en promotion.constants.ts) sin que el
+// coordinator necesite saber nada de promoción específicamente; sólo ve
+// "ejecutar esta operación registrada con este input".
 export class PromotionRuntimeOperation implements RuntimeWorkflowOperation {
   constructor(private readonly controller: PromotionController) {}
 
