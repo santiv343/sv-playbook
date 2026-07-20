@@ -15,6 +15,13 @@ function parse(text: string, normalization: StructuredOutputNormalization, raw: 
   }
 }
 
+// Dos intentos, en orden: primero JSON crudo tal cual (RAW_JSON — lo que se
+// espera del modo VALIDATED_TEXT de OpenCode); si eso falla, intenta pelar
+// un fence ```json ... ``` y reparsear (SINGLE_JSON_FENCE — algunos
+// modelos envuelven su output en markdown pese a que se les pidió no
+// hacerlo). El `normalization` que queda en el receipt documenta CUÁL de
+// los dos caminos se usó — es evidencia de que hubo que normalizar, no
+// sólo el resultado final.
 export function parseAgentJsonOutput(raw: string): ParsedStructuredOutput {
   const text = raw.trim();
   try {
