@@ -67,6 +67,13 @@ export interface ProtocolSourceReconciliation {
   unsupportedEscalations: readonly UnsupportedEscalationFact[];
 }
 
+// "Protocol" acá es un dominio propio (no confundir con task packets):
+// modela el proceso de EVOLUCIONAR el propio catálogo de roles/contratos —
+// un agente propone (ProtocolSemanticProposal), el sistema valida contra
+// proposalRules (nombres exactos, dialecto de schema, keywords prohibidas)
+// y sólo entonces se materializa como artifact contract real. packetDigest
+// ata la propuesta a una foto puntual del catálogo — si el catálogo cambió
+// mientras se armaba la propuesta, el digest no matchea y se rechaza.
 export interface ProtocolWorkPacket {
   id: string;
   schemaVersion: number;
