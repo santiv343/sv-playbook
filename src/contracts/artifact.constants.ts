@@ -1,3 +1,6 @@
+// ACTIVE/RETIRED es el mismo vocabulario que managed-contracts.ts usa —
+// un contrato nunca se borra, sólo se retira cuando ya tiene artefactos
+// inmutables que lo referencian y necesita evolucionar.
 export const ARTIFACT_CONTRACT_STATUS = {
   ACTIVE: 'active',
   RETIRED: 'retired',

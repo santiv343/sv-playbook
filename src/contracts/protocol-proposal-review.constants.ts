@@ -1,3 +1,8 @@
+// PROTOCOL_PROPOSAL_STATUS es el ciclo de vida de una propuesta:
+// evaluated (recién chequeada mecánicamente) -> approved/rejected (tras
+// review humano/agente) -> applied (ya materializada como contrato real).
+// UPDATE_PROTOCOL_PROPOSAL_STATUS_SQL es el único UPDATE de esa tabla —
+// avanza el status, nunca lo retrocede.
 export const PROTOCOL_PROPOSAL_REVIEW_FIELD = {
   PROPOSAL_ID: 'proposalId',
   PROPOSAL_DIGEST: 'proposalDigest',
