@@ -50,6 +50,12 @@ export interface StartWorkflowInput {
   input: unknown;
 }
 
+// Un WorkflowEffect es UN paso reclamado de un workflow en ejecución — la
+// unidad de trabajo que un executor (agent/runtime/human, ver
+// orchestration.constants.ts) procesa y completa o falla. attempt/maxAttempts
+// habilitan reintentos (ver failEffect en repository.effects.ts); leaseOwner
+// + leaseExpiresAt son el mecanismo de "single blessed writer" por efecto —
+// nadie más puede completar/fallar este efecto mientras el lease es válido.
 export interface WorkflowEffect {
   id: string;
   workflowId: string;

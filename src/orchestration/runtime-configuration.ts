@@ -52,6 +52,10 @@ function errorIdentity(error: unknown): { code: string; detail: string } {
   return { code: COORDINATOR_ERROR.UNCLASSIFIED, detail: String(error) };
 }
 
+// Política de reintentos por CÓDIGO de error, no por tipo de excepción: dos
+// errores distintos con el mismo `code` comparten política. Sin fila en
+// workflow_failure_policies, `retryable` cae a false — fallar cerrado, no
+// reintentar indefinidamente algo no clasificado explícitamente.
 export class StoreWorkflowFailureClassifier implements WorkflowFailureClassifier {
   constructor(private readonly store: Store) {}
 
