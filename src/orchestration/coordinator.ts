@@ -41,6 +41,12 @@ type ExecutionOutcome =
   | { kind: typeof COORDINATOR_OUTCOME.COMPLETED; output: unknown }
   | { kind: typeof COORDINATOR_OUTCOME.FAILED; error: unknown };
 
+// Corre el efecto real mientras compite en una carrera contra un timer de
+// renovación de lease: si el efecto tarda más que leaseRenewalIntervalMs, se
+// renueva el lease en DB (queue.renew) y se vuelve a correr la carrera —
+// así un efecto lento no pierde su lease y otro worker no lo reclama por
+// error. validateConfig obliga a que el intervalo de renovación sea más
+// corto que el TTL del lease, o esta renovación llegaría siempre tarde.
 async function executeWithLeaseRenewal(
   queue: WorkflowQueuePort,
   executor: WorkflowEffectExecutor,
@@ -77,6 +83,12 @@ async function executeClaimedEffect(
   }
 }
 
+// El motor de workflows durables: un loop que reclama efectos pendientes de
+// la cola (queue.claim, con lease exclusivo por workerId), los ejecuta, y
+// persiste el resultado (complete/fail) — todo esto sobrevive un crash del
+// proceso que lo corre, porque el estado real vive en la cola (DB), no en
+// memoria. recoverExpired() al principio de cada runOne() libera leases de
+// workers que murieron sin completar, para que otro worker los retome.
 export class WorkflowCoordinator {
   private stopping = false;
   private loop: Promise<void> | undefined;
