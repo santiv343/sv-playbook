@@ -52,6 +52,12 @@ export interface CleanVerificationReceipt {
   readonly phases: readonly PreflightPhaseReceipt[];
 }
 
+// El shape completo que produce el preflight "moderno" (review-candidate.ts,
+// vía runSourceWorktreeVerifyCheck en preflight.ts) antes de aceptar un
+// candidato a review. Comparar con legacy-review-verification.ts — F-007 en
+// findings.md documenta que existe un SEGUNDO camino de verificación,
+// más simple y síncrono, que produce un resultado distinto y sólo lo
+// ejercitan los tests (nunca el CLI real).
 export interface PreflightReport {
   packetId: string;
   pr: string | undefined;

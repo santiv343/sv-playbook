@@ -8,6 +8,12 @@ export interface ReviewCandidateNote {
   readonly detail: string;
 }
 
+// El artefacto que un agente arma al terminar el trabajo de un packet y
+// pedir review. workDefinition ata el candidato a una versión PUNTUAL del
+// write_set (evita revisar contra un definition que ya cambió); evidence
+// agrupa todo lo que el reviewer necesita sin re-ejecutar nada (preflight ya
+// corrido, catalog/projections ya generados, notes ya recolectadas). Ver
+// review-candidate.constants.ts para el versionado del JSON Schema (v1→v3).
 export interface ReviewCandidateValue {
   readonly kind: string;
   readonly workDefinition: { readonly id: string; readonly version: number; readonly digest: string };
