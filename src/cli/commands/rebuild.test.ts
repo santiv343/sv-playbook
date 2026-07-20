@@ -70,7 +70,8 @@ test('rebuild failure leaves the live database intact', async () => {
     const io = fakeIo();
     const code = await main(['rebuild', '--force', '--confirm-destructive'], io);
 
-    assert.equal(code, EXIT.GATE_FAIL);
+    assert.equal(code, EXIT.SYSTEM);
+    assert.match(io.errLines.join('\n'), /error:/);
     assert.equal(packetStatus(root, 'REBUILD-SAFE-001'), STATUS.DONE);
   });
 });

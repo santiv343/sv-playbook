@@ -61,3 +61,13 @@ test('constitution set then show round-trips the vision through the store', asyn
     assert.ok(exported.includes(bodyContent), 'exported file must include the original vision body');
   });
 });
+
+test('constitution reports unexpected command failures as actionable system errors', async () => {
+  await inTempRepo(async () => {
+    const io = fakeIo();
+    const code = await main(['constitution', 'set', 'vision', '--body-file', 'missing-body.md'], io);
+
+    assert.equal(code, EXIT.SYSTEM);
+    assert.match(io.errLines.join('\n'), /error: ENOENT:/);
+  });
+});

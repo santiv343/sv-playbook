@@ -127,6 +127,7 @@ export const command: Command = {
         io.err(`error: ${error.message}`);
         return Promise.resolve(EXIT.USAGE);
       }
+      io.err(`error: ${error instanceof Error ? error.message : String(error)}`);
       return Promise.resolve(EXIT.SYSTEM);
     }
   },

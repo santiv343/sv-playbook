@@ -35,7 +35,7 @@ import {
 import { DATABASE_COLUMN } from '../db/schema-vocabulary.constants.js';
 import type { LeaseInfo, PacketStatus, PreparedReviewCandidate, RecoveryReport, ImportResult } from './service.types.js';
 import { transact } from './transaction.js';
-import { assertDependenciesTerminal, currentPacketStatus } from './dependencies.js';
+import { assertDependenciesTerminal, currentPacketStatus, validateDependencyReferences } from './dependencies.js';
 import { loadWorkDefinition, recordWorkDefinition, workDefinitionValue } from './work-definitions.js';
 import { eq } from 'drizzle-orm';
 import { packets } from './schema.constants.js';
@@ -73,6 +73,7 @@ export function createPacket(store: Store, _docRoot: string, def: PacketDefiniti
   const exists = store.db.prepare(EXISTS_SQL).get(def.id);
   if (exists !== undefined) throw new LifecycleError(`packet already exists: ${def.id}`, 'existing packet file? use task import <path>');
   transact(store, () => {
+    validateDependencyReferences(store, def.id, def.dependsOn);
     store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, null, STATUS.DRAFT, body, JSON.stringify(def.writeSet), type ?? '', now(), now());
     for (const depId of def.dependsOn) {
       store.db.prepare('INSERT INTO packet_deps (packet_id, depends_on_id) VALUES (?,?)').run(def.id, depId);
@@ -87,6 +88,7 @@ function upsertPacketFile(store: Store, path: string): PacketImportResult {
   const existing = store.db.prepare(EXISTS_SQL).get(def.id);
   let result: PacketImportResult = PACKET_IMPORT_RESULT.IMPORTED;
   transact(store, () => {
+    validateDependencyReferences(store, def.id, def.dependsOn);
     if (existing !== undefined) {
       const typeRow = store.orm.select({ type: packets.type }).from(packets).where(eq(packets.id, def.id)).get();
       if (typeRow === undefined) throw new LifecycleError(`unknown packet: ${def.id}`);
@@ -131,7 +133,7 @@ export function importPacketFile(store: Store, docRoot: string, pathOrId: string
   if (store.db.prepare(EXISTS_SQL).get(def.id) !== undefined)
     throw new LifecycleError(`packet already exists in DB: ${def.id}`, 'use task amend to update');
 
-  transact(store, () => { store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, filePath, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now()); recordWorkDefinition(store, workDefinitionValue(def, body)); recordTransition(store, def.id, 'none', STATUS.DRAFT); upsertDeps(store, def); store.db.prepare(INSERT_EVENT_SQL).run(null, def.id, EVENT_IMPORTED, `imported from ${filePath}`, now()); });
+  transact(store, () => { validateDependencyReferences(store, def.id, def.dependsOn); store.db.prepare(INSERT_PACKET_SQL).run(def.id, def.title, filePath, STATUS.DRAFT, body, JSON.stringify(def.writeSet), '', now(), now()); recordWorkDefinition(store, workDefinitionValue(def, body)); recordTransition(store, def.id, 'none', STATUS.DRAFT); upsertDeps(store, def); store.db.prepare(INSERT_EVENT_SQL).run(null, def.id, EVENT_IMPORTED, `imported from ${filePath}`, now()); });
 
   return def.id;
 }

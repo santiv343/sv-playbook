@@ -13,6 +13,7 @@ import {
   startPacket,
 } from './service.js';
 import { STATUS } from './service.constants.js';
+import { LifecycleError } from './service.errors.js';
 import { writeServiceTestConfig } from './service.test.support.js';
 
 const DEPENDENCY_ID = {
@@ -25,6 +26,7 @@ const TASK_ID = {
   START: 'TASK-001',
   READY: 'TASK-002',
   DROPPED: 'TASK-003',
+  MISSING: 'TASK-MISSING',
 } as const;
 
 function definition(id: string, dependsOn: readonly string[] = []) {
@@ -77,4 +79,13 @@ test('a dropped dependency unblocks ready and start', async () => {
   const session = ensureSession(store, root);
   startPacket(store, session, root, TASK_ID.DROPPED);
   assert.equal(listPackets(store).find((packet) => packet.id === TASK_ID.DROPPED)?.status, STATUS.ACTIVE);
+});
+
+test('createPacket rejects a dependency reference that does not exist', async () => {
+  const { root, store } = await setup();
+  assert.throws(
+    () => { createPacket(store, root, definition(TASK_ID.MISSING, ['MISSING-001']), 'dependent'); },
+    (error: unknown) => error instanceof LifecycleError && error.message.includes('MISSING-001'),
+  );
+  assert.equal(listPackets(store).find((packet) => packet.id === TASK_ID.MISSING), undefined);
 });
