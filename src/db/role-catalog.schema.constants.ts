@@ -38,6 +38,12 @@ BEGIN
 END;
 `;
 
+// role_catalog_versions + sus triggers "immutable" son el mismo patrón de
+// promotion_* (versionar por snapshot congelado en vez de mutar en el
+// lugar) aplicado al catálogo de roles: cada bootstrap/reconcile
+// (bundled-profile-bootstrap.ts) escribe una versión NUEVA con su propio
+// digest, nunca pisa una existente — role_catalog_activation es la única
+// tabla mutable, apunta a CUÁL versión está vigente ahora.
 export const ROLE_CATALOG_STORE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS responsibilities (
   id TEXT PRIMARY KEY,

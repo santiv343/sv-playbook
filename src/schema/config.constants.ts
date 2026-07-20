@@ -30,6 +30,12 @@ const SourceDebtBaselineSchema = s.object({
   digest: s.string(),
 });
 
+// baseline.* es la config de deuda MONOTÓNICA (PRINCIPLE-015 aplicado):
+// ormApplicationSql/literalComparisons/duplicateStrings guardan un count +
+// digest congelados — cada gate (orm-boundary.ts, literal-comparison.ts,
+// duplicate-string.ts) compara la deuda ACTUAL contra esto y sólo falla si
+// creció. `commit`/`timestamp`/`fingerprints` son metadata de cuándo se
+// congeló, no reglas activas.
 export const BaselineConfigSchema = s.object({
   commit: s.optional(s.string()),
   timestamp: s.optional(s.string()),
@@ -95,6 +101,14 @@ function mergeNested<T extends Record<string, unknown>>(
   return isRecord(raw) ? { ...defaults, ...raw } : { ...defaults };
 }
 
+// Merge manual campo por campo (no `{...DEFAULTS, ...raw}` shallow) porque
+// los objetos anidados (reviewPreflight/tasks/backup/gates) necesitan su
+// PROPIO merge con sus propios defaults — mergeNested — así un usuario que
+// sólo declara `backup: { retention: 5 }` no pierde enabled/maxAgeHours/
+// onEvents por default. Ver F-005 en findings.md: config.constants.ts SÍ
+// hace shallow copy de DEFAULTS, pero acá en el merge real es profundo por
+// campo — dos capas distintas del mismo sistema de config con estrategias
+// de copia diferentes.
 function mergeDefaults(raw: Record<string, unknown>): Record<string, unknown> {
   const merged: Record<string, unknown> = {
     productName: raw.productName ?? DEFAULTS.productName,
