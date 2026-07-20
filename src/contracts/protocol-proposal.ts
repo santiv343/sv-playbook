@@ -63,6 +63,13 @@ interface CompleteFragmentParts {
   invalidExamples: unknown[];
 }
 
+// Parseo "todo o nada" con acumulación de violaciones: cada parseX registra
+// SUS problemas en `violations` (mutación compartida) pero sigue procesando
+// el resto en vez de abortar en el primer error — así un agente que mandó
+// una propuesta con 5 problemas se entera de los 5 en una sola pasada, no
+// uno por reintento. completeFragment() es el punto donde se decide si,
+// pese a las violations acumuladas, hay suficiente estructura como para
+// devolver un objeto tipado (todos los campos !== undefined) o no.
 function completeFragment(parts: FragmentParts): parts is CompleteFragmentParts {
   return Object.values(parts).every((value) => value !== undefined);
 }
