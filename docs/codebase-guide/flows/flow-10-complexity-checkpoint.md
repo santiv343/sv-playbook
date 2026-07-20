@@ -4,6 +4,16 @@
 > Profundiza el gate mencionado en el flujo 3 (`assertCheckpointClear`,
 > el primer gate que corre en `validateMove`).
 
+> ⚠️ **Hallazgo crítico agregado después de escribir este flujo, CONFIRMADO
+> EN VIVO** (ver `findings.md` F-006): el paso 7 de abajo (`decision
+> answer`, la parte donde un humano aprueba) probablemente rechaza a
+> cualquier humano real por default — invierte el modelo de confianza de
+> `destructive-gate.ts`. Repro real en este mismo repo: sesión de
+> terminal sin `.svp-session-role` → `decision answer` responde `error:
+> decision DEC-001 can only be answered in a human session`. Si esto no
+> se corrige, el checkpoint de complejidad completo (no sólo un detalle)
+> es un callejón sin salida para el caso de uso más común.
+
 ## Qué vamos a estudiar
 
 El mecanismo que obliga a un humano a aprobar explícitamente cuando un

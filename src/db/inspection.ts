@@ -51,6 +51,14 @@ function buildLockProbeScript(dbPath: string): string {
   return `const{DatabaseSync}=require('node:sqlite');const busy=/locked|busy/i;const db=new DatabaseSync(${JSON.stringify(dbPath)});let code=${LOCK_PROBE_EXIT.ERROR};try{db.exec(${JSON.stringify(BEGIN_IMMEDIATE_SQL)});db.exec(${JSON.stringify(ROLLBACK_SQL)});code=${LOCK_PROBE_EXIT.ACQUIRED};}catch(error){if(busy.test(String(error&&error.message)))code=${LOCK_PROBE_EXIT.HELD};}finally{db.close();}process.exit(code);`;
 }
 
+// Usado por el daemon al arrancar (flujo 6) para confirmar que REALMENTE
+// tiene el lock exclusivo, no sólo que better-sqlite3 no tiró error. La
+// sonda corre en un CHILD PROCESS a propósito: los locks fcntl de POSIX
+// son por-proceso, así que una conexión de sondeo abierta en el MISMO
+// proceso que ya tiene el lock lo "adquiriría" sin problema (fcntl no se
+// bloquea a sí mismo) y el chequeo daría un falso negativo en Linux/macOS
+// — en un proceso hijo separado, el conflicto es real en cualquier
+// plataforma.
 export function assertExclusiveStoreLock(dbPath: string): void {
   const result = spawnSync(process.execPath, [NODE_EVAL_FLAG, buildLockProbeScript(dbPath)], {
     encoding: TEXT_ENCODING.UTF8,
