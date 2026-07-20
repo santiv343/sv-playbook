@@ -24,7 +24,7 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 3. [`flows/flow-03-packet-lifecycle.md`](./flows/flow-03-packet-lifecycle.md) — ciclo de vida de un packet ✅
 4. [`flows/flow-04-preflight-review-promotion.md`](./flows/flow-04-preflight-review-promotion.md) — preflight + review + promotion ✅
 5. [`flows/flow-05-context-coldstart.md`](./flows/flow-05-context-coldstart.md) — cold-start de contexto (`instructions --write`) ✅
-6. `flows/flow-06-daemon-lifecycle.md` — daemon: ownership, forwarding, shutdown — *pendiente*
+6. [`flows/flow-06-daemon-lifecycle.md`](./flows/flow-06-daemon-lifecycle.md) — daemon: ownership, forwarding, shutdown ✅ (gap real documentado: ver nota al inicio del archivo)
 7. `flows/flow-07-serve-console.md` — consola operativa HTTP — *pendiente*
 8. `flows/flow-08-gateway-dispatch.md` — dispatch a agentes externos — *pendiente*
 9. `flows/flow-09-error-handling.md` — manejo de errores (transversal) — *pendiente*
@@ -32,11 +32,11 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 11. `flows/flow-11-secondary-flows.md` — backup/restore/rebuild, sprints, adopt, reconcile — *pendiente*
 
 ### Cierre
-- `findings.md` — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — *pendiente*
+- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — 1 hallazgo hasta ahora (F-001)
 
 ## Estado del recorrido
 
-**Etapa actual: 6 — Cold-start de contexto.** Completada, ver `flows/flow-05-context-coldstart.md`.
+**Etapa actual: 7 — Daemon lifecycle.** Completada, ver `flows/flow-06-daemon-lifecycle.md`. Encontró un gap real sin resolver en `main` (ver nota al inicio del archivo).
 
 ## Reglas de esta guía (para quien la siga escribiendo)
 
