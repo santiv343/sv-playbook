@@ -91,8 +91,10 @@ en las etapas donde correspondan.
 A diferencia de esta guía (que documenta desde afuera), también se están
 agregando comentarios explicativos DENTRO del código fuente (`src/`), en
 español, explicando el "por qué" de cada pieza no obvia. Estado a
-2026-07-20: **~165 archivos comentados** de los ~367 no-test totales
-(`docs(comments): ...` en el historial de git de la rama de esta guía).
+2026-07-20: **cobertura completa de `src/`** — todos los archivos de
+producción no-test tienen comentario explicativo (`docs(comments): ...` en
+el historial de git de la rama de esta guía; único archivo sin comentar,
+deliberadamente, es `cli/commands/__fixture__.ts`, un fixture de test).
 Prioridad de cobertura: primero los archivos con lógica real (funciones con
 invariantes no obvias, compare-and-swap, migraciones), después
 `.constants.ts`/`.types.ts` sólo cuando agregan contexto que no está ya en

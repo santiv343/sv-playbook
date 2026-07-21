@@ -35,18 +35,14 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 11. [`flows/flow-11-secondary-flows.md`](./flows/flow-11-secondary-flows.md) — backup/restore/rebuild, sprints, adopt, reconcile ✅
 
 ### Cierre
-- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — F-001..F-010 activos, F-011 retirado (autocorregido con más evidencia)
+- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — F-001..F-010, F-012, F-013 activos; F-011 retirado (autocorregido con más evidencia)
 
 ## Estado del recorrido
 
-**Los 11 flujos planificados en la Etapa 1 están completos.** Guía
-terminada en su primera pasada: fundamentos (arquitectura, mapa de
-repositorio, glosario, `explicacion-simple.md` a nivel producto) + 11
-flujos + `findings.md` con 10 hallazgos activos (F-001..F-010, no
-implementados) y un F-011 que se investigó, se documentó y se retiró en el
-mismo día tras encontrar evidencia contraria (ver sección siguiente).
-El código fuente (`src/`) también tiene comentarios explicativos en
-español agregados en **~96 archivos** durante esta sesión — ver commits
+**Los 11 flujos planificados en la Etapa 1 están completos**, y el código
+fuente (`src/`) tiene **cobertura completa de comentarios explicativos en
+español** — todo archivo de producción no-test explica su "por qué" (único
+archivo sin comentar, a propósito, es un fixture de test). Ver commits
 `docs(comments): ...` en la rama `docs/codebase-guide-and-comments-2026-07-20`.
 
 **Se agregó PRINCIPLE-016 — "Correctness is cross-domain, not
@@ -69,9 +65,14 @@ store SQLite huérfano en `.svp/`, congelado desde antes de la migración
 externa; **F-009** (confirmado y corregido en el momento) — el header de
 `content/principles.md` decía la dirección de generación al revés;
 **F-010** — `evidenceRequired` es una lista de ítems distintos pero el
-gate sólo verifica si existe evidencia genérica, nunca cruza contenido.
-Todos también quedaron registrados en `docs/backlog.md` (IDEA-124..126)
-para el sistema real de tracking del proyecto, no sólo en esta guía.
+gate sólo verifica si existe evidencia genérica, nunca cruza contenido;
+**F-012** — `persistReviewCandidate` escribe 3 filas relacionadas sin
+transacción, mientras `closePromotedTask` (mismo tipo de problema) sí usa
+`transact()`; **F-013** — `withStore`/`withStoreAsync` está compartido en
+`cli/store.ts`, pero 8 de 10 comandos CLI redefinen su propia copia local
+idéntica en vez de importarla. Todos también quedaron registrados en
+`docs/backlog.md` (IDEA-124..126) para el sistema real de tracking del
+proyecto, no sólo en esta guía.
 
 **PRINCIPLE-016 también se aplicó sobre sí mismo, y falló una vez — eso es
 la prueba de que funciona.** F-011 se anotó inicialmente como "un archivo
@@ -86,9 +87,11 @@ lección, no borrado silenciosamente.
 
 Trabajo posterior sugerido (no iniciado): confirmar F-007/F-010 con
 ejecución real (no sólo lectura de código) y decidir su fix; decidir sobre
-el resto de `findings.md`; seguir cruzando patrones entre dominios en vez
-de sólo comentar archivo por archivo; extender los comentarios en español
-al resto del codebase (~270 archivos todavía sin tocar).
+el resto de `findings.md` (incluidos F-012 y F-013); seguir cruzando
+patrones entre dominios en vez de sólo comentar archivo por archivo. La
+extensión de comentarios en español a `src/` ya está completa — el
+trabajo pendiente ahora es de DECISIÓN (qué findings arreglar) más que de
+cobertura.
 
 ## Reglas de esta guía (para quien la siga escribiendo)
 
