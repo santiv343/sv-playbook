@@ -1,5 +1,59 @@
 # Hallazgos
 
+## F-018 (aplicando PRINCIPLE-016, pasada profunda): `review/` ↔ `gateway/` y `gateway/` ↔ `orchestration/` son dependencias CIRCULARES a nivel de dominio, contradiciendo la separación que `architecture.md` describe
+
+**Encontrado en**: auditoría de dirección de imports entre dominios (¿quién
+depende de quién?), 2026-07-21. Verificado con grep de imports reales, no
+sólo tipos.
+
+**Qué pasa**: `architecture.md`/`repository-map.md` describen `gateway/`
+como "integración con agentes externos" y `orchestration/` como "el motor
+de workflows durables" — dos capas separadas, con `orchestration/`
+orquestando y `gateway/` ejecutando. En la práctica:
+
+- `review/review-candidate.ts` importa `gateway/schema.constants.ts`
+  (tablas Drizzle).
+- `gateway/run-spec.ts` y `gateway/run-retry.ts` importan
+  `review/review-candidate.ts` → `resolveManualInput` (lógica de negocio,
+  no sólo tipos).
+- `orchestration/` importa de `gateway/` en 8 archivos (`effect-executors.ts`,
+  `human-intake.ts`, `observability.ts`, `runtime.ts`, etc.) — razonable,
+  el motor necesita ejecutar vía adapters.
+- pero `gateway/` importa de vuelta de `orchestration/` en 5 archivos
+  (`gateway-recovery.ts`, `profiles.ts`, `run-spec.loader.ts`,
+  `run-spec.ts`) — la dirección opuesta.
+
+**Por qué importa**: con imports en ambas direcciones, ninguno de los tres
+dominios se puede entender, testear o extraer de forma aislada — cambiar
+un tipo en `gateway/gateway.types.ts` puede repercutir en `orchestration/`
+Y en `review/` simultáneamente, y viceversa. No es necesariamente un BUG
+(el sistema funciona, TypeScript/ESM no bloquea ciclos de módulos así), es
+una violación de la separación de capas que la propia documentación
+declara — la clase de hallazgo que sólo aparece cruzando "qué dice la
+arquitectura declarada" contra "qué hace el import real", que es
+exactamente PRINCIPLE-016 aplicado a la estructura del código en vez de a
+su lógica.
+
+**Nota de honestidad**: `review/review-candidate.ts` → `gateway/schema.constants.ts`
+es acoplamiento de bajo riesgo real (son definiciones de tabla, no lógica);
+`gateway/run-spec.ts` → `review/review-candidate.ts` (`resolveManualInput`)
+es el que importa de verdad — es lógica de negocio cruzando la frontera
+declarada. El caso `gateway/` ↔ `orchestration/` es más estructural: 8
+archivos en un sentido, 5 en el otro, sugiere que en la práctica son un
+único subsistema repartido en dos carpetas por convención de tamaño de
+archivo, no dos capas independientes.
+
+**Sugerencia (no implementada)**: o se documenta explícitamente que
+`gateway/`↔`orchestration/` son un mismo subsistema lógico (y
+`architecture.md` deja de describirlos como capas separadas), o se
+identifica qué pieza de `gateway/` necesita algo de `orchestration/` y se
+extrae a un tercer módulo compartido (p. ej. tipos puros) para romper el
+ciclo. Para `review/`↔`gateway/`, el import de `resolveManualInput` desde
+`gateway/run-spec.ts` sugiere que la resolución de "manual input" podría
+vivir en un lugar neutral en vez de en `review/`.
+
+---
+
 ## F-016 (aplicando PRINCIPLE-016, pasada profunda): dos primitivas de transacción con locking DISTINTO coexisten, y `orchestration/` usa la que el propio codebase documentó como insegura para su propio caso de uso
 
 **Encontrado en**: auditoría de "cómo se resuelve el mismo problema
