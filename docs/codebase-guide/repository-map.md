@@ -21,7 +21,12 @@ sv-playbook/
 └── .github/workflows/ci.yml   # CI: verify en ubuntu-latest + windows-latest
 ```
 
-## `src/` — los 24 dominios
+## `src/` — los 24 "dominios" (22 de producto real — ver nota)
+
+> `redteam/` (12 archivos) es 100% tests + soporte de tests, sin código de
+> producto; `docs/` está vacío salvo tests. Contarlos junto a `tasks/` u
+> `orchestration/` infla la superficie real — ver
+> [`architecture-review.md`](./architecture-review.md#8-redteam-no-es-un-dominio-de-producto--es-100-tests).
 
 Convención por dominio (no todos tienen los 5 archivos, según necesidad):
 `<dominio>.ts` (lógica) · `.types.ts` · `.constants.ts` · `.errors.ts` ·

@@ -1,5 +1,34 @@
 # Hallazgos
 
+## F-015 (aplicando PRINCIPLE-016, pasada de simplificación): tres helpers de CLI reimplementados por archivo en vez de un módulo compartido — mismo defecto raíz que F-004 y F-013
+
+**Encontrado en**: barrido de simplificación arquitectónica sobre `cli/commands/`, 2026-07-21.
+
+**Qué pasa**: además de F-004 (`class UsageError extends Error {}` duplicada
+en **14** archivos) y F-013 (`withStore`/`withStoreAsync` redefinida en 8
+archivos en vez de importarse de `cli/store.ts`), hay un TERCER helper con
+el mismo problema: `function required(value, name)` (valida string no
+vacío, lanza `UsageError`) está reimplementado idéntico en **6** archivos
+(`context.ts`, `contract.ts`, `dispatch.ts`, `execution-profile.ts`,
+`role.ts`, `workflow-policy.ts`), más variantes con otro nombre pero
+la misma lógica (`stringValue` en `sprint.ts`/`constitution.ts`).
+
+**Por qué importa, y por qué es UN hallazgo y no tres**: los tres
+(`UsageError`, `withStore`, `required`) tienen la misma causa raíz — no
+existe un módulo `cli/command-helpers.ts` (o similar) con las primitivas
+comunes de un comando CLI, así que cada archivo nuevo las reinventa. Es el
+ejemplo más claro de PRINCIPLE-011 violado en todo el codebase: 14+8+6 = 28
+copias de 3 funciones que deberían tener una sola fuente.
+
+**Sugerencia (no implementada)**: crear `src/cli/command-helpers.ts` (o
+extender `cli/store.ts`) exportando `UsageError`, `required`, `withStore`,
+`withStoreAsync`; migrar los ~14 comandos afectados a importarlos; borrar
+las copias locales. Riesgo bajo (funciones puras, comportamiento idéntico
+verificado por lectura), pero toca 14 archivos — candidato a un packet
+dedicado, no un cambio suelto.
+
+---
+
 ## F-014 (aplicando PRINCIPLE-016, pasada de simplificación): `enforcement/` (comando `enforce`) no está conectado a ningún pipeline automático
 
 **Encontrado en**: barrido de simplificación tras completar el mapa
