@@ -1,5 +1,38 @@
 # Hallazgos
 
+## F-014 (aplicando PRINCIPLE-016, pasada de simplificación): `enforcement/` (comando `enforce`) no está conectado a ningún pipeline automático
+
+**Encontrado en**: barrido de simplificación tras completar el mapa
+comentado — cruzando cada dominio pequeño contra sus callers reales,
+2026-07-20.
+
+**Qué pasa**: `src/enforcement/conformance.ts` (`runConformance`) es un
+verificador determinístico de conformidad (contract+schema+profile, sin
+tocar la DB) expuesto vía `sv-playbook enforce`. Confirmado con grep: el
+único caller de `enforcement/` fuera de sí mismo es `cli/commands/enforce.ts`;
+el único caller de `enforce.ts` es su propio test. No aparece en
+`VERIFICATION_MANIFEST` (verification/verification.constants.ts, que sí
+incluye `PLAYBOOK: node bin/sv-playbook.js check`), ni en
+`.github/workflows/ci.yml`, ni en ningún script de `scripts/`.
+
+**Por qué importa**: es un dominio completo (3 archivos + tests) que
+funciona, está probado, pero nadie lo ejecuta automáticamente — ni CI, ni
+verify, ni ningún otro comando lo dispara. O es una herramienta manual de
+auditoría puntual (uso legítimo, pero sin documentar como tal en ningún
+lado) o es peso muerto relativo al presupuesto de complejidad de TIER-2
+(PRINCIPLE-005). No se puede saber cuál de las dos sin una decisión del
+founder — a diferencia de F-007/F-008 (donde el código muerto es claro),
+acá el código FUNCIONA, sólo no está enganchado a nada.
+
+**Sugerencia (no implementada)**: decidir entre (a) engancharlo a
+`VERIFICATION_MANIFEST` si el chequeo debería correr siempre, (b)
+documentarlo explícitamente como herramienta manual (en `docs/how-it-works.md`
+o similar), o (c) si no tiene un caso de uso real vigente, es candidato de
+`PRINCIPLE-015` (subtracción con la misma mecánica que una adición —
+métricas de no-uso ya están acá: cero invocaciones fuera de tests).
+
+---
+
 ## F-013 (aplicando PRINCIPLE-016): `withStore`/`withStoreAsync` existe compartido en `cli/store.ts`, pero 8 comandos redefinen su propia copia local
 
 **Encontrado en**: comentando comandos CLI en español y notando el mismo
