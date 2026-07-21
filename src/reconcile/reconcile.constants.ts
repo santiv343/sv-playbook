@@ -1,3 +1,6 @@
+// PR_MERGE_STATE viene literal de la API de GitHub (mergeStateStatus) —
+// BEHIND/DIRTY/BLOCKED son señales de que un PR necesita `update-branch`
+// antes de poder mergearse; esto es lo que decide qué ReconcilerRow generar.
 export const PR_STATE = { OPEN: 'OPEN', MERGED: 'MERGED', CLOSED: 'CLOSED' } as const;
 export const PR_MERGE_STATE = {
   BEHIND: 'BEHIND',

@@ -12,6 +12,12 @@ import { roleContracts } from '../roles/schema.constants.js';
 
 const ARTIFACT_CONTRACT_STATUSES = [ARTIFACT_CONTRACT_STATUS.ACTIVE, ARTIFACT_CONTRACT_STATUS.RETIRED] as const;
 
+// artifactContracts es el REGISTRO central de todos los contratos
+// (review-candidate, review-verdict, protocolos) — cualquier dominio que
+// necesite validar un artifact contra su schema pasa por acá primero
+// (managed-contracts.ts la usa vía ensureManagedArtifactContract).
+// roleContracts se re-exporta desde roles/schema.constants.ts para que el
+// resto de orchestration/ lo importe desde un único lugar.
 export const artifactContracts = sqliteTable('artifact_contracts', {
   ref: text('ref').primaryKey(),
   schemaJson: text('schema_json').notNull(),
