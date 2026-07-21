@@ -26,39 +26,27 @@ día se mecaniza. Este documento es la vista consolidada.
 
 ---
 
-## ⚠️ Los dos hallazgos más serios de toda la pasada
+## ⚠️ Correcciones a esta misma revisión (2026-07-21, cruzando contra mis propios comentarios ya escritos en el código)
 
-### F-016 — dos primitivas de transacción con locking distinto, y la más riesgosa está donde más importa
+**F-016 estaba sobre-dimensionado.** Al cruzar el hallazgo contra mi
+propio comentario ya escrito en `db/store.pragmas.ts`, encontré que
+`openStore()` aplica `PRAGMA locking_mode = EXCLUSIVE` — toma el lock
+exclusivo del ARCHIVO completo al abrir la conexión, no en la primera
+escritura. Sumado a que `better-sqlite3` es síncrono (no hay interleaving
+posible dentro de un mismo proceso Node), el escenario de riesgo que
+describí (`claimNextEffect` fallando al escalar de lectura a escritura)
+requiere DOS conexiones SQLite reales compitiendo, y eso está
+estructuralmente cerrado por dos mecanismos independientes ya en el
+código — no es sólo "hoy nadie corre dos daemons". Ver el detalle
+completo, con la versión original preservada, en `findings.md` F-016.
+**Lo que queda real**: la inconsistencia entre las dos primitivas de
+transacción sigue violando PRINCIPLE-011 (claridad/mantenibilidad), pero
+ya NO es el hallazgo de mayor severidad de la pasada — baja varios
+escalones en la prioridad sugerida más abajo.
 
-El codebase tiene DOS formas de envolver una transacción SQLite, con
-semántica de locking **distinta**:
+## ⚠️ El hallazgo más serio de toda la pasada (tras la corrección de F-016)
 
-1. `transact(store, fn)` (`tasks/transaction.ts`) → `BEGIN IMMEDIATE`
-   explícito. El propio comentario del archivo dice por qué: evita que una
-   transacción que empieza leyendo falle al intentar escalar a escritura
-   si otra ya tomó el lock mientras tanto. 6 archivos (`tasks/`,
-   `promotion/`, `sprints/`).
-2. `store.orm.transaction(fn)` (Drizzle nativo) → sin segundo argumento en
-   **ninguno** de los 23 call sites verificados, lo que significa
-   `DEFERRED` (confirmado leyendo el source de Drizzle:
-   `nativeTx[config.behavior ?? "deferred"](tx)`) — exactamente el modo
-   que el punto 1 existe para evitar. 12 archivos (`gateway/`,
-   `orchestration/`, `roles/`).
-
-**El caso concreto**: `claimNextEffect`
-(`orchestration/repository.claims.ts`) — la función que un worker del
-coordinator de workflows usa para reclamar el próximo efecto pendiente —
-hace un `SELECT` seguido de una escritura condicional dentro de una
-transacción DEFERRED. Es el patrón exacto que `transact()` fue diseñado
-para evitar. El coordinator declara soportar múltiples workers
-concurrentes (`leaseOwner`/`workerId`, polling) — no es hipotético.
-
-**Por qué no explotó todavía**: bajo el modelo actual de single-blessed-writer
-(un solo proceso daemon escribiendo), no hay dos conexiones SQLite reales
-compitiendo por el lock al mismo tiempo. El riesgo es LATENTE — se activa
-si alguna vez hay más de un proceso escritor contra el mismo store.
-
-### F-018 — `review/` ↔ `gateway/` y `gateway/` ↔ `orchestration/` son dependencias circulares, contradiciendo la separación que la documentación describe
+### F-018 — `review/` ↔ `gateway/` y `gateway/` ↔ `orchestration/` son dependencias circulares, contradiciendo la separación que la documentación describe — `review/` ↔ `gateway/` y `gateway/` ↔ `orchestration/` son dependencias circulares, contradiciendo la separación que la documentación describe
 
 `architecture.md`/`repository-map.md` describen `gateway/` como
 "integración con agentes externos" y `orchestration/` como "el motor de
@@ -78,8 +66,7 @@ independientes — vale la pena decidir si `architecture.md` debería dejar
 de describirlos como capas separadas, o si conviene romper el ciclo
 extrayendo lo compartido a un tercer módulo.
 
-Ambos hallazgos, con el detalle completo y las sugerencias, están en
-`findings.md` (F-016, F-018).
+Detalle completo y sugerencia en `findings.md` F-018.
 
 ---
 
@@ -259,25 +246,26 @@ consistentemente bien en todo el codebase:
 
 ---
 
-## Prioridad sugerida (si hay que elegir un orden)
+## Prioridad sugerida (si hay que elegir un orden) — actualizada tras la corrección de F-016
 
-1. **F-016** (transacciones DEFERRED vs IMMEDIATE) — el único con riesgo de
-   CORRECCIÓN bajo concurrencia real. Hoy latente, pero el tipo de bug
-   que sólo aparece en producción bajo carga. Merece decisión consciente
-   aunque no se toque código hoy.
-2. **F-006** (modelo de confianza de identidad) — segundo en importancia,
-   superficie de seguridad/autoridad real, confirmado en vivo.
-3. **F-018** (dependencias circulares review/gateway/orchestration) —
+1. **F-006** (modelo de confianza de identidad) — ahora el #1: superficie
+   de seguridad/autoridad real, confirmado en vivo, sin mitigante
+   estructural como el que neutralizó F-016.
+2. **F-018** (dependencias circulares review/gateway/orchestration) —
    estructural, no urgente de arreglar, pero sí de decidir/documentar
    antes de que el acoplamiento crezca más.
-4. **F-015** (helpers de CLI) — el fix de menor riesgo y mayor limpieza
+3. **F-015** (helpers de CLI) — el fix de menor riesgo y mayor limpieza
    inmediata.
-5. **F-007** (camino legacy muerto) — subtracción real de PRINCIPLE-015
+4. **F-007** (camino legacy muerto) — subtracción real de PRINCIPLE-015
    si se decide borrar.
-6. **F-014** (enforcement/ desconectado) — bajo riesgo, alto valor de
+5. **F-014** (enforcement/ desconectado) — bajo riesgo, alto valor de
    claridad.
-7. **F-012** (transacción faltante) y **F-010** (evidenceRequired) —
+6. **F-012** (transacción faltante) y **F-010** (evidenceRequired) —
    arreglos de fondo, requieren más diseño.
+7. **F-016** (transacciones DEFERRED vs IMMEDIATE) — bajó de #1 a acá tras
+   la corrección: el riesgo de concurrencia real está neutralizado por
+   `LOCKING_EXCLUSIVE` + naturaleza síncrona de better-sqlite3. Queda como
+   inconsistencia de claridad/PRINCIPLE-011, no de corrección.
 8. **F-017** (runtime inyectable inconsistente) — menor impacto de toda
    la lista.
 

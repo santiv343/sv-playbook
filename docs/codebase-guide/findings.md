@@ -54,7 +54,59 @@ vivir en un lugar neutral en vez de en `review/`.
 
 ---
 
-## F-016 (aplicando PRINCIPLE-016, pasada profunda): dos primitivas de transacción con locking DISTINTO coexisten, y `orchestration/` usa la que el propio codebase documentó como insegura para su propio caso de uso
+## F-016 — CORREGIDO 2026-07-21 (autocorrección con evidencia propia): la inconsistencia es real, el riesgo de concurrencia que le atribuí NO — dos mecanismos independientes ya lo neutralizan estructuralmente
+
+**⚠️ Severidad rebajada tras cruzar este hallazgo contra mis PROPIOS
+comentarios ya escritos en el código** (`db/store.pragmas.ts`), a pedido
+explícito del founder de contrastar los hallazgos contra el resto del
+material producido en la sesión. Dejo la versión original íntegra abajo,
+tachada en efecto por esta corrección, porque el error de razonamiento en
+sí es información — es exactamente el tipo de cosa que PRINCIPLE-016 pide
+verificar, y yo mismo no lo había cruzado contra mi propio trabajo previo.
+
+**Lo que encontré al recruzar**: `openStore()` (`db/store.ts:357`, el
+camino real de apertura para escritura — usado por el daemon y todo
+comando que muta estado) llama `applyExclusiveStorePragmas()`
+(`db/store.pragmas.ts`), que aplica `PRAGMA locking_mode = EXCLUSIVE`.
+Bajo ese modo, SQLite toma el lock EXCLUSIVO del archivo completo apenas
+se ABRE la conexión — no en la primera escritura — y lo retiene mientras
+la conexión viva. Un segundo intento de abrir el mismo archivo para
+escritura (desde cualquier proceso) falla en `openStore()` mismo, nunca
+llega a ejecutar una transacción.
+
+Sumado a que `better-sqlite3` es **síncrono** (cada `.get()`/`.run()`/
+`.transaction()` bloquea el event loop de Node hasta terminar), dentro de
+UN solo proceso no puede haber dos transacciones "concurrentes" real —
+cuando `claimNextEffect` corre su `SELECT` + `UPDATE` dentro de
+`store.orm.transaction()`, ningún otro código JS (otro handler HTTP, otro
+tick del coordinator) puede intercalarse en el medio, porque JS es
+single-threaded y la llamada es bloqueante.
+
+**Conclusión honesta**: el escenario que describí (`claimNextEffect`
+falla al escalar de lectura a escritura porque otra transacción tomó el
+lock mientras tanto) requiere DOS conexiones SQLite reales compitiendo
+por el lock de escritura en el mismo instante — y eso está estructuralmente
+prevenido por DOS mecanismos independientes ya en el código, no por
+casualidad de que "hoy nadie corre dos daemons": `LOCKING_EXCLUSIVE` a
+nivel de archivo, y la naturaleza síncrona de better-sqlite3 a nivel de
+proceso. El riesgo no es "latente, se activa si se viola el modelo
+single-writer" como escribí originalmente — es **estructuralmente cerrado
+mientras estos dos mecanismos sigan en pie**, que es una garantía bastante
+más fuerte de lo que mi primera lectura reconoció.
+
+**Lo que SIGUE siendo un hallazgo real, más chico**: la inconsistencia de
+que dos primitivas de transacción distintas coexistan (`transact()` con
+`BEGIN IMMEDIATE` explícito vs. `store.orm.transaction()` DEFERRED por
+default) sigue siendo una violación de PRINCIPLE-011 — dos formas de
+resolver la misma pregunta sin que quede documentado por qué difieren. Pero
+es una inconsistencia de CLARIDAD/mantenibilidad, no de corrección bajo
+concurrencia real hoy. Baja de prioridad 1 a algo mucho más modesto — ver
+`architecture-review.md` para la re-priorización.
+
+---
+
+<details>
+<summary>Versión original de F-016 (mantenida por transparencia, NO refleja el estado actual del hallazgo — ver la corrección arriba)</summary>
 
 **Encontrado en**: auditoría de "cómo se resuelve el mismo problema
 —transacciones concurrentes— en cada dominio", cruzando 33 archivos con
@@ -123,6 +175,8 @@ el IMMEDIATE en `orchestration/`/`gateway/`/`roles/` y por qué SÍ hace
 falta en `tasks/`/`promotion/`/`sprints/` (si la razón real es "packet
 lifecycle tiene otro patrón de acceso concurrente", vale la pena que quede
 escrito, no implícito).
+
+</details>
 
 ---
 
