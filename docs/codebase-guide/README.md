@@ -35,7 +35,8 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 11. [`flows/flow-11-secondary-flows.md`](./flows/flow-11-secondary-flows.md) — backup/restore/rebuild, sprints, adopt, reconcile ✅
 
 ### Cierre
-- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — F-001..F-010, F-012, F-013 activos; F-011 retirado (autocorregido con más evidencia)
+- [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — F-001..F-010, F-012..F-015 activos; F-011 retirado (autocorregido con más evidencia)
+- [`architecture-review.md`](./architecture-review.md) — síntesis de nivel arquitecto: qué simplificar/quitar, priorizado, con los patrones que SÍ están bien y no hay que tocar
 
 ## Estado del recorrido
 
