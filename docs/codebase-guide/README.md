@@ -37,6 +37,7 @@ archivo de `flows/` es autocontenido y cita rutas de archivo reales.
 ### Cierre
 - [`findings.md`](./findings.md) — hallazgos, deuda y mejoras sugeridas (documentado, **no implementado**) — F-001..F-010, F-012..F-018 activos; F-011 retirado (autocorregido con más evidencia). **F-016 es el más serio**: dos primitivas de transacción con locking distinto, riesgo de concurrencia latente en el motor de workflows. **F-018**: dependencias circulares reales entre `review/`↔`gateway/`↔`orchestration/`.
 - [`architecture-review.md`](./architecture-review.md) — síntesis de nivel arquitecto: qué simplificar/quitar, priorizado, con los patrones que SÍ están bien y no hay que tocar
+- [`cross-reference.md`](./cross-reference.md) — los 18 hallazgos cruzados contra `docs/backlog.md`, `content/taste/human.md` y `content/principles.md`: qué ya estaba trackeado, qué se solapa con 4 planes ya dispatcheados el 2026-07-19, y una corrección real a F-001
 
 ## Estado del recorrido
 

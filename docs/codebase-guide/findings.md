@@ -643,6 +643,20 @@ activo; se corrigió (commit `c942090`) tras detectar la discrepancia.
 `fix/serve-shutdown-lifecycle-v2` sigue siendo válida contra el `main`
 actual y, si es así, abrir PR y mergearla.
 
+**Actualización 2026-07-21 (cruce contra `docs/backlog.md` y planes en
+curso)**: esta misma rama/hallazgo ya tuvo un intento de reproducción en
+vivo el 2026-07-19
+(`docs/superpowers/plans/2026-07-19-serve-shutdown-lifecycle-v2.md`,
+paquete 3) — resultado INCONCLUSO, no confirmatorio ni refutatorio. La
+reproducción vía SIGKILL resultó irreproducible (daemon y `serve` corren
+en el MISMO proceso, no hay daemon hijo que matar aislado), pero la
+reproducción real (POST `/api/v1/shutdown` autenticado, observar si :3131
+sigue vivo) nunca se ejecutó — bloqueada por tooling (`npm run build`
+excedió 60s). El plan se detuvo explícitamente antes de tocar código. Ver
+`docs/codebase-guide/cross-reference.md` para el detalle completo. F-001
+pasa de "confirmado, sólo falta mergear" a "confirmado por lectura de
+código, reproducción en vivo pendiente de un segundo intento".
+
 ## F-002: la consola `serve` reenvía el historial COMPLETO de eventos de workflow en cada tick de SSE, sin acotar
 
 **Encontrado en**: Etapa 8 (`flows/flow-07-serve-console.md`), 2026-07-20.
