@@ -27,6 +27,47 @@ elegir 5 cosas para mejorar el codebase esta semana, serían éstas".
 
 ---
 
+## ⚠️ El hallazgo más serio de toda la pasada: F-016 — dos primitivas de transacción con locking distinto, y la más riesgosa está donde más importa
+
+Antes de las categorías: esto merece leerse aparte porque no es deuda
+cosmética, es un riesgo de concurrencia latente en el motor de workflows.
+
+El codebase tiene DOS formas de envolver una transacción SQLite, con
+semántica de locking **distinta**:
+
+1. `transact(store, fn)` (`tasks/transaction.ts`) → `BEGIN IMMEDIATE`
+   explícito. El propio comentario del archivo dice por qué: evita que una
+   transacción que empieza leyendo falle al intentar escalar a escritura
+   si otra ya tomó el lock mientras tanto. 6 archivos (`tasks/`,
+   `promotion/`, `sprints/`).
+2. `store.orm.transaction(fn)` (Drizzle nativo) → sin segundo argumento en
+   **ninguno** de los 23 call sites verificados, lo que significa
+   `DEFERRED` (confirmado leyendo el source de Drizzle:
+   `nativeTx[config.behavior ?? "deferred"](tx)`) — exactamente el modo
+   que el punto 1 existe para evitar. 12 archivos (`gateway/`,
+   `orchestration/`, `roles/`).
+
+**El caso concreto**: `claimNextEffect`
+(`orchestration/repository.claims.ts`) — la función que un worker del
+coordinator de workflows usa para reclamar el próximo efecto pendiente —
+hace un `SELECT` seguido de una escritura condicional dentro de una
+transacción DEFERRED. Es el patrón exacto que `transact()` fue diseñado
+para evitar. El coordinator declara soportar múltiples workers
+concurrentes (`leaseOwner`/`workerId`, polling) — no es hipotético.
+
+**Por qué no explotó todavía**: bajo el modelo actual de single-blessed-writer
+(un solo proceso daemon escribiendo), no hay dos conexiones SQLite reales
+compitiendo por el lock al mismo tiempo. El riesgo es LATENTE — se activa
+si alguna vez hay más de un proceso escritor contra el mismo store.
+
+**Esto es exactamente lo que PRINCIPLE-016 busca**: la misma pregunta
+("¿cómo protejo lectura-luego-escritura bajo escritores concurrentes?")
+resuelta de dos formas incompatibles, sin que ninguna documente por qué
+difiere de la otra. Ver `findings.md` F-016 para el detalle completo y la
+sugerencia de qué decidir.
+
+---
+
 ## Categoría 1 — Confirmado y accionable ya
 
 ### 1. Helpers de CLI triplicados (F-004 + F-013 + F-015)
@@ -77,6 +118,15 @@ funciona y está probado, pero: no aparece en `VERIFICATION_MANIFEST`
 (el manifiesto real de `npm run verify`), no aparece en
 `.github/workflows/ci.yml`, no lo llama ningún script. Cero invocaciones
 fuera de su propio test.
+
+### 4. Patrón de "runtime inyectable" para sleep/timers roto en 1 de 3 lugares (F-017)
+
+`gateway-lifecycle.ts` y `orchestration/coordinator.ts` inyectan el tiempo
+vía un puerto testeable (`GatewayRuntime.sleep`/`WorkflowCoordinatorRuntime.wait`)
+— permite testear polling sin esperas reales. `roles/model-capability-evaluation.ts`
+tiene el mismo shape de loop pero llama `setTimeout` directo, sin puerto.
+Inconsistencia de testabilidad, no bug funcional — bajo riesgo, fix
+mecánico si se decide alinearlo.
 
 ---
 
@@ -190,19 +240,27 @@ cross-domain haya sido posible sin sorpresas constantes:
 
 ## Prioridad sugerida (si hay que elegir un orden)
 
-1. **F-015** (helpers de CLI) — el fix de menor riesgo y mayor limpieza
+1. **F-016** (transacciones DEFERRED vs IMMEDIATE) — el único de esta
+   lista con riesgo de CORRECCIÓN bajo concurrencia real, no sólo
+   claridad de código. Hoy latente por el modelo single-writer, pero es
+   el tipo de bug que sólo aparece en producción bajo carga, difícil de
+   reproducir después. Merece una decisión consciente aunque no se toque
+   código hoy — como mínimo, documentar por qué es seguro dejarlo así.
+2. **F-006** (modelo de confianza de identidad) — segundo en importancia
+   porque es superficie de seguridad/autoridad real, ya confirmado en vivo.
+3. **F-015** (helpers de CLI) — el fix de menor riesgo y mayor limpieza
    inmediata. Un packet, ~14 archivos, comportamiento idéntico verificado.
-2. **F-007** (camino legacy muerto) — decidir: ¿borrar
+4. **F-007** (camino legacy muerto) — decidir: ¿borrar
    `legacy-review-verification.ts`/`legacy-review-evidence.ts` y el
    branching que los invoca, o documentar por qué deben quedar? Es
    subtracción real de PRINCIPLE-015 si se decide borrar.
-3. **F-006** (modelo de confianza de identidad) — el más importante de
-   decidir pronto porque es una superficie de seguridad/autoridad, no sólo
-   limpieza de código.
-4. **F-014** (enforcement/ desconectado) — decisión de bajo riesgo, alto
+5. **F-014** (enforcement/ desconectado) — decisión de bajo riesgo, alto
    valor de claridad: ¿engancharlo, documentarlo, o borrarlo?
-5. **F-012** (transacción faltante) y **F-010** (evidenceRequired) — arreglos
-   de fondo más que de forma, requieren más diseño antes de tocar código.
+6. **F-012** (transacción faltante en review-candidate) y **F-010**
+   (evidenceRequired) — arreglos de fondo más que de forma, requieren más
+   diseño antes de tocar código.
+7. **F-017** (runtime inyectable inconsistente) — el de menor impacto de
+   toda la lista, cosmético/testabilidad.
 
 Nada de esto se implementó — todo queda documentado para que decidas qué
 packets abrir y en qué orden.

@@ -1,5 +1,105 @@
 # Hallazgos
 
+## F-016 (aplicando PRINCIPLE-016, pasada profunda): dos primitivas de transacción con locking DISTINTO coexisten, y `orchestration/` usa la que el propio codebase documentó como insegura para su propio caso de uso
+
+**Encontrado en**: auditoría de "cómo se resuelve el mismo problema
+—transacciones concurrentes— en cada dominio", cruzando 33 archivos con
+escrituras múltiples contra los 2 mecanismos de transacción que existen,
+2026-07-21. Es el hallazgo de mayor severidad de toda la pasada de
+arquitectura.
+
+**Qué pasa**: el codebase tiene DOS formas de envolver una transacción, con
+semántica de locking DISTINTA:
+
+1. **`transact(store, fn)`** (`tasks/transaction.ts`) — SQL crudo:
+   `db.exec('BEGIN IMMEDIATE')`. El propio comentario del archivo explica
+   por qué: *"evita el caso donde dos operaciones empiezan como lectura y
+   después una de las dos no puede escalar a escritura"* — el clásico
+   problema de SQLite donde una transacción DEFERRED que empieza
+   leyendo puede fallar con `SQLITE_BUSY` al intentar escalar a escritura
+   si otra transacción ya tomó el lock de escritura mientras tanto. Usado
+   en `tasks/`, `promotion/`, `sprints/` (6 archivos).
+
+2. **`store.orm.transaction(fn)`** (Drizzle nativo) — sin segundo
+   argumento de configuración en NINGUNO de los 23 call sites
+   verificados. Confirmado leyendo `node_modules/drizzle-orm/better-sqlite3/session.cjs`:
+   `nativeTx[config.behavior ?? "deferred"](tx)` — el default de Drizzle
+   sobre better-sqlite3 es **DEFERRED**, exactamente el modo que el punto 1
+   existe para evitar. Usado en `gateway/`, `orchestration/`, `roles/`
+   (12 archivos, 23 call sites).
+
+**El caso concreto que lo hace grave, no cosmético**:
+`claimNextEffect` (`orchestration/repository.claims.ts`) — la función que
+un worker del coordinator usa para reclamar el próximo efecto de workflow
+pendiente — hace exactamente el patrón peligroso dentro de un
+`store.orm.transaction()` DEFERRED: un `SELECT` (`effectQuery(...).get()`)
+seguido de una escritura condicional (`persistClaim`, otro compare-and-swap
+por `UPDATE ... WHERE status = PENDING`) en la MISMA transacción. Es
+literalmente el escenario que el comentario de `transact()` describe. El
+coordinator (`WorkflowCoordinator`, `orchestration/coordinator.ts`) está
+diseñado para múltiples workers concurrentes (`leaseOwner`/`workerId` como
+identidad, `idlePollIntervalMs` de polling) — no es un caso hipotético de
+"algún día podría haber 2 workers", es el modelo de concurrencia que el
+propio coordinator declara soportar.
+
+**Por qué es exactamente el tipo de hallazgo que PRINCIPLE-016 busca**: no
+es un bug en un archivo — es la MISMA pregunta ("¿cómo protejo una
+transacción de lectura-luego-escritura bajo escritores concurrentes?")
+resuelta de dos formas incompatibles en dos dominios distintos, sin que
+ninguno de los dos documente por qué difiere del otro. `tasks/transaction.ts`
+tiene la respuesta correcta escrita en un comentario; `orchestration/`
+simplemente no la aplica.
+
+**Mitigante real (por qué puede no haber explotado todavía)**: bajo el
+modelo actual de "single blessed writer" (el daemon es el único proceso
+que escribe), las transacciones DEFERRED de `orchestration/` conviven con
+UN SOLO hilo de Node ejecutándolas secuencialmente dentro del mismo
+proceso — no hay dos conexiones SQLite distintas compitiendo por el lock
+de escritura en el mismo instante, así que el escalation-failure que
+`BEGIN IMMEDIATE` previene no puede materializarse HOY. El riesgo es
+LATENTE: se activa si alguna vez se corre más de un daemon/proceso
+escritor contra el mismo store (violando el propio invariante de
+single-writer), o si `orchestration/` alguna vez se usa fuera del daemon.
+
+**Sugerencia (no implementada)**: decidir una política única — o todas las
+transacciones que hacen lectura-luego-escritura-condicional pasan a
+`{ behavior: 'immediate' }` explícito en `store.orm.transaction()`, o se
+documenta explícitamente por qué el modelo single-writer hace innecesario
+el IMMEDIATE en `orchestration/`/`gateway/`/`roles/` y por qué SÍ hace
+falta en `tasks/`/`promotion/`/`sprints/` (si la razón real es "packet
+lifecycle tiene otro patrón de acceso concurrente", vale la pena que quede
+escrito, no implícito).
+
+---
+
+## F-017 (aplicando PRINCIPLE-016, pasada profunda): el patrón de "runtime inyectable" para sleep/timers no se aplica consistente — un polling loop usa `setTimeout` crudo donde sus dos análogos usan un puerto testeable
+
+**Encontrado en**: comparar los 3 polling loops reales del codebase
+(`for (;;) { ...; await sleep(...); }`), 2026-07-21.
+
+**Qué pasa**: `gateway/gateway-lifecycle.ts` (`SYSTEM_RUNTIME.sleep`) y
+`orchestration/coordinator.ts` (`SYSTEM_COORDINATOR_RUNTIME.wait`)
+inyectan el tiempo vía un puerto (`GatewayRuntime`/
+`WorkflowCoordinatorRuntime` con `.sleep()`/`.wait()`) — el mismo patrón de
+dependency-injection-del-reloj que permite testear el polling sin
+esperas reales (un fake runtime que resuelve `sleep()` instantáneo).
+`roles/model-capability-evaluation.ts` (`terminalObservation`) tiene el
+mismo shape de loop (`for (;;) { observar; si no terminó, esperar;
+seguir }`) pero llama `setTimeout` DIRECTO, sin puerto inyectable.
+
+**Por qué importa**: es una inconsistencia de testabilidad, no un bug
+funcional — pero es exactamente el tipo de cosa que erosiona la
+"quality is the operating mode" (PRINCIPLE-014) con el tiempo: dos de tres
+implementaciones establecieron el patrón correcto, la tercera lo rompió
+silenciosamente, y nada mecánico lo detecta.
+
+**Sugerencia (no implementada)**: si `model-capability-evaluation.ts` tiene
+tests que esperan tiempo real por este loop, es candidato a recibir el
+mismo puerto inyectable; si no tiene tests que lo ejerciten con polling
+real, es de menor prioridad.
+
+---
+
 ## F-015 (aplicando PRINCIPLE-016, pasada de simplificación): tres helpers de CLI reimplementados por archivo en vez de un módulo compartido — mismo defecto raíz que F-004 y F-013
 
 **Encontrado en**: barrido de simplificación arquitectónica sobre `cli/commands/`, 2026-07-21.
