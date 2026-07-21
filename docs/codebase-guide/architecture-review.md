@@ -22,15 +22,13 @@ Tres categorías, en orden de confianza:
 
 Todo lo de categoría 1 y 2 también vive en `findings.md` con su propio ID
 (F-0XX) para que quede trazable y comparable contra un baseline si algún
-día se mecaniza. Este documento es la vista consolidada — "si tuviera que
-elegir 5 cosas para mejorar el codebase esta semana, serían éstas".
+día se mecaniza. Este documento es la vista consolidada.
 
 ---
 
-## ⚠️ El hallazgo más serio de toda la pasada: F-016 — dos primitivas de transacción con locking distinto, y la más riesgosa está donde más importa
+## ⚠️ Los dos hallazgos más serios de toda la pasada
 
-Antes de las categorías: esto merece leerse aparte porque no es deuda
-cosmética, es un riesgo de concurrencia latente en el motor de workflows.
+### F-016 — dos primitivas de transacción con locking distinto, y la más riesgosa está donde más importa
 
 El codebase tiene DOS formas de envolver una transacción SQLite, con
 semántica de locking **distinta**:
@@ -60,11 +58,28 @@ concurrentes (`leaseOwner`/`workerId`, polling) — no es hipotético.
 compitiendo por el lock al mismo tiempo. El riesgo es LATENTE — se activa
 si alguna vez hay más de un proceso escritor contra el mismo store.
 
-**Esto es exactamente lo que PRINCIPLE-016 busca**: la misma pregunta
-("¿cómo protejo lectura-luego-escritura bajo escritores concurrentes?")
-resuelta de dos formas incompatibles, sin que ninguna documente por qué
-difiere de la otra. Ver `findings.md` F-016 para el detalle completo y la
-sugerencia de qué decidir.
+### F-018 — `review/` ↔ `gateway/` y `gateway/` ↔ `orchestration/` son dependencias circulares, contradiciendo la separación que la documentación describe
+
+`architecture.md`/`repository-map.md` describen `gateway/` como
+"integración con agentes externos" y `orchestration/` como "el motor de
+workflows durables" — dos capas separadas. En la práctica, verificado con
+imports reales:
+
+- `review/review-candidate.ts` importa `gateway/schema.constants.ts`.
+- `gateway/run-spec.ts` y `gateway/run-retry.ts` importan `review/review-candidate.ts` → `resolveManualInput` (lógica de negocio real, no sólo tipos).
+- `orchestration/` importa de `gateway/` en 8 archivos (razonable: el motor ejecuta vía adapters).
+- pero `gateway/` importa de vuelta de `orchestration/` en 5 archivos — la dirección opuesta.
+
+Con imports en ambas direcciones, ninguno de los tres dominios se puede
+entender, testear o extraer de forma aislada. El caso `gateway/`↔`orchestration/`
+(8 en un sentido, 5 en el otro) sugiere que en la práctica son un único
+subsistema repartido en dos carpetas por convención, no dos capas
+independientes — vale la pena decidir si `architecture.md` debería dejar
+de describirlos como capas separadas, o si conviene romper el ciclo
+extrayendo lo compartido a un tercer módulo.
+
+Ambos hallazgos, con el detalle completo y las sugerencias, están en
+`findings.md` (F-016, F-018).
 
 ---
 
@@ -96,20 +111,21 @@ con grep exhaustivo: el ÚNICO comando real (`task move <id> review`, en
 `cli/commands/task.ts`) llama `movePacketToReview()`
 (`tasks/review-transition.ts`) en su lugar — un camino completamente
 distinto que reimplementa la misma verificación de forma asíncrona
-(`runSourceWorktreeVerifyCheck`, con timeout configurable) en vez de
-síncrona (`verifyLegacyReviewSync`, `execSync` con timeout fijo).
+(`runSourceWorktreeVerifyCheck`, con timeout CONFIGURABLE vía
+`config.reviewPreflight.noOutputTimeoutMs`) en vez de síncrona
+(`verifyLegacyReviewSync`, `execSync` con timeout HARDCODEADO
+`LEGACY_REVIEW_VERIFY_TIMEOUT_MS = 120_000`, no expuesto en
+`playbook.config.json`).
 
 `movePacket(...,'review')` sólo aparece invocado en **tests** — 15+ veces
 — nunca en un comando real. El camino legacy no es "el fallback para casos
-raros", es simplemente inalcanzable desde el CLI tal como está hoy.
+raros", es simplemente inalcanzable desde el CLI tal como está hoy — y
+encima tiene su propio timeout divergente que ningún operador puede
+configurar, reforzando que nadie lo mantiene activamente.
 
 **Esto no es sólo deuda — es la clase de bug que PRINCIPLE-016 existe para
 encontrar**: dos funciones que resuelven "verificar antes de review" con
-lógica distinta, y sólo una de las dos corre en producción real. Si
-`verifyLegacyReviewSync` tiene un bug, nadie lo va a notar en producción
-porque nunca corre; si alguien reintroduce una llamada a
-`movePacket(...,'review')` pensando que es equivalente al camino real, va
-a tener un comportamiento silenciosamente distinto.
+lógica distinta, y sólo una de las dos corre en producción real.
 
 ### 3. `enforcement/` no está enganchado a ningún pipeline (F-014)
 
@@ -132,7 +148,7 @@ mecánico si se decide alinearlo.
 
 ## Categoría 2 — Confirmado, necesita decisión del founder
 
-### 4. Store SQLite huérfano en este propio repo (F-008)
+### 5. Store SQLite huérfano en este propio repo (F-008)
 
 `.svp/playbook.sqlite` quedó congelado desde antes de la migración a
 ubicación externa (`relocateStoreIfNeeded` no-opea silenciosamente si el
@@ -140,7 +156,7 @@ destino externo ya existe). Gitignoreado, sin riesgo de commit, pero es
 una trampa real para cualquiera que inspeccione el store "obvio" en vez
 del real.
 
-### 5. Modelo de confianza de identidad inconsistente entre dos gates (F-006, confirmado en vivo)
+### 6. Modelo de confianza de identidad inconsistente entre dos gates (F-006, confirmado en vivo)
 
 `destructive-gate.ts` trata la AUSENCIA de `.svp-session-role` como
 "sesión humana, confiar" (`role !== null` es la condición de rechazo).
@@ -151,34 +167,30 @@ destructivos pero NO puede contestar una decisión. Esto es una elección de
 producto (qué modelo de confianza es el correcto), no algo que se pueda
 "arreglar" sin decidir primero cuál gate tiene razón.
 
-### 6. `evidenceRequired` es una lista que el gate trata como booleano (F-010)
+### 7. `evidenceRequired` es una lista que el gate trata como booleano (F-010)
 
 `gateEvidence` sólo verifica "¿existe AL MENOS UN evento de evidencia?",
 nunca cruza el contenido contra los ítems específicos de
 `evidenceRequired: string[]`. Un packet que declara
 `['final-sha', 'security-signoff', 'load-test-passed']` se satisface con
 cualquier evento de evidencia, sin importar cuál. Corregirlo requiere
-decidir un formato real de evidencia etiquetada (hoy los 3 write-sites de
-`EVENT_EVIDENCE` no etiquetan qué ítem satisfacen) — no es un fix de una
+decidir un formato real de evidencia etiquetada — no es un fix de una
 línea, es una decisión de esquema.
 
-### 7. `persistReviewCandidate` sin transacción donde el patrón análogo sí la usa (F-012)
+### 8. `persistReviewCandidate` sin transacción donde el patrón análogo sí la usa (F-012)
 
 `review-candidate.ts` escribe 3 filas relacionadas (`workflowArtifacts`,
 `reviewCandidates`, `taskEvents`) como llamadas `.run()` sueltas.
 `promotion.receipts.ts` → `closePromotedTask`, que resuelve el MISMO tipo
-de problema (persistir un resultado de forma segura ante un crash a mitad
-de camino), sí envuelve todo en `transact()`. Fix mecánico una vez
-decidido — envolver en `transact()` — pero listado en categoría 2 porque
-tocar el camino de persistencia de review candidates amerita que alguien
-más lo revise antes de mergear, no es un cambio "obviamente seguro" como
-el punto 1.
+de problema, sí envuelve todo en `transact()`. Fix mecánico una vez
+decidido, pero listado en categoría 2 porque tocar el camino de
+persistencia de review candidates amerita revisión antes de mergear.
 
 ---
 
 ## Categoría 3 — Observaciones estructurales (no urgentes, vale la pena tenerlas en mente)
 
-### 8. `redteam/` no es un dominio de producto — es 100% tests
+### 9. `redteam/` no es un dominio de producto — es 100% tests
 
 De los "24 dominios" listados en `repository-map.md`, `redteam/` (12
 archivos) y `docs/` (0 archivos no-test) son casos especiales: el primero
@@ -189,7 +201,7 @@ de código real. Contarlos como "dominios" junto a `tasks/` o
 un problema — es una corrección de cómo se lee el mapa: **22 dominios de
 producto reales**, no 24.
 
-### 9. Dos "principios" con el mismo nombre, significados distintos
+### 10. Dos "principios" con el mismo nombre, significados distintos
 
 `content/principles.md` son los 16 `PRINCIPLE-XXX` de la metodología
 **sv-playbook misma** (compilados a `AGENTS.md`/`CLAUDE.md`). El dominio
@@ -197,26 +209,29 @@ producto reales**, no 24.
 **instancia que se está construyendo con sv-playbook** — un concepto
 completamente distinto que por casualidad de vocabulario también se llama
 "principios" en su CLI (`constitution add-principle`). Nada roto
-funcionalmente, pero es fricción cognitiva real para alguien nuevo: "¿los
-principios de qué, de sv-playbook o de mi producto?". Vale la pena, en
-algún momento, nombrar más explícitamente uno de los dos (p. ej.
-`constitution add-principle` podría documentarse siempre acompañado de
-"(del PRODUCTO, no de sv-playbook)").
+funcionalmente, pero es fricción cognitiva real para alguien nuevo.
 
-### 10. `testkit.ts` (raíz) y `redteam/daemon-test-utils.test.support.ts` son infraestructura de test paralela, no unificada
+### 11. `testkit.ts` (raíz) y `redteam/daemon-test-utils.test.support.ts` son infraestructura de test paralela, no unificada
 
 Ambos proveen fixtures para levantar repos/daemons de prueba, pero viven
-en ubicaciones distintas sin relación declarada entre sí (uno es un
-archivo suelto en `src/`, el otro vive dentro del "dominio" redteam). Para
-TIER-2 esto es aceptable — no hay evidencia de que cause bugs reales — pero
-si el volumen de test infra crece, es candidato a converger en un único
+en ubicaciones distintas sin relación declarada entre sí. Para TIER-2 esto
+es aceptable — no hay evidencia de que cause bugs reales — pero si el
+volumen de test infra crece, es candidato a converger en un único
 `testkit/` con submódulos.
 
-### 11. Los patrones que SÍ están bien y no hace falta tocar
+### 12. `--json` sólo en 8 de 32 comandos
+
+No verificado a fondo cuáles de los 24 restantes deberían tenerlo (algunos
+legítimamente no producen datos estructurados que valga la pena
+serializar) — queda anotado como pregunta abierta, no como hallazgo
+confirmado: para un CLI cuyo consumidor principal son agentes
+(PRINCIPLE "CLI autodescubrible"), vale la pena auditar cuáles de esos 24
+devuelven texto que un agente preferiría parsear como JSON.
+
+### 13. Los patrones que SÍ están bien y no hace falta tocar
 
 Para que la lectura no sea sólo negativa — estos patrones se repiten
-consistentemente bien en todo el codebase y son la razón de que la lectura
-cross-domain haya sido posible sin sorpresas constantes:
+consistentemente bien en todo el codebase:
 
 - **Compare-and-swap en 3 sustratos distintos** (git `update-ref`
   condicional, SQL `UPDATE ... WHERE status = X`, filesystem `wx` flag) —
@@ -228,39 +243,43 @@ cross-domain haya sido posible sin sorpresas constantes:
 - **Inmutabilidad reforzada con triggers SQL** (`review_candidates`,
   `promotion_*`, `model_capability_evaluations`, `role_catalog_versions`,
   `role_projection_receipts`) — la garantía no depende de que el código de
-  aplicación se porte bien, la motor la hace cumplir.
+  aplicación se porte bien, el motor la hace cumplir.
 - **write-then-rename para archivos que otros procesos pueden leer a mitad
   de escritura** (`db/backup.ts`, `role-projection-registry.ts`) —
   aplicado en los 2 lugares donde corresponde, no en más ni en menos.
 - **Digest canónico como primitiva universal** (`context/digest.ts`,
   `canonicalJson`/`digest`) — una sola implementación, usada por decenas de
   módulos sin reinventar serialización determinística cada vez.
+- **Capas limpias en `tasks/` → `review/` → `promotion/`**: verificado con
+  grep — `tasks/` no importa de `review/`/`promotion/`/`gateway/`,
+  `review/` no importa de `promotion/`, `promotion/` sí importa de
+  `review/` (dirección esperada, consumidor tardío). Esta parte del
+  sistema respeta la capa que declara tener; el problema de F-018 es
+  específicamente `review/`↔`gateway/`↔`orchestration/`.
 
 ---
 
 ## Prioridad sugerida (si hay que elegir un orden)
 
-1. **F-016** (transacciones DEFERRED vs IMMEDIATE) — el único de esta
-   lista con riesgo de CORRECCIÓN bajo concurrencia real, no sólo
-   claridad de código. Hoy latente por el modelo single-writer, pero es
-   el tipo de bug que sólo aparece en producción bajo carga, difícil de
-   reproducir después. Merece una decisión consciente aunque no se toque
-   código hoy — como mínimo, documentar por qué es seguro dejarlo así.
-2. **F-006** (modelo de confianza de identidad) — segundo en importancia
-   porque es superficie de seguridad/autoridad real, ya confirmado en vivo.
-3. **F-015** (helpers de CLI) — el fix de menor riesgo y mayor limpieza
-   inmediata. Un packet, ~14 archivos, comportamiento idéntico verificado.
-4. **F-007** (camino legacy muerto) — decidir: ¿borrar
-   `legacy-review-verification.ts`/`legacy-review-evidence.ts` y el
-   branching que los invoca, o documentar por qué deben quedar? Es
-   subtracción real de PRINCIPLE-015 si se decide borrar.
-5. **F-014** (enforcement/ desconectado) — decisión de bajo riesgo, alto
-   valor de claridad: ¿engancharlo, documentarlo, o borrarlo?
-6. **F-012** (transacción faltante en review-candidate) y **F-010**
-   (evidenceRequired) — arreglos de fondo más que de forma, requieren más
-   diseño antes de tocar código.
-7. **F-017** (runtime inyectable inconsistente) — el de menor impacto de
-   toda la lista, cosmético/testabilidad.
+1. **F-016** (transacciones DEFERRED vs IMMEDIATE) — el único con riesgo de
+   CORRECCIÓN bajo concurrencia real. Hoy latente, pero el tipo de bug
+   que sólo aparece en producción bajo carga. Merece decisión consciente
+   aunque no se toque código hoy.
+2. **F-006** (modelo de confianza de identidad) — segundo en importancia,
+   superficie de seguridad/autoridad real, confirmado en vivo.
+3. **F-018** (dependencias circulares review/gateway/orchestration) —
+   estructural, no urgente de arreglar, pero sí de decidir/documentar
+   antes de que el acoplamiento crezca más.
+4. **F-015** (helpers de CLI) — el fix de menor riesgo y mayor limpieza
+   inmediata.
+5. **F-007** (camino legacy muerto) — subtracción real de PRINCIPLE-015
+   si se decide borrar.
+6. **F-014** (enforcement/ desconectado) — bajo riesgo, alto valor de
+   claridad.
+7. **F-012** (transacción faltante) y **F-010** (evidenceRequired) —
+   arreglos de fondo, requieren más diseño.
+8. **F-017** (runtime inyectable inconsistente) — menor impacto de toda
+   la lista.
 
 Nada de esto se implementó — todo queda documentado para que decidas qué
 packets abrir y en qué orden.
