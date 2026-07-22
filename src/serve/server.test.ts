@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { extname, join } from 'node:path';
 import { test } from 'node:test';
 import { SERVE_ROUTE } from '../cli/commands/serve.constants.js';
 import { gatewayFixture } from '../gateway/gateway.test-support.js';
@@ -39,6 +41,26 @@ test('Serve and the runtime capability prepare the same semantic RunSpec', async
   assert.equal(response.status, HTTP_STATUS.CREATED);
   assert.equal(typeof actual === 'object' && actual !== null ? Reflect.get(actual, 'specDigest') : undefined, expected.specDigest);
   assert.equal(typeof actual === 'object' && actual !== null ? Reflect.get(actual, 'id') : undefined, expected.id);
+  server.close();
+  await once(server, 'close');
+  store.close();
+});
+
+test('Serve resuelve archivos estáticos reales del directorio de build, no una tabla fija', async () => {
+  const { root, store } = await gatewayFixture();
+  const server = createOperationalServer(store, root, { refreshMs: 60_000 });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address !== null && typeof address !== 'string');
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/assets/index.html`);
+  assert.equal(response.status, HTTP_STATUS.OK);
+  assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8');
+
+  const traversal = await fetch(`http://127.0.0.1:${address.port}/assets/../../../etc/passwd`);
+  assert.equal(traversal.status, HTTP_STATUS.NOT_FOUND);
+
   server.close();
   await once(server, 'close');
   store.close();
