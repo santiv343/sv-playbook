@@ -31,3 +31,24 @@ export const DAEMON_CONNECT_TIMEOUT_MS_DEFAULT = 5000;
  *  Prevents the CLI from hanging indefinitely when the daemon stops
  *  responding after accepting the TCP connection. */
 export const DAEMON_REQUEST_TIMEOUT_MS_DEFAULT = 30000;
+
+/** Timeout override for commands known to run long for real reasons (ej.
+ *  `dispatch start`, que espera a un turno de agente real completo — puede
+ *  tardar minutos, no segundos). Encontrado en vivo: el default de 30s
+ *  mataba `dispatch start` en silencio a mitad de un dispatch real contra
+ *  OpenCode, sin ningún mensaje (ver git log — root-caused 2026-07-22).
+ *  20 minutos da margen sobre el noProgressTimeoutMs típico (10 min) de un
+ *  execution profile sin ser indefinido. */
+export const DAEMON_REQUEST_TIMEOUT_MS_LONG_RUNNING = 1_200_000;
+
+/** argv prefix (post `sv-playbook`) that identifies the one command known
+ *  to legitimately run long — matched positionally by forwardTimeoutForArgs,
+ *  same "top-level command name outside cli/commands/" pattern as
+ *  STORE_PROCESS_KIND in db/store.constants.ts. */
+export const DISPATCH_LONG_RUNNING_ARGS = ['dispatch', 'start'] as const;
+
+/** Sentinel de exit code que el script hijo de forwardToDaemonSync usa
+ *  específicamente para "el request venció" — distinto del 1 genérico de
+ *  cualquier otro fallo de transporte, para que el proceso padre pueda
+ *  imprimir un mensaje claro en vez de terminar en silencio. */
+export const DAEMON_FORWARD_TIMEOUT_EXIT_CODE = 124;

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { OpenCodeAdapter } from './opencode-adapter.js';
+import { adapterConfig } from './opencode.js';
 import type { AdapterObservationRequest, AdapterOperationRequest, AdapterTurnRequest, ExecutionProfile, RunSpec } from '../gateway.types.js';
 import { HTTP_METHOD } from '../../platform.constants.js';
 import {
@@ -149,6 +150,12 @@ async function handleRequest(incoming: IncomingMessage, response: ServerResponse
   response.statusCode = 404;
   response.end();
 }
+
+test('adapterConfig accepts prompted-json as a supported outputMode', () => {
+  const config = adapterConfig(profile('http://127.0.0.1:1'));
+  const withPromptedJson = { ...profile('http://127.0.0.1:1'), adapterConfig: { ...config, outputMode: OPENCODE_OUTPUT_MODE.PROMPTED_JSON } };
+  assert.equal(adapterConfig(withPromptedJson).outputMode, OPENCODE_OUTPUT_MODE.PROMPTED_JSON);
+});
 
 test('OpenCode adapter submits once and reports actual terminal tools and output', async () => {
   const state: MockState = { promptPosts: 0 };

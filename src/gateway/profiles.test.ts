@@ -6,8 +6,10 @@ import { gatewayFixture } from './gateway.test-support.js';
 import {
   cloneExecutionProfile,
   executionProfileSnapshotJson,
+  listExecutionProfiles,
   loadExecutionProfile,
   parseExecutionProfileSnapshot,
+  removeExecutionProfile,
 } from './profiles.js';
 
 test('cloneExecutionProfile inherits provider-neutral settings and applies explicit overrides', async () => {
@@ -23,6 +25,28 @@ test('cloneExecutionProfile inherits provider-neutral settings and applies expli
   assert.equal(cloned.modelId, 'model');
   assert.deepEqual(cloned.adapterConfig, { endpoint: 'fake' });
   assert.deepEqual(cloned.tools, { bash: true, read: true });
+  store.close();
+});
+
+test('removeExecutionProfile deletes the profile and its tool policy, and rejects removing an unknown id', async () => {
+  const { store } = await gatewayFixture();
+  const cloned = cloneExecutionProfile(store, {
+    sourceProfileId: 'fake-impl', id: 'implementer-throwaway', roleId: 'implementer', agentId: 'implementer-throwaway',
+    tools: { bash: true },
+  });
+  assert.ok(listExecutionProfiles(store).some((profile) => profile.id === cloned.id));
+
+  removeExecutionProfile(store, cloned.id);
+
+  assert.ok(!listExecutionProfiles(store).some((profile) => profile.id === cloned.id));
+  assert.throws(
+    () => loadExecutionProfile(store, cloned.id),
+    (error: unknown) => error instanceof ContextError && error.code === EXECUTION_PROFILE_ERROR.UNKNOWN,
+  );
+  assert.throws(
+    () => { removeExecutionProfile(store, cloned.id); },
+    (error: unknown) => error instanceof ContextError && error.code === EXECUTION_PROFILE_ERROR.UNKNOWN,
+  );
   store.close();
 });
 

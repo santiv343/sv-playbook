@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { NODE_EVAL_FLAG, PROCESS_STDIO, TEXT_ENCODING } from '../platform.constants.js';
-import { BUILD_DIGEST_HEALTH_FIELD, DAEMON_CONNECT_TIMEOUT_MS_DEFAULT, DAEMON_REQUEST_TIMEOUT_MS_DEFAULT, GIT_DIR_NAME } from './daemon.constants.js';
+import { BUILD_DIGEST_HEALTH_FIELD, DAEMON_CONNECT_TIMEOUT_MS_DEFAULT, DAEMON_FORWARD_TIMEOUT_EXIT_CODE, DAEMON_REQUEST_TIMEOUT_MS_DEFAULT, DAEMON_REQUEST_TIMEOUT_MS_LONG_RUNNING, DISPATCH_LONG_RUNNING_ARGS, GIT_DIR_NAME } from './daemon.constants.js';
 import { SESSION_FILE_NAME } from '../tasks/service.constants.js';
 import type { ExecutionContext } from '../runtime/context.types.js';
 import { getContext } from '../runtime/context.js';
@@ -10,10 +10,16 @@ import { getContext } from '../runtime/context.js';
 // The forwarding transport runs in a child node process so it can be awaited
 // synchronously from module-load code (store.ts tryAutoForward). The child
 // POSTs the argv to the daemon, mirrors stdout/stderr, and exits with the
-// daemon-reported exit code (1 on any transport/parse failure).
+// daemon-reported exit code (1 on any transport/parse failure). On timeout
+// it exits with DAEMON_FORWARD_TIMEOUT_EXIT_CODE specifically (instead of
+// the generic 1) so forwardToDaemonSync (the parent) can tell "the daemon
+// never answered in time" apart from any other transport failure and print
+// an actionable message — found live 2026-07-22: a real `dispatch start`
+// forward hit the old 30s default mid-dispatch and died with zero output,
+// looking exactly like a silent crash.
 function buildForwardScript(body: string, port: number, timeoutMs: number): string {
   const bl = Buffer.byteLength(body);
-  return `const http=require('http');const b=${JSON.stringify(body)};const r=http.request({hostname:'127.0.0.1',port:${port},method:'POST',path:'/api/v1/exec',headers:{'Content-Type':'application/json','Content-Length':${bl}}},s=>{let d='';s.setEncoding('utf8');s.on('data',c=>{d+=c;});s.on('end',()=>{clearTimeout(rt);try{const p=JSON.parse(d);if(p.stdout)process.stdout.write(p.stdout);if(p.stderr)process.stderr.write(p.stderr);process.exit(typeof p.exitCode==='number'?p.exitCode:1);}catch{process.exit(1);}});});const rt=setTimeout(()=>{r.destroy();process.exit(1);},${timeoutMs});r.on('error',()=>{clearTimeout(rt);process.exit(1);});r.end(b);`;
+  return `const http=require('http');const b=${JSON.stringify(body)};const r=http.request({hostname:'127.0.0.1',port:${port},method:'POST',path:'/api/v1/exec',headers:{'Content-Type':'application/json','Content-Length':${bl}}},s=>{let d='';s.setEncoding('utf8');s.on('data',c=>{d+=c;});s.on('end',()=>{clearTimeout(rt);try{const p=JSON.parse(d);if(p.stdout)process.stdout.write(p.stdout);if(p.stderr)process.stderr.write(p.stderr);process.exit(typeof p.exitCode==='number'?p.exitCode:1);}catch{process.exit(1);}});});const rt=setTimeout(()=>{r.destroy();process.exit(${DAEMON_FORWARD_TIMEOUT_EXIT_CODE});},${timeoutMs});r.on('error',()=>{clearTimeout(rt);process.exit(1);});r.end(b);`;
 }
 
 // The session id lives at the worktree root (.svp/session). Walk up from the
@@ -71,12 +77,25 @@ export function fetchDaemonBuildDigestSync(port: number): string | null {
 // para awaitear una promesa. spawnSync bloquea el proceso actual hasta que
 // el script hijo (que sí corre async con http.request) termina y devuelve
 // su exit code — un truco para "hacer async en contexto sync".
+// dispatch start espera un turno de agente real completo (verifyProfile +
+// sesión + prompt + poll hasta terminal) — puede tardar minutos, no
+// segundos. Encontrado en vivo 2026-07-22: con el timeout plano de 30s,
+// un dispatch real contra OpenCode moría a mitad de camino sin aviso.
+export function forwardTimeoutForArgs(argv: readonly string[]): number {
+  const isLongRunning = DISPATCH_LONG_RUNNING_ARGS.every((token, index) => argv[index] === token);
+  return isLongRunning ? DAEMON_REQUEST_TIMEOUT_MS_LONG_RUNNING : DAEMON_REQUEST_TIMEOUT_MS_DEFAULT;
+}
+
 export function forwardToDaemonSync(argv: string[], token: string, port: number, ctx?: ExecutionContext, requestTimeoutMs?: number): number {
   const context = ctx ?? getContext() ?? { cwd: process.cwd(), sessionId: readSessionId(process.cwd()) };
   const body = JSON.stringify({ token, argv, context });
-  const timeout = requestTimeoutMs ?? DAEMON_REQUEST_TIMEOUT_MS_DEFAULT;
+  const timeout = requestTimeoutMs ?? forwardTimeoutForArgs(argv);
   const result = spawnSync(process.execPath, [NODE_EVAL_FLAG, buildForwardScript(body, port, timeout)], {
     stdio: ['ignore', 'inherit', 'inherit'],
   });
+  if (result.status === DAEMON_FORWARD_TIMEOUT_EXIT_CODE) {
+    process.stderr.write(`daemon request timed out after ${timeout}ms — the daemon accepted the request but never answered in time. If this command legitimately runs long, retry or raise its forwarding timeout.\n`);
+    return 1;
+  }
   return typeof result.status === 'number' ? result.status : 1;
 }

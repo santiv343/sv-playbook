@@ -43,3 +43,23 @@ test('Serve and the runtime capability prepare the same semantic RunSpec', async
   await once(server, 'close');
   store.close();
 });
+
+test('Serve resuelve archivos estáticos reales del directorio de build, no una tabla fija', async () => {
+  const { root, store } = await gatewayFixture();
+  const server = createOperationalServer(store, root, { refreshMs: 60_000 });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address !== null && typeof address !== 'string');
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/assets/index.html`);
+  assert.equal(response.status, HTTP_STATUS.OK);
+  assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8');
+
+  const traversal = await fetch(`http://127.0.0.1:${address.port}/assets/../../../etc/passwd`);
+  assert.equal(traversal.status, HTTP_STATUS.NOT_FOUND);
+
+  server.close();
+  await once(server, 'close');
+  store.close();
+});

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ContextError } from '../context/context.errors.js';
 import type { Store } from '../db/store.types.js';
@@ -13,7 +13,7 @@ import { HUMAN_INTAKE_VALUE } from '../orchestration/human-intake.constants.js';
 import { EMPTY_SIZE, HTTP_METHOD, HTTP_STATUS, PATH_TOKEN, PROCESS_EVENT, REFERENCE_KIND, REFERENCE_MIN_VERSION } from '../platform.constants.js';
 import { readBoardStatus } from '../status/status.js';
 import { SERVE_DEFAULT, SERVE_ROUTE } from '../cli/commands/serve.constants.js';
-import { CONTENT_TYPE, RESOLUTION_SUFFIX, SERVER_RESPONSE, SSE_EVENT } from './server.constants.js';
+import { CONTENT_TYPE, RESOLUTION_SUFFIX, SERVER_RESPONSE, SSE_EVENT, STATIC_CONTENT_TYPE_BY_EXTENSION, STATIC_DEFAULT_CONTENT_TYPE } from './server.constants.js';
 import type { HumanIntakeBody, HumanResolutionBody, OperationalDashboard, OperationalServerOptions, StartWorkflowBody } from './server.types.js';
 import { prepareRunSpec } from '../gateway/run-spec.js';
 import type { WorkRunSpecRequest } from '../gateway/gateway.types.js';
@@ -21,12 +21,6 @@ import { WorkDefinitionError } from '../tasks/work-definition.errors.js';
 import { readPromotionDashboard } from '../promotion/promotion.receipts.js';
 
 const UI_ROOT = fileURLToPath(new URL('./assets', import.meta.url));
-const STATIC_ASSETS = new Map<string, { path: string; type: string }>([
-  [SERVE_ROUTE.ROOT, { path: join(UI_ROOT, 'index.html'), type: CONTENT_TYPE.HTML }],
-  [SERVE_ROUTE.APP, { path: join(UI_ROOT, 'app.js'), type: CONTENT_TYPE.JAVASCRIPT }],
-  [SERVE_ROUTE.STYLES, { path: join(UI_ROOT, 'styles.css'), type: CONTENT_TYPE.CSS }],
-  [SERVE_ROUTE.ICONS, { path: join(UI_ROOT, 'icons.mjs'), type: CONTENT_TYPE.JAVASCRIPT }],
-]);
 
 function dashboard(store: Store, repoRoot: string): OperationalDashboard {
   return {
@@ -50,10 +44,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function staticFilePath(pathname: string): string | undefined {
+  if (pathname === SERVE_ROUTE.ROOT) return join(UI_ROOT, 'index.html');
+  const prefix = SERVE_ROUTE.APP.slice(0, SERVE_ROUTE.APP.lastIndexOf(PATH_TOKEN.POSIX_SEPARATOR) + 1);
+  if (!pathname.startsWith(prefix)) return undefined;
+  const relative = pathname.slice(prefix.length);
+  if (relative.split(PATH_TOKEN.POSIX_SEPARATOR).includes(PATH_TOKEN.PARENT)) return undefined;
+  const resolved = join(UI_ROOT, relative);
+  if (!resolved.startsWith(UI_ROOT)) return undefined;
+  return resolved;
+}
+
 function staticResponse(url: URL, res: ServerResponse): boolean {
-  const known = STATIC_ASSETS.get(url.pathname);
-  if (known === undefined) return false;
-  send(res, HTTP_STATUS.OK, known.type, readFileSync(known.path, 'utf8'));
+  const path = staticFilePath(url.pathname);
+  if (path === undefined) return false;
+  let body: string;
+  try {
+    body = readFileSync(path, 'utf8');
+  } catch {
+    return false;
+  }
+  const contentType = STATIC_CONTENT_TYPE_BY_EXTENSION[extname(path)] ?? STATIC_DEFAULT_CONTENT_TYPE;
+  send(res, HTTP_STATUS.OK, contentType, body);
   return true;
 }
 
