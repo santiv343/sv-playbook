@@ -18,7 +18,7 @@ real (reconcile).
 ```mermaid
 flowchart TB
     create["createStateBackup()<br/>src/db/backup.ts"]
-    leasecheck{"¿leases frescos?<br/>sin --allow-fresh-leases"}
+    leasecheck{"¿leases frescos?<br/>sin --force"}
     refuse["rechaza: 'backup refused: N live lease(s)'"]
     vacuum["VACUUM INTO (snapshot consistente,<br/>fallback a copyFileSync si falla)"]
     meta["escribe .json de metadata<br/>(sha256, schemaVersion, git branch/sha,<br/>terminalPacketCount)"]
@@ -37,7 +37,7 @@ flowchart TB
 ```
 
 `createStateBackup()` rechaza backuppear con leases vivos (a menos que se
-pase `--allow-fresh-leases`) — un backup tomado mientras hay trabajo
+pase `--force`) — un backup tomado mientras hay trabajo
 activo en curso podría capturar un estado a medio transicionar.
 `VACUUM INTO` produce un snapshot SQLite consistente sin bloquear
 escrituras concurrentes tanto como una copia de archivo cruda; si falla

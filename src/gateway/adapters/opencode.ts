@@ -8,6 +8,7 @@ import type {
   AdapterTurnRequest,
   AdapterRunFailure,
   ExecutionProfile,
+  GatewayRuntime,
 } from '../gateway.types.js';
 import { ADAPTER_RUN_STATE } from '../gateway.types.js';
 import {
@@ -18,7 +19,7 @@ import {
   OPENCODE_PART_TYPE,
   OPENCODE_PROVIDER_ERROR,
   OPENCODE_TOOL_STATE,
-  type OpenCodeOutputMode,
+  type AdapterConfig,
   openCodeSessionMessagePath,
   openCodeSessionPath,
   openCodeSessionPromptPath,
@@ -26,6 +27,8 @@ import {
 import { applyOpenCodeOutputContract } from './opencode-output-request.js';
 import { openCodeRunActivity } from './opencode-activity.js';
 import { verifyOpenCodeToolPermissions } from './opencode-permissions.js';
+import { reachOpenCodeServer } from './opencode-self-start.js';
+import type { OpenCodeServerLauncher } from './opencode-self-start.types.js';
 const SESSION_PROFILE_MISMATCH = 'SESSION_PROFILE_MISMATCH';
 const SESSION_ID_LABEL = 'session id';
 const SESSION_STATUS_LABEL = 'session status';
@@ -33,12 +36,6 @@ const OPENCODE_SESSION_STATUS = { BUSY: 'busy' } as const;
 const OPENCODE_FINISH = { ABORT: 'abort', CANCELLED: 'cancelled' } as const;
 const OPENCODE_MESSAGE_ROLE = { ASSISTANT: 'assistant' } as const;
 const TOOL_STATE_LABEL = 'tool state';
-
-interface AdapterConfig {
-  baseUrl: string;
-  allowedVersions: readonly string[];
-  outputMode: OpenCodeOutputMode;
-}
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -86,8 +83,13 @@ async function responseJson(response: Response, label: string): Promise<unknown>
   return value;
 }
 
-export async function health(config: AdapterConfig): Promise<string> {
-  const body = record(await responseJson(await fetch(endpoint(config, OPENCODE_API_PATH.HEALTH)), 'health'), 'health');
+export async function health(
+  config: AdapterConfig,
+  launcher?: OpenCodeServerLauncher,
+  runtime?: GatewayRuntime,
+): Promise<string> {
+  const response = await reachOpenCodeServer(config, launcher, runtime);
+  const body = record(await responseJson(response, 'health'), 'health');
   if (body.healthy !== true) throw new ContextError('ADAPTER_UNHEALTHY', 'OpenCode health response is not healthy');
   const version = requiredString(body.version, 'server version');
   if (!config.allowedVersions.includes(version)) throw new ContextError('ADAPTER_VERSION_REJECTED', `OpenCode ${version} is not allowed`);

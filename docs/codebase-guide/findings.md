@@ -450,10 +450,10 @@ checkout):
 
 ```
 $ ls -la .svp/playbook.sqlite
--rw-r--r-- 929792 jul. 19 04:22 .svp/playbook.sqlite      # ← huérfano, congelado
+tamaño 929792, jul. 19 04:22, .svp/playbook.sqlite      (huérfano, congelado)
 
 $ ls -la "$LOCALAPPDATA/sv-playbook/<hash-del-repo>/playbook.sqlite"
--rw-r--r-- 995328 jul. 20 06:50 playbook.sqlite            # ← el real, vivo, el que usa el CLI
+tamaño 995328, jul. 20 06:50, playbook.sqlite            (el real, vivo, el que usa el CLI)
 ```
 
 El archivo en `.svp/` quedó congelado desde ANTES de la migración a

@@ -64,12 +64,29 @@ export const OPENCODE_OUTPUT_MODE = {
 
 export type OpenCodeOutputMode = typeof OPENCODE_OUTPUT_MODE[keyof typeof OPENCODE_OUTPUT_MODE];
 
+// Vive acá (no en opencode.ts) para que opencode-self-start.ts pueda
+// importarla sin crear un ciclo opencode.ts <-> opencode-self-start.ts.
+export interface AdapterConfig {
+  baseUrl: string;
+  allowedVersions: readonly string[];
+  outputMode: OpenCodeOutputMode;
+}
+
 export const OPENCODE_VALIDATED_TEXT_SYSTEM_PROMPT =
   'No tools are available. Never call, request, describe, or emit a tool call. The supplied payload already contains all available context. Your only valid action is to return exactly one raw JSON object matching outputContractRef. Start with { and end with }. Do not use Markdown, commentary, or preambles. Represent missing information inside the declared JSON contract.';
 
 export const OPENCODE_DEFAULT = {
   STRUCTURED_OUTPUT_RETRY_COUNT: 2,
+  SELF_START_RETRY_COUNT: 20,
+  SELF_START_RETRY_INTERVAL_MS: 500,
 } as const;
+
+// Comando real para autoarrancar el server cuando health() no lo encuentra
+// escuchando (ver health() en opencode.ts) — mismo binario que
+// `opencode serve` expone en su CLI real.
+export const OPENCODE_SERVE_COMMAND = 'opencode';
+export const OPENCODE_SERVE_ARGS = ['serve'] as const;
+export const OPENCODE_SERVE_FLAG = { HOSTNAME: '--hostname', PORT: '--port' } as const;
 
 export const OPENCODE_MESSAGE_FIELD = {
   STRUCTURED_OUTPUT: 'structured',
