@@ -138,16 +138,28 @@ src/serve/web/
 
 #### `lib/types.ts`
 
-Copia liviana del contrato HTTP/SSE (`OperationalDashboard`,
+**Corrección tras autorevisión contra PRINCIPLE-011** (single source for
+every fact — "no puede pasar review violada"): la versión anterior de
+esta sección proponía copiar a mano los campos del contrato HTTP/SSE en
+vez de importarlos, para no acoplar el frontend a los tipos internos del
+backend. Es un error — copiar tipos a mano es exactamente la duplicación
+que PRINCIPLE-011 prohíbe, y no hace falta pagar ese costo: al ser
+TypeScript dentro del mismo repo (npm workspace), un `import type` es
+**sólo de tipos, cero costo/acoplamiento en runtime** — Vite lo borra en
+build (`verbatimModuleSyntax`/erasable syntax). No hay tensión real entre
+"no acoplar" y "no duplicar" acá.
+
+`lib/types.ts` re-exporta, vía `import type`, directo desde la fuente
+real: `OperationalDashboard`/`HumanResolutionBody`/`HumanIntakeBody` de
+`../../../server.types.js`, y transitivamente `WorkflowDashboard`,
 `WorkflowRunView`, `WorkflowEffectView`, `HumanActionView`,
-`WorkflowEventView`, `AgentRunView`, `StatusPacket`, `StatusBackup`,
-`PromotionDashboardItem`), **no un import cruzado a `src/orchestration/*`
-ni `src/status/*`**. Motivo: el frontend consume la API HTTP/SSE como
-frontera pública — acoplarlo a los tipos internos del backend rompería la
-separación cliente/servidor apenas alguno de esos módulos cambie un tipo
-interno sin cambiar el contrato de wire. Los campos son un subconjunto
-exacto de los `*.types.ts` reales citados arriba (mismos nombres, mismos
-tipos) para que copiar/pegar cuando cambie el contrato sea mecánico.
+`WorkflowEventView`, `AgentRunView` (`orchestration/observability.types.js`),
+`BoardStatus`/`StatusPacket`/`StatusBackup` (`status/status.types.js`),
+`PromotionDashboardItem` (`promotion/promotion.types.js`) — sin copiar un
+solo campo. Si el contrato de wire cambia, TypeScript rompe la build del
+frontend en el mismo commit que cambia el backend, en vez de divergir en
+silencio (el riesgo real que la versión anterior de este spec no
+prevenía).
 
 #### `lib/problems.ts`
 
