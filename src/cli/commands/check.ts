@@ -128,10 +128,18 @@ async function checkInstructions(root: string, io: Io): Promise<boolean> {
   return hasDrift;
 }
 
+// Orden importa: `roles` autosana un catálogo de roles virgen
+// (checkRoleSystem -> bootstrapBundledRoleCatalog si el store está vacío),
+// y `instructions` depende de que ese catálogo ya exista (renderInstructionsContent
+// compila contexto para el rol human-interface, que incluye el item de rol).
+// En un store fresco (CI, o cualquier checkout nuevo), correr `instructions`
+// antes de `roles` compara contra un AGENTS.md/CLAUDE.md committeado que
+// SÍ asume el catálogo de roles — divergencia falsa que sólo se ve en
+// stores vírgenes, nunca en un store local ya sanado por una corrida previa.
 const TARGETS: Record<string, (root: string, io: Io) => Promise<boolean>> = {
   structure: checkStructure,
-  instructions: checkInstructions,
   roles: checkRolesTarget,
+  instructions: checkInstructions,
   secrets: checkSecretsTarget,
   'command-usage': checkCommandUsage,
 };
