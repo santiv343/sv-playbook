@@ -1,6 +1,28 @@
 # Causa raíz: drift de `check instructions` entre CI y local
 
-## Conclusión
+## Actualización 2026-07-21 — causa raíz exacta encontrada y corregida
+
+La conclusión de 2026-07-19 de abajo (comparación contra un store persistido
+con estado distinto) era correcta en espíritu pero imprecisa en el mecanismo.
+Reproducido de forma determinística (`LOCALAPPDATA` apuntado a un directorio
+vacío, sin depender de ningún estado real): `src/cli/commands/check.ts`
+define `TARGETS` como un `Record` cuyo orden de iteración (`Object.keys`)
+corría `instructions` **antes** que `roles`. `roles`
+(`checkRolesTarget` → `checkRoleSystem` → `bootstrapBundledRoleCatalog`) es
+lo único que autosana un catálogo de roles vacío. `instructions`
+(`renderInstructionsContent` → `compileContext(..., role: 'human-interface', ...)`)
+depende de que ese catálogo ya exista — si no existe, el context pack
+compilado omite el item `ROLE-BUNDLED-HUMAN-INTERFACE` (con la misión del
+rol como body), y el `AGENTS.md`/`CLAUDE.md` generado queda más corto que
+el committeado (que sí fue generado alguna vez contra un catálogo ya
+sanado). Un store local de desarrollo, reusado sesión tras sesión, ya tiene
+el catálogo sanado de una corrida anterior — por eso nunca reproducía el
+fallo. Un store fresco (CI, o cualquier checkout nuevo) no. **Fix**: se
+reordenó `TARGETS` para que `roles` corra antes que `instructions`.
+Verificado con `LOCALAPPDATA` redirigido a un directorio vacío: `sv-playbook
+check` pasa limpio (`CHECK_EXIT=0`) contra un store 100% virgen.
+
+## Conclusión (investigación original, 2026-07-19)
 
 El fallo no fue no determinismo de Node, locale, `Map`/`Set` ni orden del
 filesystem. Fue una comparación contra estados distintos del catálogo
