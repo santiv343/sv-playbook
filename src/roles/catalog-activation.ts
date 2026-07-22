@@ -82,6 +82,15 @@ function storedVersion(store: Store, catalogDigest: string): number | undefined 
     .where(eq(roleCatalogVersions.catalogDigest, catalogDigest)).get()?.version;
 }
 
+// "Activar" el catálogo de roles no es lo mismo que tenerlo escrito en
+// DB: hay que confirmar explícitamente que pasa checkRoleCatalog() (todas
+// las reglas estructurales) antes de que quede como la versión vigente
+// que consume compileRunSpecInput/dispatchRun (flujo 8). Si el digest del
+// catálogo actual coincide con el ya activo, no hace nada (idempotente).
+// Si el mismo digest ya existió como una versión anterior (alguien volvió
+// a un estado previo), reutiliza ese número de versión en vez de crear
+// uno nuevo — el versionado es por CONTENIDO, no por orden cronológico de
+// activación.
 export function activateRoleCatalog(store: Store): RoleCatalogActivationReceipt {
   const validation = checkRoleCatalog(store);
   if (!validation.valid) {
@@ -122,6 +131,13 @@ export function activateRoleCatalog(store: Store): RoleCatalogActivationReceipt 
   return receipt;
 }
 
+// Llamado desde dispatchRun() (flujo 8) antes de cada dispatch: no basta
+// con que el catálogo haya sido activado ALGUNA VEZ — si los datos de
+// roles cambiaron desde la última activación (alguien agregó/editó un
+// rol sin volver a activar), el digest actual no coincide con el activo
+// y esto rechaza como DRIFT — nunca despachar un agente contra un
+// catálogo de roles que quedó desactualizado respecto a lo realmente
+// persistido.
 export function requireActiveRoleCatalog(store: Store): RoleCatalogActivationReceipt {
   const active = activeReceipt(store);
   if (active === undefined) {

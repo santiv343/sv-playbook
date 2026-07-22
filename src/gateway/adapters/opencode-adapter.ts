@@ -26,6 +26,13 @@ import {
   verifySession,
 } from './opencode.js';
 
+// Implementación concreta de AgentAdapter contra la API HTTP de OpenCode.
+// verifyProfile() es deliberadamente el primer paso siempre — chequea salud
+// del server, verifica que el agente exista con la config esperada Y que su
+// policy de permisos (toolPolicy) matchee lo declarado en el
+// executionProfile ANTES de gastar una sesión real. profileDigest ata todo
+// eso (versión de server + profile + tools + directory) a un único hash
+// verificable más tarde.
 export class OpenCodeAdapter implements AgentAdapter {
   readonly id = OPENCODE_ADAPTER_ID;
 

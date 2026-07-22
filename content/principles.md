@@ -1,4 +1,9 @@
-<!-- GENERATED FROM context_items — DO NOT EDIT -->
+<!-- Authored source. Bootstrapped INTO context_items by
+     scripts/bootstrap-principles.mjs (markdown -> DB, not the reverse) —
+     edit this file directly, then run the bootstrap script and
+     `instructions --write` to propagate. (Corrected 2026-07-20: the
+     previous header claimed the opposite direction — see
+     docs/codebase-guide/findings.md F-009.) -->
 
 # Principles
 
@@ -63,3 +68,7 @@ Agents must prefer the best durable design they can justify over the quickest lo
 ## PRINCIPLE-015 — Subtraction has the same machinery as addition
 
 Every mechanism the system gains must be removable by the same pipeline that added it: removal work is a first-class packet type with its own evidence form (metrics delta + telemetry of non-use + verify green). The complexity budget (PRINCIPLE-005) is measured, not declared: the periodic report tracks LOC, table count, concept count, and mechanism count against the tier, and a growing gap is a finding. Rationale: at agent velocity the incident→rail loop runs 50-100x faster than at human velocity; without a subtraction force of equal mechanical strength, accumulation outruns judgment in days, not years (this repo: 25 subsystems in 9 days, 3.5% of commits net-negative).
+
+## PRINCIPLE-016 — Correctness is cross-domain, not file-local
+
+A file that is internally correct can still be wrong in the context of the whole system. Review and architecture work — by an agent or a human — must trace how the same concern (identity, locking, verification, trust) is resolved in every place it appears and check those resolutions against each other, not stop at "this file does what it says." File-by-file review finds typos and local bugs; it structurally cannot find a function whose logic contradicts a sibling function's logic, a duplicated rule drifting into two behaviors, or a code path that tests exercise but production never reaches. Mandatory minimum sweep before closing a review or an architecture pass: for every shared primitive (an identity check, a lock, a validation rule) used in more than one place, read all its call sites side by side and confirm they agree on what it means to pass. A single-file review that reports "no issues found" without this cross-reference step is an incomplete review, not a clean one.

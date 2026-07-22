@@ -115,6 +115,13 @@ Every mechanism the system gains must be removable by the same pipeline that add
 
 ---
 
+## PRINCIPLE-016 — Correctness is cross-domain, not file-local
+
+A file that is internally correct can still be wrong in the context of the whole system. Review and architecture work — by an agent or a human — must trace how the same concern (identity, locking, verification, trust) is resolved in every place it appears and check those resolutions against each other, not stop at "this file does what it says." File-by-file review finds typos and local bugs; it structurally cannot find a function whose logic contradicts a sibling function's logic, a duplicated rule drifting into two behaviors, or a code path that tests exercise but production never reaches. Mandatory minimum sweep before closing a review or an architecture pass: for every shared primitive (an identity check, a lock, a validation rule) used in more than one place, read all its call sites side by side and confirm they agree on what it means to pass. A single-file review that reports "no issues found" without this cross-reference step is an incomplete review, not a clean one.
+
+
+---
+
 ## HJ-001: Optimize for irreducible human attention
 
 The product exists so the human can work on intent, values, direction, priorities, trade-offs, risk acceptance, and final acceptance. Code execution, task bookkeeping, dispatch, monitoring, retries, verification, review routing, integration, cleanup, recovery, and status derivation must not require human attention when they are mechanically decidable.
@@ -163,5 +170,9 @@ Normative role definitions live in the role catalog. The human expects these bou
 
 Missing authority or capability produces a typed gap and bubbles through the declared handoff. No role improvises around it.
 
+
+---
+
+Clarify human intent and expose irreducible product decisions.
 
 GENERATED — edit the source, run `sv-playbook instructions --write`

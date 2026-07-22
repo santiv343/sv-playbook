@@ -8,6 +8,10 @@ import {
 import { completeWorkflowEffect } from './effect-completion.js';
 import type { WorkflowEffectFailure, WorkflowQueuePort } from './coordinator.types.js';
 
+// Adapter fino: WorkflowCoordinator sólo conoce WorkflowQueuePort (5
+// métodos), este archivo es el único lugar donde eso se conecta a las
+// funciones reales de service.js/effect-completion.js — el coordinator
+// nunca importa esos módulos directamente, sólo el puerto.
 export function createWorkflowQueue(store: Store): WorkflowQueuePort {
   return {
     recoverExpired: (now) => recoverExpiredWorkflowEffects(store, now),

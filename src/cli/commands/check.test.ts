@@ -8,6 +8,9 @@ import { command } from './check.js';
 import { EXIT } from '../command.constants.js';
 import type { Io } from '../command.types.js';
 import { initTestRepo } from '../../testkit.js';
+import { openStore } from '../../db/store.js';
+import { bootstrapBundledRoleCatalog } from '../../roles/bundled-profile-bootstrap.js';
+import { renderInstructionsContent } from './instructions.js';
 
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = [];
@@ -166,6 +169,35 @@ test('check secrets passes a clean tree', async () => {
     const io = fakeIo();
     const code = await main(['check', 'secrets'], io);
     assert.equal(code, EXIT.OK, 'expected clean tree to pass');
+  });
+});
+
+test('check on a virgin store heals the role catalog before comparing instructions (regression: roles must run before instructions)', async () => {
+  // Reproduce lo que distingue un store de desarrollo de larga vida (ya
+  // sanado por una corrida previa) de un checkout fresco (CI, o cualquier
+  // clone nuevo): acá armamos el AGENTS.md/CLAUDE.md "correcto" —el que un
+  // operador comitearía después de un catálogo de roles ya sano— y después
+  // lo comparamos en un repo temporal DISTINTO cuyo store es 100% virgen.
+  // Antes del fix (TARGETS corría `instructions` antes que `roles`), esto
+  // fallaba con "diverges from source" porque el catálogo de roles todavía
+  // no existía en el momento de la comparación.
+  const healedRoot = await mkdtemp(join(tmpdir(), 'svp-check-healed-'));
+  initTestRepo(healedRoot);
+  const healedStore = openStore(healedRoot);
+  bootstrapBundledRoleCatalog(healedStore);
+  healedStore.close();
+  const expectedAgents = await renderInstructionsContent(healedRoot);
+
+  await inTempRepo(async (root) => {
+    await writeFile(join(root, 'AGENTS.md'), expectedAgents, 'utf8');
+    await writeFile(join(root, 'CLAUDE.md'), expectedAgents, 'utf8');
+
+    const io = fakeIo();
+    const code = await main(['check'], io);
+    const output = io.outLines.join('\n');
+
+    assert.ok(!output.includes('diverges from source'), `expected no instructions drift on a freshly-healed virgin store, got: ${output}`);
+    assert.equal(code, EXIT.OK, `expected check to pass clean, got output: ${output}`);
   });
 });
 

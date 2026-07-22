@@ -1,3 +1,9 @@
+// SCHEMA_VERSION nunca se declara a mano — es INITIAL + cuántas migraciones
+// hay en la lista (STORE_MIGRATION_IDS.length). Agregar una migración nueva
+// al array sube la versión automáticamente; STORE_MIGRATION_ID (el objeto)
+// sólo nombra las migraciones RECIENTES que otros módulos necesitan
+// referenciar por id — las viejas quedan como strings sueltos en el array,
+// nadie más las necesita por nombre.
 export const STORE_INITIAL_SCHEMA_VERSION = 3;
 
 export const STORE_MIGRATION_ID = {

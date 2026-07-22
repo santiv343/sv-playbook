@@ -109,6 +109,15 @@ function handleAnswer(args: string[], io: Io): number {
   if (id === undefined || parts.length === 0) throw new UsageError('answer requires <ID> <answer text...>');
   const answer = parts.join(' ');
   return withStore((store, repoRoot) => {
+    // ⚠️ Ver findings.md F-006 (CONFIRMADO EN VIVO): este chequeo exige que
+    // .svp-session-role EXISTA y diga literalmente 'human'. El modelo
+    // documentado en content/cli.md es el opuesto — el archivo es identidad
+    // AUTO-DECLARADA por un agente (ausente = no-agente); destructive-gate.ts
+    // lo respeta así (`role !== null`), pero acá se invierte. Ningún
+    // comando de producción escribe ese archivo con 'human', así que una
+    // sesión humana normal (sin el archivo) cae en este rechazo — probado
+    // en vivo. No corregido acá — es una decisión de producto, no un
+    // fix mecánico obvio.
     const role = readSessionRole(repoRoot);
     if (role !== WORKFLOW_EXECUTOR.HUMAN) {
       io.err(`${ERROR_PREFIX}decision ${id} can only be answered in a human session`);

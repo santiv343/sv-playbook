@@ -12,6 +12,12 @@ export function daemonStartErrorDetail(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// El comando `daemon` en primer plano (a diferencia de `serve`, que lo
+// arranca como dependencia interna) — resolve() SIEMPRE se decide desde
+// `instance.done` (el receipt terminal único, ver daemon.lifecycle.ts), no
+// desde el handler de la señal. userInitiated distingue "el humano pidió
+// parar" (exit OK aunque el shutdown en sí tenga hiccups) de "algo terminó
+// solo, en teoría limpio o no" — el mismo receipt.clean decide en ese caso.
 export const command: Command = {
   name: 'daemon',
   summary: 'Start the sv-playbook daemon (single blessed writer for the store)',

@@ -52,6 +52,13 @@ function activeCatalog(store: Store): { readonly version: number; readonly diges
   return row;
 }
 
+// PRINCIPLE-010 (no dead ends) en código: si un store nunca activó un
+// catálogo de roles (posible en un store recién creado que saltó el flujo
+// normal de arranque), en vez de fallar duro se auto-repara arrancando el
+// catálogo bundled y reintentando UNA vez — la excepción sólo se propaga si
+// el self-heal tampoco resuelve. Es la misma filosofía que
+// roleCatalogStoreIsVirgin en roles/system-check.ts, aplicada acá al punto
+// de entrada de armar un candidato de review.
 function activeCatalogWithSelfHeal(store: Store): { readonly version: number; readonly digest: string } {
   try {
     return activeCatalog(store);
@@ -124,6 +131,13 @@ function candidateGitOutput(worktree: string, args: readonly string[], maxBuffer
   }
 }
 
+// El caso "ya integrado" (HEAD === merge-base, sin diff pendiente) NO es un
+// error — es cómo un candidato certifica trabajo que técnicamente ya está
+// en la rama base (p.ej. un cherry-pick manual previo). changedFiles vacío
+// + diff vacío + integration: INTEGRATED es la forma en que ese estado
+// viaja hasta el reviewer sin que se confunda con "no hay nada que
+// revisar" (ver REVIEW_CANDIDATE_INTEGRATION en review-candidate.constants.ts
+// y el schema v2 que la hizo opcional para no romper artefactos v1).
 function candidateContent(worktree: string, baseReference: string, maxBuffer: number) {
   const dirty = candidateGitOutput(worktree, [GIT_ARGUMENT.STATUS, GIT_ARGUMENT.PORCELAIN], maxBuffer);
   if (dirty !== '') {
@@ -157,6 +171,12 @@ function candidateContent(worktree: string, baseReference: string, maxBuffer: nu
   return { baseSha, changedFiles, diff, diffDigest: digest(diff), integration: REVIEW_CANDIDATE_INTEGRATION.PENDING };
 }
 
+// El interruptor real entre el camino "moderno" (este archivo) y el
+// "legacy" (tasks/legacy-review-verification.ts, ver F-007 en
+// findings.md): si hay una fila en responsibilityInputPolicies para este
+// status con sourceKind = review-candidate, el moderno es obligatorio.
+// Nada más en el codebase decide esto — es la ÚNICA función que responde
+// "¿cuál camino corresponde acá?".
 export function reviewCandidateRequired(store: Store, status: string): boolean {
   return store.orm.select({ responsibilityId: responsibilityInputPolicies.responsibilityId })
     .from(responsibilityInputPolicies).where(and(
@@ -217,6 +237,17 @@ export async function assembleReviewCandidate(
   };
 }
 
+// Idempotente por identidad (packetId + workDefinitionVersion + sha): si ya
+// existe un candidato con esa tripleta, no reinserta — sólo valida que el
+// digest del work definition coincida (si no, alguien está intentando
+// reusar la misma identidad para un contenido de trabajo distinto, lo cual
+// es un error real, no un reintento legítimo). El insert real crea DOS
+// filas relacionadas (workflowArtifacts + reviewCandidates) más el evento
+// de evidencia — ninguna transacción explícita las envuelve acá porque
+// persistReviewCandidate se llama después de que assembleReviewCandidate ya
+// validó todo; el riesgo de inconsistencia entre las 3 escrituras es bajo
+// pero no cero (ver PRINCIPLE-016: comparar contra closePromotedTask en
+// promotion.receipts.ts, que sí usa transact() para un patrón similar).
 export function persistReviewCandidate(
   store: Store,
   definition: StoredWorkDefinition,
@@ -326,6 +357,15 @@ function candidateArtifactId(store: Store, definition: StoredWorkDefinition): st
   return candidate.artifactId;
 }
 
+// Punto de entrada real donde un rol (típicamente reviewer) recibe el
+// candidato como su input manual: requiredPolicy exige que exista
+// EXACTAMENTE una política de input para ese rol (AMBIGUOUS_POLICY si hay
+// más de una — un rol no puede tener dos fuentes de verdad para su input),
+// assertTaskStatus confirma que el packet esté en el status que la
+// política declara, y sólo entonces se resuelve el artifact más reciente
+// que matchea la identidad del work definition. Null (no ContextError) es
+// el retorno cuando el rol simplemente no tiene política configurada — un
+// caso normal, no un error.
 export function resolveManualInput(
   store: Store,
   roleId: string,

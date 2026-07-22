@@ -65,6 +65,12 @@ export function fetchDaemonBuildDigestSync(port: number): string | null {
   }
 }
 
+// Por qué un child process de Node en vez de un cliente HTTP normal acá: el
+// CLI necesita reenviar sincrónicamente al daemon desde código de nivel de
+// módulo (carga de store.ts), donde no hay un event loop propio disponible
+// para awaitear una promesa. spawnSync bloquea el proceso actual hasta que
+// el script hijo (que sí corre async con http.request) termina y devuelve
+// su exit code — un truco para "hacer async en contexto sync".
 export function forwardToDaemonSync(argv: string[], token: string, port: number, ctx?: ExecutionContext, requestTimeoutMs?: number): number {
   const context = ctx ?? getContext() ?? { cwd: process.cwd(), sessionId: readSessionId(process.cwd()) };
   const body = JSON.stringify({ token, argv, context });

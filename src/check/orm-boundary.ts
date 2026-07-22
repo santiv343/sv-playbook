@@ -89,6 +89,15 @@ function isDdlLiteral(node: ts.Node): boolean {
     && SQL_DDL_PATTERN.test(node.getText());
 }
 
+// Gate mecánico de "store.orm siempre, SQL crudo sólo DDL en src/db"
+// (memoria del proyecto, PRINCIPLE-013 aplicado a acceso a datos):
+// clasifica cada nodo del AST en 3 tipos de violación posibles —
+// RAW_QUERY_CALL (`.prepare()`/`.exec()` sobre un handle `.db`),
+// DATABASE_HANDLE (importar `node:sqlite` directo, o acceder a `.db`
+// fuera de `src/db/`), SQL_LITERAL (una variable `*_SQL` o un template
+// literal que matchea un patrón de DDL). `isExcluded()` (arriba) es lo
+// que le da a `src/db/` su excepción legítima — el resto del código no la
+// tiene.
 function classifyNode(node: ts.Node): OrmBoundaryViolationKind | undefined {
   if (ts.isCallExpression(node)) {
     const rawKind = rawQueryKind(node);

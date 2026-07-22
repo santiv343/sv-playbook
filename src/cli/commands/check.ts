@@ -34,6 +34,15 @@ async function listMarkdownFiles(root: string, dir: string): Promise<string[]> {
   }
 }
 
+// `check` es el comando "estructural" — valida que cada packet .md tenga
+// las secciones obligatorias (Task/RED test/Stop conditions/Evidence, ver
+// PRINCIPLE-009: plantillas fijas con secciones requeridas), que
+// AGENTS.md/CLAUDE.md no tengan drift, y delega los gates de deuda
+// (secrets, comandos sugeridos, catálogo de roles) a sus módulos
+// dedicados. checkViolation/BASELINE_RESULT es el mecanismo de
+// "grandfathering" — un packet viejo con secciones faltantes puede seguir
+// pasando si su fingerprint ya está en el baseline, sin bloquear el gate
+// para todo el repo mientras se migra gradualmente.
 function checkPacketSections(file: string, body: string, io: Io, baselined?: boolean): boolean {
   const missing: string[] = [];
   for (const section of REQUIRED_SECTIONS) {
@@ -119,10 +128,18 @@ async function checkInstructions(root: string, io: Io): Promise<boolean> {
   return hasDrift;
 }
 
+// Orden importa: `roles` autosana un catálogo de roles virgen
+// (checkRoleSystem -> bootstrapBundledRoleCatalog si el store está vacío),
+// y `instructions` depende de que ese catálogo ya exista (renderInstructionsContent
+// compila contexto para el rol human-interface, que incluye el item de rol).
+// En un store fresco (CI, o cualquier checkout nuevo), correr `instructions`
+// antes de `roles` compara contra un AGENTS.md/CLAUDE.md committeado que
+// SÍ asume el catálogo de roles — divergencia falsa que sólo se ve en
+// stores vírgenes, nunca en un store local ya sanado por una corrida previa.
 const TARGETS: Record<string, (root: string, io: Io) => Promise<boolean>> = {
   structure: checkStructure,
-  instructions: checkInstructions,
   roles: checkRolesTarget,
+  instructions: checkInstructions,
   secrets: checkSecretsTarget,
   'command-usage': checkCommandUsage,
 };

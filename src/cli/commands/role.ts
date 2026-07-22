@@ -67,6 +67,13 @@ function required(value: string | undefined, name: string): string {
   return value;
 }
 
+// `role` es el comando más grande del CLI (18 subcomandos en USAGE) porque
+// es la única puerta de escritura al catálogo de roles — PRINCIPLE-012 (el
+// CLI es la única interfaz) aplicado: nada escribe roles/responsibilities/
+// policies directo a la DB, todo pasa por acá, que a su vez delega en
+// roles/catalog.ts. withStore() es el wrapper común: abre, ejecuta, cierra
+// siempre (incluso si `operation` lanza) — el patrón que evita conexiones
+// SQLite colgadas entre invocaciones de CLI de vida corta.
 function withStore<T>(operation: (store: Store) => T): T {
   const store = openStore(commonRoot(getCwd()));
   try {

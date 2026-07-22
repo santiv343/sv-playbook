@@ -32,6 +32,11 @@ function required(value: string | undefined, name: string): string {
   return value;
 }
 
+// `--selector dimension=value` (y --capability, --dependency, etc.) usan
+// esta misma sintaxis clave=valor repetible — pairs() es el parser
+// compartido, capabilityPairs() lo especializa exigiendo exactamente UN
+// efecto por capability (duplicar `--capability x=allow --capability
+// x=deny` es un error de uso, no "el último gana").
 function pairs(values: readonly string[] | undefined, name: string): Record<string, string[]> {
   const result: Record<string, string[]> = {};
   for (const value of values ?? []) {

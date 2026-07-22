@@ -54,6 +54,14 @@ function required(value: string | undefined, name: string): string {
   return value;
 }
 
+// `contract` es la puerta CLI al dominio `contracts/` completo — 12
+// subcomandos que cubren desde agregar un artifact contract suelto
+// (`add`/`validate`) hasta el ciclo completo de evolución del protocolo
+// (`work-inspect` -> `proposal-check` -> `proposal-review` ->
+// `proposal-apply`, y su análogo `reconcile-*` para vocabulario de
+// escalación). Cada subcomando delega en su módulo correspondiente bajo
+// `contracts/` — este archivo es puro parseo de argumentos + I/O de
+// archivos, ninguna lógica de negocio vive acá.
 function jsonObject(path: string, label: string): Readonly<Record<string, unknown>> {
   const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {

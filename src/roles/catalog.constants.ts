@@ -1,3 +1,8 @@
+// SELF_HANDOFF es un error real que catalog.ts previene: un rol no puede
+// declarar un handoff hacia sí mismo (source === target), eso rompería la
+// cadena de autoridad de HJ-004 (siempre hay un handoff a alguien
+// distinto). ACTIVE_CATALOG_DRIFT es lo que activateRoleCatalog detecta si
+// el catálogo persistido cambió sin pasar por una activación explícita.
 export const ROLE_CATALOG_SQL = {
   BEGIN: 'BEGIN IMMEDIATE',
   COMMIT: 'COMMIT',

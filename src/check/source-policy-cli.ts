@@ -9,6 +9,12 @@ import { evaluateOrmBoundaryBaseline, inspectOrmBoundaryTree } from './orm-bound
 import { inspectSuggestedCommandTree } from './suggested-command.js';
 import { SOURCE_BASELINE_STATUS } from './source-baseline.constants.js';
 
+// El punto de entrada real de `npm run verify` para los 3 gates de deuda
+// monotónica (orm-boundary, literal-comparison, duplicate-string) + el gate
+// de comandos sugeridos (sin baseline — cualquier violación es roja
+// siempre, no hay deuda tolerada ahí). `valid` exige los 3 baselines en
+// MATCH exacto (ni más ni menos deuda que la congelada) — confirma en
+// código lo que F-011 (findings.md, retirado) tuvo que redescubrir con grep.
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const config = loadConfig(REPO_ROOT);
 const ormInventory = inspectOrmBoundaryTree(REPO_ROOT);

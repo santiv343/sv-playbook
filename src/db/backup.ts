@@ -55,6 +55,12 @@ function freshLeaseCountDirect(dbPath: string, leaseTtlMs: number): number {
   } catch { return 0; } finally { db.close(); }
 }
 
+// Retención con un piso protegido: se borran los backups más viejos que
+// `retention` en orden de antigüedad, PERO nunca se borra un backup
+// verificado si eso dejaría menos de `effectiveFloor` backups verificados
+// en total — un backup no-verificado siempre es candidato a borrar (nunca
+// se confirmó que sea restaurable), mientras que los verificados tienen un
+// mínimo garantizado incluso si `retention` es muy bajo.
 function trimBackups(resolvedDir: string, retention: number, floor?: number): void {
   const effectiveFloor = floor ?? BACKUP_RETENTION_FLOOR_DEFAULT;
   const entries = readdirSync(resolvedDir)
@@ -262,6 +268,18 @@ function rawPreRestoreBackup(repoRoot: string, retention?: number, resolvedDir?:
   return report;
 }
 
+// El backup se arma en un archivo TEMPORAL (`.tmp`) y sólo se
+// renombra al nombre final después de terminar — el mismo patrón
+// write-then-rename que promoteRoleProjections (gateway/adapters/
+// role-projection-registry.ts) usa para archivos de proyección: nunca hay
+// una ventana donde un consumidor externo (verifyLatestBackup, otro
+// proceso listando el directorio) vea un .sqlite a medio escribir.
+// VACUUM INTO es el camino preferido (backup compacto, sin fragmentación);
+// si falla (p.ej. store bloqueado), cae a un copyFileSync directo —
+// funcional pero no compacta. Rechaza el backup si hay leases "frescas"
+// (trabajo en curso) salvo que se pida explícitamente lo contrario
+// (allowFreshLeases) — un backup tomado a mitad de una escritura activa
+// podría capturar un estado inconsistente.
 export function createStateBackup(repoRoot: string, options: BackupOptions, resolvedDir?: string): BackupReport {
   const freshLeases = freshLeaseCountDirect(dbPath(repoRoot), loadConfig(repoRoot).tasks.leaseTtlMs);
   if (freshLeases > 0 && options.allowFreshLeases !== true) {
@@ -294,6 +312,13 @@ export function createStateBackup(repoRoot: string, options: BackupOptions, reso
   return report;
 }
 
+// Dos chequeos independientes, ambos necesarios: PRAGMA integrity_check
+// confirma que el ARCHIVO SQLite no está corrupto a nivel de páginas;
+// user_version (comparado contra MIN_RESTORABLE_SCHEMA_VERSION y
+// SCHEMA_VERSION actual) confirma que el SCHEMA es compatible con este
+// build — un backup íntegro pero de un schema demasiado viejo (pre-v3) o
+// más nuevo que el binario actual (restaurado con un build más viejo) se
+// rechaza igual, con un mensaje que indica exactamente por qué.
 function checkDbIntegrity(db: DatabaseSync): void {
   let integrityRow: unknown;
   let versionRow: unknown;
@@ -368,6 +393,15 @@ function preRestoreBackup(repoRoot: string, force: boolean, retention?: number, 
   }
 }
 
+// Restaurar SIEMPRE toma un backup del estado actual primero — sin
+// excepción, incluso si `backupPath` resulta inválido más adelante (la
+// validación de `backupPath` pasa DESPUÉS del pre-restore backup). Si el
+// store en vivo ya está corrupto (isValidSQLite falla), usa
+// rawPreRestoreBackup (copia directa, sin pasar por SQLite) en vez del
+// camino normal que abre el DB — no se puede pedir VACUUM INTO a un
+// archivo que ni siquiera parsea como SQLite. atomicReplace al final es el
+// mismo patrón write-then-rename que createStateBackup, aplicado a
+// reemplazar el store real.
 export function restoreStateBackup(repoRoot: string, backupPath: string, force: boolean, retention?: number, resolvedDir?: string): RestoreReport {
   if (!existsSync(backupPath)) throw new Error(`backup file not found: ${backupPath}`);
 

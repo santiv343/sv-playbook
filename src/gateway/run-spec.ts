@@ -49,6 +49,14 @@ function validateExistingBindings(existing: RunSpec, request: ResolvedRunSpecReq
   }
 }
 
+// El corazón de la idempotencia de dispatch: (dispatchRef, roleId, phase)
+// identifica UN despacho lógico — si ya existe, se devuelve el RunSpec
+// existente en vez de crear uno nuevo (ver prepareResolved). Pero antes de
+// reutilizarlo se valida que la identidad completa siga siendo la misma
+// (subject, input artifact, output contract, work definition, workflow
+// effect) — si algo cambió, es un error real (alguien está pidiendo el
+// MISMO dispatchRef para un trabajo distinto), no un caso a silenciar
+// devolviendo el spec viejo.
 function existingDispatch(
   store: Store,
   request: ResolvedRunSpecRequest,
@@ -226,6 +234,14 @@ function insertRunSpecRows(
   });
 }
 
+// specDigest es un segundo mecanismo de detección de duplicados, DISTINTO
+// del de existingDispatch (que es por dispatchRef+roleId+phase): acá se
+// calcula el digest del contenido COMPLETO del spec compilado y se verifica
+// que no exista otro run spec con el mismo digest pero SIN estar atado a
+// esta dispatch identity — si eso pasa, es un bug de otro lugar del
+// sistema (dos identidades de dispatch distintas produciendo exactamente
+// el mismo contenido), no algo que este código pueda resolver solo, así
+// que lanza en vez de intentar arreglarlo.
 function persistRunSpec(
   store: Store,
   request: ResolvedRunSpecRequest,
@@ -260,6 +276,13 @@ function persistRunSpec(
   };
 }
 
+// prepareResolved es la función común detrás de las dos entradas públicas
+// (prepareRunSpec para packets, prepareWorkflowRunSpec para efectos de
+// workflow) — ambas arman un ResolvedRunSpecRequest con su propia lógica de
+// identidad (ref del work definition vs id del effect) y convergen acá:
+// buscar dispatch existente primero, si no hay, compilar contexto y
+// persistir. Esto es lo que permite que RunSpec sea un concepto único
+// aunque se origine desde dos dominios distintos (tasks vs orchestration).
 export function prepareResolved(
   store: Store,
   request: ResolvedRunSpecRequest,

@@ -47,6 +47,12 @@ function operationKey(operation: string, runSpecId: string, sequence?: number): 
   return sequence === undefined ? `${operation}:${runSpecId}` : `${operation}:${runSpecId}:${sequence}`;
 }
 
+// dispatch_intents es el registro de "voy a hacer esta operación externa
+// AHORA" — commitIntent se escribe ANTES de llamar al adapter real;
+// consumeIntent/blockIntent lo cierran después según cómo salió. El
+// operationKey (operation:runSpecId[:sequence]) es UNIQUE en la tabla —
+// esto es lo que hace posible reconocer si una operación ya se commiteó
+// antes (p.ej. tras un crash a mitad de camino) en vez de duplicarla.
 export function commitIntent(
   store: Store,
   runSpec: RunSpec,

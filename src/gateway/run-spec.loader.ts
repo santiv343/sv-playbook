@@ -67,6 +67,12 @@ function storedWorkDefinitionReference(
   return definition.reference;
 }
 
+// Reconstruye un RunSpec completo desde su fila persistida, revalidando
+// cada referencia al vuelo en vez de confiar ciegamente en lo guardado:
+// el snapshot de executionProfile debe seguir matchando su id/roleId
+// original, y si hay workDefinitionRef, se re-resuelve contra
+// work-definitions.ts y se compara el digest — si algo mutó entre que el
+// RunSpec se creó y ahora, esto lanza en vez de devolver un spec inconsistente.
 export function loadRunSpec(store: Store, id: string): RunSpec {
   const row = store.orm.select().from(runSpecs).where(eq(runSpecs.id, id)).get();
   if (row === undefined) throw new ContextError(RUN_SPEC_ERROR.UNKNOWN, `unknown run spec: ${id}`);

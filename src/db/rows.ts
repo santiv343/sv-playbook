@@ -1,3 +1,11 @@
+// better-sqlite3 devuelve filas como `unknown` (sin tipar) — este archivo
+// es el único lugar del repo donde se hace el "unboxing" seguro de una
+// columna cruda a un tipo TS concreto. Se usa en TODO el código que
+// todavía consulta con `store.db.prepare(...)` en vez de `store.orm`
+// (patrón más viejo, coexiste con Drizzle — ver architecture.md). Cada
+// función lanza `TypeError` inmediatamente si el valor no es del tipo
+// esperado, en vez de dejar pasar un `undefined`/tipo incorrecto que
+// recién explotaría más adelante y en otro lugar.
 export function column(row: unknown, key: string): unknown {
   if (typeof row !== 'object' || row === null) {
     throw new TypeError(`invalid row: expected object for ${key}`);

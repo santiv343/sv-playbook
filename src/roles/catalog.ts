@@ -67,6 +67,12 @@ function responsibilityClassification(store: Store, id: string): string {
   return row.classification;
 }
 
+// Enforcement mecánico de HJ-002 (mecanizar toda responsabilidad
+// determinista): un rol nunca puede declarar como "juicio exclusivo" una
+// responsabilidad ya clasificada como DETERMINISTIC — si es determinista,
+// le corresponde al runtime, no a un agente. Este chequeo es lo que impide
+// que, con el tiempo, responsabilidades mecanizables terminen reasignadas
+// a un rol "porque es más simple" (PRINCIPLE-014).
 export function addRoleContract(store: Store, contract: RoleContractInput): void {
   const judgments = normalized(contract.exclusiveJudgments);
   const capabilityRequestClasses = normalized(contract.capabilityRequestClasses);
@@ -107,6 +113,11 @@ export function addRoleContract(store: Store, contract: RoleContractInput): void
   });
 }
 
+// Actualizar un contrato de rol siempre incrementa definitionVersion — no
+// hay "edición en el lugar" silenciosa: cualquier consumidor que capturó una
+// versión anterior (ej. un context pack ya compilado, ver
+// context/compiler.ts) puede detectar que quedó desalineado comparando este
+// número.
 export function setRoleContract(store: Store, contract: RoleContractInput): void {
   const current = store.orm.select({ version: roleContracts.definitionVersion }).from(roleContracts)
     .where(eq(roleContracts.roleId, contract.roleId)).get();

@@ -164,6 +164,13 @@ function handleShutdown(token: string, req: IncomingMessage, res: ServerResponse
   });
 }
 
+// Ruta HTTP que ejecuta un comando del CLI DENTRO del proceso daemon,
+// reutilizando su store abierto (ver commandPort en startDaemon: es
+// literalmente el mismo `main()` de src/cli/main.ts). Cada request trae su
+// propio ExecutionContext (cwd/sessionId de quien lo originó) y se ejecuta
+// con runWithContext para que getCwd() resuelva al cwd del cliente remoto,
+// no al del daemon. Si el daemon está drenando (state.stopping), rechaza
+// con 503 en vez de aceptar trabajo nuevo a medias de un apagado.
 function handleExec(token: string, state: TerminationState, commandPort: CommandPort, req: IncomingMessage, res: ServerResponse, repoRoot: string): void {
   if (state.stopping) {
     jsonResponse(res, 503, { error: ERR_SHUTTING_DOWN });
@@ -232,6 +239,12 @@ function openDaemonStore(repoRoot: string, lockPath: string): Store {
   }
 }
 
+// BEGIN EXCLUSIVE + COMMIT no hace nada útil por sí solo — es una forma de
+// forzar a SQLite a tomar y liberar el lock exclusivo una vez, para que
+// assertExclusiveStoreLock pueda inspeccionar el estado del archivo de lock
+// del SO y confirmar que este proceso realmente tiene el lock exclusivo
+// (no sólo que better-sqlite3 no tiró error). Si la verificación falla, se
+// deshace todo lo que initializeDaemonRuntime ya hizo (store, lock file).
 function verifyDaemonStore(store: Store, dbPath: string, lockPath: string): void {
   store.db.exec('BEGIN EXCLUSIVE');
   store.db.exec('COMMIT');
@@ -246,6 +259,12 @@ function verifyDaemonStore(store: Store, dbPath: string, lockPath: string): void
   }
 }
 
+// Orden importa: lock de PID primero (para que un segundo `daemon` falle
+// rápido si ya hay uno vivo), después abrir el store (setDaemonStore lo deja
+// disponible para openStore()/openStoreReadOnly() de todo el proceso, ver
+// db/store.ts), recién ahí verificar el lock exclusivo real, y por último
+// escribir el token nuevo (0o600, sólo el dueño del proceso puede leerlo) —
+// un cliente HTTP nunca puede autenticar un exec/shutdown sin ese token.
 function initializeDaemonRuntime(repoRoot: string, port: number): DaemonRuntime {
   const svpDir = join(repoRoot, SVP_DIR);
   mkdirSync(svpDir, { recursive: true, mode: 0o700 });
@@ -275,6 +294,18 @@ function finalizeAfterDrain(state: TerminationState): void {
   });
 }
 
+// Apagado con drenado: primero para el background worker (si lo hay), marca
+// state.stopping (startDrain — así handleExec empieza a rechazar trabajo
+// nuevo), y sólo cuando el server HTTP terminó de cerrar conexiones llama a
+// finalizeAfterDrain. `wait()` es lo que usa `serve` para esperar a que el
+// daemon realmente haya terminado antes de cerrar su propio HTTP server.
+// NOTA: a la fecha de este comentario, `serve.ts` sólo llama a
+// `daemon.stop()` desde SIGINT/SIGTERM/error del propio servidor HTTP — NO
+// está suscripto a `daemon.done`, así que si el daemon se apaga por su
+// cuenta (ej. vía su propia ruta HTTP /shutdown) la consola de `serve` no
+// se entera y queda corriendo. Hay un fix para esto en la rama
+// `fix/serve-shutdown-lifecycle-v2` (commit 3f2f0f5) que todavía no se
+// mergeó a main — confirmar el estado real antes de asumir que ya está.
 function createShutdownControl(state: TerminationState, backgroundWorker?: DaemonBackgroundWorker): ShutdownControl {
   const initiate = (): void => {
     if (state.stopping) return;
@@ -356,6 +387,12 @@ export function createDaemon(repoRoot: string, port: number, deps: DaemonDeps): 
   }
 }
 
+// Punto de entrada real del daemon (usado tanto por `sv-playbook daemon`
+// como por `sv-playbook serve`, que lo arranca en el mismo proceso — NO hay
+// spawn/fork de un proceso hijo acá). El commandPort delega en el mismo
+// main() que corre un CLI directo: el daemon no reimplementa el despacho de
+// comandos, sólo le da un transporte HTTP y garantiza que corre en un único
+// proceso con el store ya abierto.
 export async function startDaemon(repoRoot: string, port: number): Promise<DaemonInstance> {
   const { main } = await import('../cli/main.js');
   const commandPort: CommandPort = {

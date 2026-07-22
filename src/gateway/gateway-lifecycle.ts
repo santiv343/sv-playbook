@@ -73,6 +73,13 @@ function assertCancellation(adapter: AgentAdapter, request: AdapterObservationRe
   }
 }
 
+// La observación de un run es DURABLE — si el proceso que la inició muere y
+// otro la retoma, beginOrResumeObservation() reconstruye el estado
+// (progressToken + lastProgressMs) desde gateway_run_state en vez de
+// arrancar de cero, y verifica que el turno que se está por observar sea
+// EXACTAMENTE el mismo (sessionId + messageId) que dejó la fila — si otro
+// turno ya la reclamó, es un error de estado inválido, no un caso a
+// silenciar.
 function beginOrResumeObservation(store: Store, runSpec: RunSpec, turn: AdapterTurnReceipt, nowMs: number): ObservationState {
   const snapshot = loadRunSnapshot(store, runSpec.id);
   if (snapshot !== undefined) {

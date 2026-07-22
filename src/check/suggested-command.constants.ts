@@ -1,3 +1,11 @@
+// Gate que evita que el CLI/docs sugieran un comando/subcomando/flag que NO
+// existe: minea las declaraciones REALES del código (nombres de comando,
+// literales de uso, keys de parseArgs) como fuente de verdad, y compara
+// contra toda mención de `sv-playbook ...` o `--flag` en código y markdown
+// vivo (ver EXCLUDED_MARKDOWN_PREFIXES: snapshots fechados no cuentan,
+// citan el pasado a propósito). EXTERNAL_FLAG_ALLOWLIST es la válvula de
+// escape explícita para flags de herramientas EXTERNAS (git/gh) que el
+// gate no puede verificar contra código propio.
 export const SUGGESTED_COMMAND_KIND = {
   UNKNOWN_COMMAND: 'unknown-command',
   UNKNOWN_SUBCOMMAND: 'unknown-subcommand',
@@ -51,6 +59,7 @@ import { GH_ARGUMENT } from '../gh.constants.js';
 import { GIT_ARGUMENT } from '../git.constants.js';
 import { CONTENT_DIRECTORY_NAME, FILE_EXTENSION } from '../platform.constants.js';
 import { PACKETS_DIR, PACKETS_DOCS_DIR } from '../tasks/service.constants.js';
+import { OPENCODE_SERVE_FLAG } from '../gateway/adapters/opencode.constants.js';
 
 // External-tool invocations quoted in code and living docs (git, gh, node, agent
 // CLIs). The gate's contract is "the flag must exist somewhere real"; these exist,
@@ -69,7 +78,12 @@ export const EXTERNAL_FLAG_ALLOWLIST: readonly string[] = [
   GIT_ARGUMENT.SHOW_TOPLEVEL,
   GIT_ARGUMENT.VERIFY,
   GH_ARGUMENT.JQ,
+  GH_ARGUMENT.STATE,
+  GH_ARGUMENT.SEARCH,
+  OPENCODE_SERVE_FLAG.HOSTNAME,
+  OPENCODE_SERVE_FLAG.PORT,
   '--body',
+  '--include',
   '--output-format',
   '--sandbox',
   '--skip-git-repo-check',

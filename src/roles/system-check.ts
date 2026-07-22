@@ -13,6 +13,15 @@ import { EMPTY_SIZE } from '../platform.constants.js';
 import { inspectRoleCharterProjection } from './charter-projection.js';
 import { bootstrapBundledRoleCatalog, roleCatalogStoreIsVirgin } from './bundled-profile-bootstrap.js';
 
+// "Virgin" es un atajo deliberado: en un store nuevo, bootstrapear PRIMERO
+// y devolver sólo las violaciones de catálogo/activación (sin closure ni
+// charter projection, que dependen de profiles que todavía no existen)
+// evita falsos negativos por falta de setup — un store recién creado no
+// debería reportarse "inválido" sólo porque nadie configuró execution
+// profiles todavía. Fuera del caso virgen, el chequeo es acumulativo:
+// closure persistida Y closure "efectiva" (proyecciones re-leídas del disco
+// ahora mismo) se evalúan por separado para detectar drift entre lo que el
+// store cree y lo que el filesystem realmente tiene.
 export async function checkRoleSystem(store: Store, repoRoot: string): Promise<RoleCatalogCheck> {
   const virgin = roleCatalogStoreIsVirgin(store);
   if (virgin) bootstrapBundledRoleCatalog(store);

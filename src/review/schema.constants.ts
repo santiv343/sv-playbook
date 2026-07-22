@@ -1,5 +1,9 @@
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
+// responsibilityInputPolicies es la tabla que reviewCandidateRequired()
+// consulta para decidir camino moderno vs legacy (F-007 en findings.md).
+// reviewCandidates es la tabla inmutable real (triggers ABORT, ver
+// db/review-candidate.schema.constants.ts).
 export const responsibilityInputPolicies = sqliteTable('responsibility_input_policies', {
   responsibilityId: text('responsibility_id').primaryKey(),
   phase: text('phase').notNull(),

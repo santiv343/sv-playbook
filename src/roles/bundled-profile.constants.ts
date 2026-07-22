@@ -1,6 +1,15 @@
 import { SELF_CORRECTION_MODE } from './role.constants.js';
 import type { BundledRoleDefinition, BundledRoleProfile } from './bundled-profile.types.js';
 
+// Este es el catálogo de roles DEFAULT que se bootstrapea en un store
+// virgen — y es también la implementación literal de la cadena de autoridad
+// de HJ-004 (CLAUDE.md): human -> human-interface -> planner/refuter ->
+// delivery-orchestrator -> implementer/reviewer, con advisor/arbiter/
+// investigator como roles auxiliares. COMMON_POLICY (más abajo) es la
+// mecanización de HJ-004 "missing authority... no role improvises around
+// it": todo rol comparte el mismo stopCondition 'authority-or-contract-gap'
+// y la misma escalationClass 'authority-gap' — un gap de autoridad nunca se
+// resuelve con criterio propio del rol, siempre escala.
 export const BUNDLED_ROLE_PROFILE_ID = 'local-general-v1';
 export const BUNDLED_ROLE_BOOTSTRAP_KEY = 'bundled-role-profile';
 export const BUNDLED_ROLE_CONTEXT_VERSION = 1;

@@ -1,3 +1,7 @@
+// WORK_DEFINITION_SCHEMA_VERSION (contenido del value, validado por
+// WorkDefinitionValueSchema) es DISTINTO de la columna `version` en
+// packet_definitions (contador de revisiones del packet) — no confundir:
+// uno versiona la FORMA del JSON, el otro versiona el CONTENIDO real.
 export const WORK_DEFINITION_SCHEMA_VERSION = 1 as const;
 export const WORK_DEFINITION_INITIAL_VERSION = 1;
 export const WORK_DEFINITION_VERSION_INCREMENT = 1;

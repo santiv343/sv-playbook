@@ -16,6 +16,12 @@ function sqlValues(values: readonly string[]): string {
   return values.map(sqlValue).join(', ');
 }
 
+// Notar el CHECK compuesto en workflow_definition_steps: fuerza a nivel de
+// BASE DE DATOS que executor=agent implica role_id presente y operation_id
+// ausente (y viceversa para runtime/human) — la misma regla que
+// validateAgentBinding/validateRuntimeBinding en runtime-validation.ts
+// verifican en aplicación, pero acá está duplicada como invariante SQL
+// para que ni siquiera una migración manual pueda dejar una fila inválida.
 export const ORCHESTRATION_STORE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS workflow_definitions (
   id TEXT NOT NULL,

@@ -46,6 +46,13 @@ function freshLeases(repoRoot: string): number {
   }
 }
 
+// `rebuild` reconstruye la DB desde los archivos `.md` de packets en disco
+// (docs/packets/*.md son la fuente exportada, la DB es un índice derivado
+// reconstruible) — típicamente para recuperarse de un store corrupto sin
+// perder trabajo, siempre y cuando los .md sigan en el árbol. Por eso
+// takePreRebuildBackup() se toma ANTES de tocar nada: si el store viejo
+// tenía datos que los .md no capturan (eventos, leases), el rebuild los
+// pierde, y el backup pre-rebuild es la única red de seguridad.
 function typeFromId(id: string): string {
   const prefix = id.slice(0, id.indexOf(TASK_ID_SEPARATOR));
   for (const [type, p] of Object.entries(TASK_TYPE_PREFIX)) {

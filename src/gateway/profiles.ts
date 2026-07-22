@@ -177,6 +177,14 @@ export function setExecutionProfilePreference(store: Store, roleId: string, prof
     }).run();
 }
 
+// Resuelve qué perfil de ejecución (modelo+provider+config) usa un rol
+// cuando el dispatch no especifica uno explícito: primero la preferencia
+// configurada (roleExecutionProfilePreferences, por prioridad); si no hay
+// preferencia pero existe EXACTAMENTE un perfil habilitado para el rol,
+// se usa ese sin ambigüedad; si hay más de uno sin preferencia declarada,
+// se rechaza en vez de elegir arbitrariamente — la ambigüedad de "qué
+// modelo corre este rol" tiene que resolverse por configuración explícita,
+// nunca por un criterio implícito como "el primero que aparezca".
 export function selectExecutionProfile(store: Store, roleId: string): ExecutionProfile {
   const preferred = store.orm.select({ id: executionProfiles.id }).from(roleExecutionProfilePreferences)
     .innerJoin(executionProfiles, eq(executionProfiles.id, roleExecutionProfilePreferences.profileId))
@@ -202,6 +210,11 @@ export function listExecutionProfiles(store: Store): ExecutionProfile[] {
     .orderBy(asc(executionProfiles.id)).all().map((row) => loadExecutionProfile(store, row.id));
 }
 
+// Clonar es la forma soportada de crear una variante de un perfil
+// existente (ej. mismo modelo, distinto rol, o mismo rol con otra
+// política de herramientas) sin tener que declarar desde cero todos los
+// campos — copia el perfil fuente y sólo pisa lo que el caller
+// especifica explícitamente (`input`).
 export function cloneExecutionProfile(store: Store, input: ExecutionProfileCloneInput): ExecutionProfile {
   const source = loadExecutionProfile(store, input.sourceProfileId);
   const profile: ExecutionProfileInput = {

@@ -75,6 +75,13 @@ function failWorkflow(store: Store, record: FailEffectRecord, revision: number):
   }).run();
 }
 
+// closeClaim() es el compare-and-swap: sólo cierra la fila si sigue CLAIMED
+// y con el MISMO leaseOwner que la reclamó — si otro worker ya la tomó (lease
+// vencido y reclamada de nuevo) o ya se resolvió, `changes !== 1` y se
+// lanza EFFECT_NOT_OWNED en vez de pisar el trabajo de otro. Reintentable
+// vs fatal se decide DESPUÉS de cerrar el claim: retryable + intentos
+// disponibles agenda un efecto nuevo (attempt+1); si no, todo el workflow
+// pasa a FAILED — un efecto no reintentable nunca deja el workflow "colgado".
 export function failEffect(store: Store, record: FailEffectRecord): void {
   store.orm.transaction(() => {
     closeClaim(store, record);

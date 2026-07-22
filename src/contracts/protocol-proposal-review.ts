@@ -89,6 +89,13 @@ function proposalAuthorSessions(value: JsonRecord): string[] {
   return typeof value.authorSessionId === 'string' ? [value.authorSessionId] : [];
 }
 
+// "El reviewer debe ser independiente del autor" (línea con
+// authorSessionIds.includes) es la mecanización de HJ-004: reviewer no
+// aprueba su propio trabajo — no es una convención de proceso, es un
+// chequeo que bloquea la escritura si coincide la sesión. valid !== 1 y
+// status !== EVALUATED son las otras dos puertas: no se puede revisar una
+// propuesta mecánicamente inválida, ni una que ya tuvo un veredicto
+// terminal — sólo hay una revisión real por propuesta.
 function relationshipViolations(row: unknown, review: ProtocolProposalReview): string[] {
   const violations: string[] = [];
   if (stringColumn(row, 'proposal_digest') !== review.proposalDigest) violations.push('review proposal digest does not match');

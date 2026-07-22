@@ -14,6 +14,14 @@ import { RECONCILE_USAGE } from './reconcile.constants.js';
 import { GITHUB_FIELD, PR_MERGE_STATE, PR_STATE, RECONCILE_SAFETY } from '../../reconcile/reconcile.constants.js';
 import type { PrState } from '../../reconcile/reconcile.types.js';
 
+// Parseo defensivo manual del JSON de `gh pr list` en vez de un schema
+// declarativo (a diferencia de schema/core.ts en el resto del sistema) —
+// cada campo se extrae con su propio fallback silencioso a valor por
+// defecto (strEntry/boolEntry recorren entries en vez de acceso directo,
+// tolerando shapes inesperados de la salida de `gh`, una herramienta
+// externa no versionada por este repo). parsePrInfo nunca lanza — un PR
+// mal formado se degrada a un PrInfo con campos vacíos en vez de abortar
+// todo el reconcile.
 function strEntry(raw: object, key: string): string | undefined {
   for (const [k, v] of Object.entries(raw)) {
     if (k === key) {

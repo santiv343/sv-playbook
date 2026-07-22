@@ -1,6 +1,13 @@
 import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { EXECUTION_PROFILES_TABLE, MAX_RUN_DURATION_COLUMN, RUN_SPECS_TABLE, RUN_SPEC_RETRY_OF_COLUMN } from '../db/context.schema.constants.js';
 
+// El "rastro de auditoría" completo de un run queda repartido en 3 tablas
+// append-only: gatewaySessions (1 fila, se crea una vez), gatewayTurns
+// (1 fila por turno, puede haber reintentos), gatewayRunEvents (1 fila por
+// observación con cambio de progreso — historial completo, nunca se
+// borra). gatewayRunState es la ÚNICA tabla mutable de las cuatro — el
+// snapshot "actual" que se pisa en cada observación; runStatusScope()
+// (gateway-run-repository.ts) es el compare-and-swap que la protege.
 export const executionProfiles = sqliteTable(EXECUTION_PROFILES_TABLE, {
   id: text('id').primaryKey(),
   roleId: text('role_id').notNull(),

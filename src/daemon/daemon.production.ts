@@ -20,6 +20,14 @@ function productionSignalPort(): SignalPort {
   };
 }
 
+// Wiring real (proceso, señales de SO, adapters de verdad) separado
+// deliberadamente de daemon.ts/daemon.lifecycle.ts — los tests inyectan su
+// propio DaemonDeps con signalPort/backgroundWorkerFactory fake, así el
+// código del daemon en sí nunca sabe si corre en un test o en producción.
+// El backgroundWorkerFactory es lo que conecta el daemon con el motor de
+// orchestration (createWorkflowRuntime) — el daemon no arranca ese motor
+// directamente, sólo lo recibe como una fábrica a invocar una vez que
+// tiene su propio store abierto.
 export function createProductionDaemonDeps(commandPort: CommandPort): DaemonDeps {
   const adapters = createDefaultAgentAdapterRegistry();
   return {

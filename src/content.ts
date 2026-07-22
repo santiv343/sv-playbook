@@ -17,6 +17,10 @@ export async function listTopicsIn(dir: string): Promise<string[]> {
     .sort();
 }
 
+// Guard de path traversal explícito: `topic` puede venir de un argumento de
+// CLI (`sv-playbook docs <topic>`), así que antes de leer se verifica que
+// la ruta resuelta siga DENTRO de `dir` — sin esto, un topic como
+// `../../../etc/passwd` podría escapar del directorio de contenido.
 export async function readTopicIn(dir: string, topic: string): Promise<string | undefined> {
   const target = resolve(dir, `${topic}.md`);
   if (!target.startsWith(resolve(dir) + sep)) return undefined; // traversal guard

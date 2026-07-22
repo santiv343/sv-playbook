@@ -8,6 +8,13 @@ import { LEGACY_REVIEW_VERIFY_TIMEOUT_MS } from '../review/preflight.constants.j
 import { TEXT_ENCODING } from '../platform.constants.js';
 import { LifecycleError } from './service.errors.js';
 
+// ⚠️ Ver findings.md F-007: duplica (con distinto comportamiento —
+// síncrona, timeout fijo, sin captura de output) la misma verificación
+// que runSourceWorktreeVerifyCheck (src/review/preflight.ts) hace de
+// forma async y configurable. Sólo se alcanza vía gateVerify() en
+// tasks/service.ts, que a su vez sólo se alcanza si algo llama
+// movePacket() con to=REVIEW — el comando real del CLI (`task move`) no
+// lo hace, sólo lo hacen tests del dominio tasks/.
 export function verifyLegacyReviewSync(worktree: string): void {
   const configPath = join(worktree, PLAYBOOK_CONFIG_FILE_NAME);
   if (!existsSync(configPath) || /enforceVerifyOnReview\s*:\s*false/.test(readFileSync(configPath, TEXT_ENCODING.UTF8))) return;

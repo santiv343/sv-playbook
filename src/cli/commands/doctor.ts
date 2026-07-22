@@ -21,6 +21,12 @@ import {
 } from './doctor.constants.js';
 import type { CheckResult } from './doctor.types.js';
 
+// `doctor` es sólo LECTURA (openStoreReadOnly en todos los checks, ver
+// storeCheck/leasesCheck) — a diferencia de otros comandos que mutan
+// estado, doctor nunca debería poder romper nada, ni siquiera si corre en
+// paralelo con un daemon activo. Cada *Check() function es independiente y
+// nunca lanza — devuelve CheckResult con status OK/WARN/FAIL, así un check
+// roto no aborta el resto del diagnóstico.
 function nodeVersionOk(): boolean {
   const [majorRaw, minorRaw] = process.versions.node.split('.');
   const major = Number(majorRaw);

@@ -36,6 +36,12 @@ const REQUIRED_ENFORCEMENT_FIELDS = [
   CONTRACT_FIELD.TEST_IDS,
 ] as const;
 
+// `enforce` valida una tripleta contract+schema+profile SIN tocar la DB —
+// AGENT_OWNER_PATTERN es interesante: busca literalmente "llm"/"agent"/"ai"
+// como dueño de un control, y lo marca como violación (FAILURE_CODES.AGENT_OWNER)
+// — la mecanización de "un control de enforcement no puede estar a cargo de
+// un agente/LLM", forzando que cada control tenga un owner humano o
+// determinístico real, no "la IA se encarga".
 class ConformanceError extends Error {
   constructor(message: string, public readonly path: string) {
     super(message);
@@ -338,6 +344,14 @@ function buildResultChecks(
   return { checks, failureCodes: codes };
 }
 
+// Verifica que un "profile" (config de una instancia) cumple su contrato:
+// valida contra el JSON Schema declarado y corre 6 chequeos estructurales
+// adicionales que un schema JSON no puede expresar (IDs duplicados,
+// escenarios huérfanos, referencias colgantes, metadata de enforcement
+// incompleta, dueños de control que son agentes en vez de mecanismos
+// runtime). Cada input se hashea (sha256 sobre JSON canonicalizado) para que
+// el receipt pruebe exactamente qué versión de contrato/schema/profile se
+// evaluó.
 export function runConformance(contractPath: string, schemaPath: string, profilePath: string): ConformanceReceipt {
   const contractRaw = readUtf8File(contractPath);
   const schemaRaw = readUtf8File(schemaPath);

@@ -17,6 +17,16 @@ function readConfigFile(repoRoot: string): string | undefined {
   }
 }
 
+// Sin caché a propósito: lee playbook.config.json del disco en cada
+// llamada, así un cambio de config se ve reflejado de inmediato en el
+// próximo comando, sin necesidad de reiniciar nada. El costo (I/O
+// repetido) es aceptable porque el archivo es chico y las invocaciones
+// del CLI son cortas.
+// NOTA (ver findings.md F-005): `{ ...DEFAULTS }` es un shallow copy —
+// los campos anidados (tasks, backup, gates, etc.) siguen siendo la
+// MISMA referencia de objeto en todas las llamadas. Hoy ningún caller los
+// muta (verificado), pero si alguno lo hiciera corrompería los defaults
+// para todo el proceso.
 export function loadConfig(repoRoot: string): PlaybookConfig {
   const text = readConfigFile(repoRoot);
   if (text === undefined) {

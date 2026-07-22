@@ -4,6 +4,12 @@ import { listTopics, readTopic } from '../../content.js';
 
 const AVAILABLE_TOPICS = 'Available topics:';
 
+// `docs <topic>` es el acceso de un agente al material vivo de
+// `content/*.md` (principios, taste, dispatch, skills) — mismo contentDir()
+// que instructions.ts usa para el cold-start, pero acá expuesto tópico por
+// tópico bajo demanda en vez de todo compilado en un solo render. Sin
+// argumento, lista los tópicos disponibles; con uno inválido, también lista
+// (no sólo un error genérico) — el CLI se autodocumenta incluso al fallar.
 export const command: Command = {
   name: 'docs',
   summary: 'Print a playbook process document (list topics when no argument)',

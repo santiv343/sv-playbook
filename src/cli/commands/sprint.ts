@@ -41,6 +41,13 @@ function withStore<T>(fn: (store: Store, repoRoot: string) => T): T {
 
 const AMOUNT_NOT_POSITIVE = 'amount must be a positive number';
 
+// El nombre es engañoso: pese a llamarse "ensureSprintOpen", esta función
+// SÓLO confirma que el sprint existe — nunca lee el `state` que acaba de
+// seleccionar. El chequeo real de "abierto vs cerrado" vive en
+// sprints/service.ts (addTaskToSprint/orderTasksInSprint, que sí comparan
+// contra SPRINT_STATE.OPEN y lanzan si está cerrado). Esta función es un
+// fail-fast de "sprint desconocido" antes de llamar al service, no un
+// duplicado del gate real.
 function ensureSprintOpen(store: Store, sprintId: string): void {
   const sprint = store.db.prepare('SELECT state FROM sprints WHERE id = ?').get(sprintId);
   if (sprint === undefined) throw new LifecycleError(`unknown sprint: ${sprintId}`);

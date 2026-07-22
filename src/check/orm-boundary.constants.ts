@@ -1,3 +1,9 @@
+// ORM_INFRASTRUCTURE_PATH ('src/db/') es la ÚNICA excepción legítima al
+// gate — isExcluded() en orm-boundary.ts la usa para no marcar como
+// violación el SQL crudo que vive ahí (DDL/migraciones). Fuera de ese path,
+// las 3 categorías de violación son: tocar `.db` directo (DATABASE_HANDLE),
+// llamar `.prepare()`/`.exec()` sobre ese handle (RAW_QUERY_CALL), o
+// declarar un literal SQL/DDL como variable *_SQL (SQL_LITERAL).
 export const ORM_BOUNDARY_VIOLATION = {
   DATABASE_HANDLE: 'database-handle',
   RAW_QUERY_CALL: 'raw-query-call',

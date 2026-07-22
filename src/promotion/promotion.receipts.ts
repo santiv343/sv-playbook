@@ -77,6 +77,14 @@ function recordTaskClosure(store: Store, candidate: CandidateIdentity, receiptId
   }).run();
 }
 
+// Idempotente por candidate.id: si ya existe un receipt, lo devuelve sin
+// re-ejecutar nada (findPromotionReceipt al principio) — importante porque
+// closePromotedTask hace 3 escrituras encadenadas (packets.status,
+// promotionTaskTransitions, taskEvents) DENTRO de recordTaskClosure, más el
+// insert del receipt y el appendState — si un caller reintenta después de
+// un fallo parcial, no debe duplicar el cierre del task. El update de
+// packets.status usa el mismo patrón compare-and-swap (WHERE status =
+// REVIEW, changes !== 1 lanza) que el resto del sistema.
 export function closePromotedTask(
   store: Store,
   candidate: CandidateIdentity,

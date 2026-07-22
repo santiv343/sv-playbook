@@ -59,6 +59,13 @@ function legacyWorkDefinition(
   };
 }
 
+// Migración de backfill: packets que ya existían ANTES de que existiera el
+// concepto de work_definition versionado no tienen fila en
+// packet_definitions — legacyWorkDefinition() la reconstruye leyendo el
+// packet + sus deps + (si el .md exportado sigue en disco)
+// requirements/evidenceRequired/tags que sólo vivían en el archivo. Si el
+// export ya no existe, esos 3 campos quedan vacíos — backfill best-effort,
+// no puede inventar datos que no están en ningún lado.
 export function addVersionedWorkDefinitions(db: Database.Database, repoRoot: string): void {
   db.exec(`CREATE TABLE IF NOT EXISTS packet_definitions (
     packet_id TEXT NOT NULL REFERENCES packets(id),

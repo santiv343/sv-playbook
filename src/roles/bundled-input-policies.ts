@@ -14,6 +14,12 @@ import { STATUS } from '../tasks/service.constants.js';
 import { BUNDLED_REVIEW_RESPONSIBILITY_ID } from './bundled-profile.constants.js';
 import { ensureManagedArtifactContract } from './managed-contracts.js';
 
+// onConflictDoUpdate acá significa que sólo existe UNA policy de input para
+// esta responsibility (BUNDLED_REVIEW_RESPONSIBILITY_ID) — la última llamada
+// gana. Notar que apunta siempre a V3 (la más nueva, con evidence.notes):
+// las v1/v2 se ensure-an igual por ensureManagedArtifactContract para que
+// artefactos VIEJOS sigan validando, pero ningún candidato nuevo se acepta
+// ya contra esos contratos.
 export function ensureBundledInputPolicies(store: Store): void {
   // v1 and v2 stay ensured for the immutable historical artifacts that reference
   // them; new candidates are written and validated against v3 (evidence notes).

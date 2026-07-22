@@ -14,6 +14,15 @@ import {
 import { PROMOTION_TABLE } from '../promotion/promotion.schema.constants.js';
 export { SCHEMA_VERSION } from './store.migration-manifest.constants.js';
 
+// SCHEMA es el DDL completo del store, compuesto por concatenación de
+// strings de CADA dominio (CONTEXT_STORE_SCHEMA, ORCHESTRATION_STORE_SCHEMA,
+// etc.) — cada dominio declara sus propias tablas en su propio archivo
+// *.schema.constants.ts, y este archivo sólo las junta en un único CREATE
+// TABLE IF NOT EXISTS ejecutado una vez al abrir un store nuevo. Los
+// TRIGGER ...instrumentales acá (PROMOTION_IMMUTABLE_TRIGGERS) son la
+// mecanización a nivel SQLite de "estas filas son inmutables" — no
+// dependen de que el código de aplicación respete la regla, la base de
+// datos la hace cumplir.
 export const SVP_DIR = '.svp';
 export const SQLITE_FILE_HEADER = 'SQLite format 3\0';
 export const SQLITE_INTEGRITY_OK = 'ok';

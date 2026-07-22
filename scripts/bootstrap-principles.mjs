@@ -29,6 +29,7 @@ const principles = [
   { id: 'PRINCIPLE-013', heading: 'PRINCIPLE-013 — Opinion-free core', semanticKey: 'principle-opinion-free-core' },
   { id: 'PRINCIPLE-014', heading: 'PRINCIPLE-014 — Quality is the operating mode', semanticKey: 'principle-quality-operating-mode' },
   { id: 'PRINCIPLE-015', heading: 'PRINCIPLE-015 — Subtraction has the same machinery as addition', semanticKey: 'principle-subtraction-machinery' },
+  { id: 'PRINCIPLE-016', heading: 'PRINCIPLE-016 — Correctness is cross-domain, not file-local', semanticKey: 'principle-cross-domain-correctness' },
 ];
 
 const store = openStore(repoRoot);

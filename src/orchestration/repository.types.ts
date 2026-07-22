@@ -81,6 +81,12 @@ export interface CompleteEffectRecord {
   at: string;
 }
 
+// Puerto (en el sentido de arquitectura hexagonal) entre la lógica de
+// orquestación (runtime.ts, effect-completion.ts) y la persistencia real
+// (DrizzleWorkflowRepository en repository.ts). Todo método que muta estado
+// compartido bajo concurrencia (claim, claimHuman, complete, fail, renew)
+// hace un UPDATE condicional y devuelve undefined/lanza si el WHERE no
+// matcheó — el mismo patrón compare-and-swap documentado en architecture.md.
 export interface WorkflowRepositoryPort {
   activeContractExists(ref: string): boolean;
   roleContract(roleId: string): { inputContractRef: string; outputContractRef: string } | undefined;

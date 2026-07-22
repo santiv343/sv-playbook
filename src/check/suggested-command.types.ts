@@ -7,6 +7,11 @@ export interface SuggestedCommandSource {
   readonly source: string;
 }
 
+// CommandSurface es lo REAL (minado de declaraciones, ver suggested-command.ts);
+// SuggestedCommandViolation es una MENCIÓN que no matchea nada en esa
+// superficie. Sin baseline/fingerprint — cualquier sugerencia inválida es
+// roja siempre, no hay deuda tolerada acá (a diferencia de duplicate-string/
+// literal-comparison/orm-boundary).
 export interface CommandSurface {
   readonly flags: ReadonlySet<string>;
   readonly names: ReadonlySet<string>;

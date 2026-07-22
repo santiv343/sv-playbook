@@ -65,6 +65,11 @@ function stored(row: typeof packetDefinitions.$inferSelect): StoredWorkDefinitio
   };
 }
 
+// Idempotente por digest: si el valor canónico (canonicalJson) da el mismo
+// digest que la última versión guardada, no inserta fila nueva — devuelve la
+// existente. Sólo incrementa versión cuando el contenido realmente cambió.
+// Esto es lo que hace seguro llamar recordWorkDefinition repetidas veces
+// (p.ej. desde amend.ts en cada rama) sin inflar el historial de versiones.
 export function recordWorkDefinition(store: Store, value: WorkDefinitionValue): StoredWorkDefinition {
   const latest = store.orm.select().from(packetDefinitions)
     .where(eq(packetDefinitions.packetId, value.id))
@@ -123,6 +128,11 @@ export function resolveWorkDefinition(store: Store, reference: WorkDefinitionRef
   return stored(row);
 }
 
+// "Eligible" agrega dos chequeos que resolveWorkDefinition solo no hace:
+// que la versión referenciada sea la ÚLTIMA (STALE si no) y que el packet
+// no esté en un estado terminal (DONE/DROPPED). Se usa donde una referencia
+// vieja sería peligrosa (p.ej. armar un review-candidate contra un
+// write_set que ya fue reemplazado por un amend posterior).
 export function resolveEligibleWorkDefinition(store: Store, reference: WorkDefinitionReference): StoredWorkDefinition {
   const resolved = resolveWorkDefinition(store, reference);
   const latest = loadWorkDefinition(store, reference.id);

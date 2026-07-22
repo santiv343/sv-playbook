@@ -45,6 +45,14 @@ function safeIdent(cmd: string): string {
   return RESERVED.has(prefixed) ? `${prefixed}_` : prefixed;
 }
 
+// PRINCIPLE-009 (boilerplate generado, no autoría manual) mecanizado: el
+// registry de comandos (index.gen.ts) NUNCA se edita a mano — este script
+// escanea el directorio real de cli/commands/, filtra lo que no es un
+// comando propiamente dicho (tests, constants, types, fixtures, el propio
+// generador), y genera los imports + el array `allCommands`. Corre como
+// script standalone (la línea final se auto-invoca al importar el módulo)
+// vía `npx tsx generate-index.ts`, normalmente disparado por un hook/verify,
+// no manualmente en el flujo normal de agregar un comando.
 export function generateIndex(srcDir: string, outPath: string): void {
   const commands = scanCommandFiles(srcDir);
   const lines: string[] = [];

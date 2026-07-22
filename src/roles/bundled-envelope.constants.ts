@@ -4,6 +4,14 @@ import {
 } from '../contracts/review-verdict.constants.js';
 import { JSON_SCHEMA_DRAFT_2020_12, JSON_SCHEMA_TYPE } from '../schema/json-schema.constants.js';
 
+// El "envelope" es el contrato de output GENÉRICO que todo rol produce
+// (kind + payload) — el `if/then` de BUNDLED_ARTIFACT_SCHEMA más abajo es
+// lo que permite que sea genérico Y estricto a la vez: si `kind` matchea
+// REVIEW_VERDICT_KIND, el `payload` se valida contra el schema exacto de
+// veredicto de review (importado de contracts/review-verdict.constants.js,
+// la misma fuente que ReviewVerdictEnvelopeSchema en Zod) — un solo
+// contrato de artifact para todos los roles, pero con validación
+// específica por kind conocido.
 export const BUNDLED_ENVELOPE_ERROR = {
   CONTRACT_DRIFT: 'BUNDLED_ENVELOPE_CONTRACT_DRIFT',
 } as const;

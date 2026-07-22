@@ -25,6 +25,12 @@ export const PROMOTION_ID_PREFIX = {
   RECEIPT: 'PROM-RCP-',
 } as const;
 
+// Varios valores de PROMOTION_STATUS/INTEGRATION_OUTCOME son literalmente
+// re-exports de OTROS dominios (RECONCILIATION_PROPOSAL_STATUS.APPROVED,
+// SPRINT_STATE.CLOSED, GATEWAY_RUN_STATUS.FAILED, PREFLIGHT_STATUS.UNKNOWN)
+// en vez de strings propios — PRINCIPLE-011 aplicado deliberadamente: si el
+// vocabulario de "aprobado"/"cerrado"/"falló" ya existe en otro dominio, no
+// se re-declara, se reutiliza el mismo literal para que nunca diverjan.
 export const PROMOTION_STATUS = {
   CREATED: 'created',
   CHECKS_COMPLETED: 'checks-completed',

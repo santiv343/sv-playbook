@@ -225,6 +225,12 @@ function attachEventStream(
   req.on(PROCESS_EVENT.CLOSE, () => { clients.delete(res); });
 }
 
+// La consola operativa (`:3131`, ver docs/codebase-guide/architecture.md):
+// sirve los assets estáticos de la UI, una API REST de sólo-lectura/acción
+// puntual (board, dashboard, catálogo de workflows, intake humano, dispatch)
+// y un endpoint SSE (/events) que empuja el dashboard completo a cada
+// cliente conectado cada `options.refreshMs` — así la UI no tiene que
+// hacer polling, y varios clientes pueden mirar el mismo tablero en vivo.
 export function createOperationalServer(
   store: Store,
   repoRoot: string,

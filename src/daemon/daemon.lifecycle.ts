@@ -2,6 +2,13 @@ import { unlinkSync } from 'node:fs';
 import { setDaemonStore } from '../db/store.js';
 import type { TerminationReceipt, TerminationState } from './daemon.types.js';
 
+// finalizeOnce() es el único punto de salida real del daemon — llamado
+// desde `stop()`, la ruta HTTP de shutdown, o un signal handler, siempre
+// converge acá. El "once" es literal: el segundo llamador que llega mientras
+// el primero todavía está limpiando recibe {clean:false} sin re-ejecutar
+// cleanup; el que llega DESPUÉS de terminado recibe el receipt ya calculado.
+// Ver flujo 06 (daemon-lifecycle) — F-001 en findings.md documenta que
+// serve.ts no espera este `done` promise.
 export function createTerminationState(lockPath: string, tokenPath: string): TerminationState {
   let drainResolve: (() => void) | null = null;
   const drainLatch = new Promise<void>((resolve) => { drainResolve = resolve; });

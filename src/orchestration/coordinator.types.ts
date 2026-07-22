@@ -1,5 +1,13 @@
 import type { WorkflowExecutorKind, WorkflowEffect, WorkflowSnapshot } from './service.types.js';
 
+// Tres puertos que WorkflowCoordinator (coordinator.ts) orquesta sin saber
+// sus implementaciones concretas: WorkflowEffectExecutor ejecuta el efecto
+// según su tipo (agent/runtime/human, ver AgentWorkflowEffectExecutor y
+// RuntimeWorkflowEffectExecutor en effect-executors.ts), WorkflowQueuePort
+// es la cola persistida (claim/renew/complete/fail, implementada por
+// DrizzleWorkflowRepository), WorkflowFailureClassifier decide reintentable
+// o no. El coordinator es genérico sobre los 3 — testeable con fakes sin
+// tocar SQLite ni un adapter real.
 export interface WorkflowEffectExecutor {
   execute(effect: WorkflowEffect): Promise<unknown>;
 }

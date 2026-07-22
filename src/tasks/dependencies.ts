@@ -11,6 +11,13 @@ export function currentPacketStatus(store: Store, packetId: string): string {
   return row.status;
 }
 
+// Corre en los TRES puntos donde un packet puede declarar dependsOn:
+// createPacket, upsertPacketFile (import/update) e importPacketFile (ver
+// service.ts) — antes, sólo el primero validaba, así que declarar una
+// dependencia hacia un packet inexistente vía import se guardaba
+// silenciosamente y sólo fallaba mucho después, al intentar activar el
+// packet. Corregido esta semana (IDEA-119): fail-closed en el momento de
+// declarar, no en el momento de usar.
 export function validateDependencyReferences(store: Store, packetId: string, dependencyIds: readonly string[]): void {
   for (const dependencyId of dependencyIds) {
     const dependency = store.orm.select({ id: packets.id }).from(packets).where(eq(packets.id, dependencyId)).get();
@@ -20,6 +27,10 @@ export function validateDependencyReferences(store: Store, packetId: string, dep
   }
 }
 
+// Llamado desde startPacket() (service.ts, flujo 3): un packet no puede
+// activarse si alguna de sus dependencias todavía no llegó a un estado
+// terminal (done/dropped) — trabajar sobre algo que depende de una base
+// que todavía puede cambiar sería construir sobre arena.
 export function assertDependenciesTerminal(store: Store, packetId: string): void {
   const unmet = store.orm.select({ id: packetDependencies.dependsOnId, status: packets.status })
     .from(packetDependencies)

@@ -21,6 +21,13 @@ function successorDispatchRef(dispatchRef: string): string {
   return `${base}:retry:${attempt + 1}`;
 }
 
+// Sólo se puede reintentar un dispatch manual, no uno disparado por el
+// motor de workflows (`workflowEffectRef !== null`) — esos ya tienen su
+// propio mecanismo de reintento gestionado por el coordinador (ver
+// orchestration/coordinator.ts), reintentarlos manualmente acá crearía
+// dos caminos de reintento compitiendo por el mismo efecto. Tampoco se
+// puede reintentar un run que sigue en curso o que ya completó
+// exitosamente — sólo tiene sentido reintentar algo que terminó mal.
 function assertRetryable(store: Store, original: RunSpec): void {
   if (original.workflowEffectRef !== null) {
     throw new ContextError(RUN_SPEC_ERROR.WORKFLOW_RETRY, `workflow run retries are engine-owned: ${original.id}`);
@@ -43,6 +50,11 @@ function retryDispatchRef(store: Store, original: RunSpec): string {
   return successorDispatchRef(dispatch.dispatchRef);
 }
 
+// Un reintento es un RunSpec NUEVO con su propia identidad de dispatch
+// (`successorDispatchRef` le agrega/incrementa un sufijo `:retry:N`) —
+// nunca reescribe el original. `retryOfRunSpecId` deja el vínculo
+// explícito para poder reconstruir la cadena completa de intentos de una
+// misma tarea.
 export function retryRunSpec(store: Store, runSpecId: string): RunSpec {
   const original = loadRunSpec(store, runSpecId);
   assertRetryable(store, original);

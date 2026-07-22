@@ -59,6 +59,11 @@ export interface RoleCatalogCheck {
   violations: readonly string[];
 }
 
+// El shape final, "compilado", de un rol — lo que el resto del sistema
+// consulta (p.ej. gateway/profiles.ts para resolver adapter). Los *Input de
+// arriba son lo que se declara al construir el catálogo (bundled-profile.ts
+// o uno custom); RoleCatalogEntry es la proyección de sólo-lectura después
+// de resolver referencias (contextItemId+version -> contextItemRef, etc).
 export interface RoleCatalogEntry {
   roleId: string;
   definitionVersion: number;

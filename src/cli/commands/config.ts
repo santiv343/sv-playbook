@@ -35,6 +35,14 @@ function getValue(obj: unknown, path: string): unknown {
   return current;
 }
 
+// getValue/setValue implementan acceso por PATH punteado (`gates.maxLines`)
+// sobre el JSON crudo de playbook.config.json — deliberadamente NO
+// tipado contra PlaybookConfigSchema durante la edición (ConfigObjectSchema
+// es permisivo, acepta cualquier record) para poder setear campos nuevos o
+// mal tipeados sin que el comando `config set` los rechace antes de
+// escribir; la validación real ocurre después, en `parsePlaybookConfig`
+// cuando el archivo se vuelve a leer (loadConfig), que es la única fuente
+// de verdad de qué shape es válido.
 function setValue(obj: Record<string, unknown>, path: string, value: unknown): void {
   const keys = path.split('.');
   if (!keys.length) return;

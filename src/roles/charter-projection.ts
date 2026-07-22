@@ -31,6 +31,15 @@ function bulletLines(values: readonly string[]): string[] {
   return values.length === EMPTY_SIZE ? ['- None'] : values.map((value) => `- ${value}`);
 }
 
+// "Charter projection" es la versión LEGIBLE POR HUMANOS del catálogo de
+// roles — mismo dato que role-projection-registry.ts proyecta a config de
+// adapter (JSON para OpenCode), pero acá se renderiza a markdown
+// (ROLE_CHARTER_PROJECTION_PATH) para que un humano pueda leer "qué puede y
+// no puede hacer cada rol" sin consultar la DB directamente. roleCatalogSnapshot
+// es la misma foto congelada (catalogVersion+digest) que respalda los
+// receipts de proyección — ambas proyecciones (a config y a charter) parten
+// del mismo snapshot, así que no pueden divergir entre sí sin que el digest
+// también cambie.
 function renderRole(snapshot: RoleCatalogSnapshot, role: RoleContract): string[] {
   const policy = snapshot.rolePolicies.find((item) => item.roleId === role.roleId);
   const required = snapshot.requiredRoles.some((item) => item.roleId === role.roleId);

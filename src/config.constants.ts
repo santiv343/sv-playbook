@@ -1,6 +1,11 @@
 import type { PlaybookConfig } from './config.types.js';
 import { BACKUP_EVENT, BACKUP_MAX_AGE_HOURS_DEFAULT, BACKUP_RETENTION_DEFAULT } from './db/backup.constants.js';
 
+// DEFAULTS es la única fuente de verdad para cada valor de config no
+// declarado por el usuario — loadConfig() (config.ts) hace `{ ...DEFAULTS }`
+// (shallow) y mergea encima lo que venga de playbook.config.json. Ver F-005
+// en findings.md: por ser shallow, los objetos anidados (tasks, backup,
+// gates) comparten referencia entre llamadas si nadie los reemplaza.
 export const PLAYBOOK_CONFIG_FILE_NAME = 'playbook.config.json';
 
 export const MODEL_EVALUATION_DEFAULTS = {

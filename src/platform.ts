@@ -16,6 +16,10 @@ export function nodeErrorCode(error: unknown): unknown {
   return Reflect.get(error, NODE_ERROR_PROPERTY.CODE);
 }
 
+// En POSIX, `detached: true` pone al hijo en su propio process group, así
+// `process.kill(-pid, ...)` mata todo el árbol de una. Windows no tiene ese
+// concepto — por eso detachProcessTree() es false ahí y terminateProcessTree
+// usa taskkill /T (tree) como sustituto en terminateWindowsProcessTree.
 export function detachProcessTree(): boolean {
   return process.platform !== OS_PLATFORM.WINDOWS;
 }

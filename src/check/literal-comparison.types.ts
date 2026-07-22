@@ -4,6 +4,9 @@ import type { SourceText } from './source-tree.types.js';
 
 export type LiteralComparisonSource = SourceText;
 
+// Mismo patrón que duplicate-string.types.ts — un solo `kind` posible hoy
+// (NUMBER), el campo existe para cuando se agreguen otros tipos de
+// comparación literal (string, boolean) sin cambiar la forma.
 export interface LiteralComparisonViolation {
   readonly column: number;
   readonly fingerprint: string;

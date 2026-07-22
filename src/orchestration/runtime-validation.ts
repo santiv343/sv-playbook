@@ -50,6 +50,11 @@ function validateRuntimeBinding(
   }
 }
 
+// Sólo valida los pasos de definiciones ACTIVE — una definición RETIRED
+// puede tener bindings rotos (adapter desregistrado, operación removida) sin
+// que esto bloquee el arranque del runtime, porque nada nuevo la va a
+// reclamar. Fail-fast: se corre una sola vez al crear el runtime, no en cada
+// claim — un binding roto se detecta al iniciar, no a mitad de un workflow.
 export function validateWorkflowRuntimeBindings(
   store: Store,
   adapters: ReadonlyMap<string, AgentAdapter>,

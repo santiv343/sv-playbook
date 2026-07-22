@@ -7,6 +7,11 @@ import type {
   VerificationExecutor,
 } from './verification.types.js';
 
+// Implementación real (no-fake) de VerificationExecutor: corre cada
+// componente del manifiesto como un subproceso de shell real, con
+// stdio heredado (el output se ve en vivo en la terminal, no se
+// captura ni se filtra) — el objetivo es que `verify` se sienta y se
+// comporte exactamente como correr esos comandos a mano.
 export class ProcessVerificationExecutor implements VerificationExecutor {
   async execute(component: VerificationComponent): Promise<VerificationComponentReceipt> {
     const exitCode = await new Promise<number>((resolve) => {

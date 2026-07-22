@@ -71,6 +71,11 @@ function targets(store: Store): IntakeTarget[] {
   return candidates.filter((candidate) => PROJECTORS.has(candidate.inputContractRef));
 }
 
+// Requiere EXACTAMENTE un workflow activo cuyo primer step declare un
+// contrato de input que este módulo sepa proyectar (`PROJECTORS`). Cero
+// candidatos es "no hay a dónde mandar el mensaje humano"; más de uno es
+// ambigüedad real — no hay forma de adivinar cuál workflow debería
+// recibirlo, así que se rechaza en vez de elegir el primero al azar.
 function target(store: Store): IntakeTarget {
   const available = targets(store);
   if (available.length === 0) throw new ContextError(WORKFLOW_INTAKE_ERROR.UNAVAILABLE, HUMAN_INTAKE_DETAIL.UNAVAILABLE);
@@ -80,6 +85,13 @@ function target(store: Store): IntakeTarget {
   return selected;
 }
 
+// Punto de entrada del mensaje humano libre (ver src/serve/server.ts POST
+// /intake, flujo 7): un mensaje de texto suelto no dispara lógica directa
+// — se convierte en el input tipado de un workflow existente (vía
+// `projector`, que arma un snapshot completo del estado del sistema en
+// ese momento: contadores de tareas, workflows, agentes observando) y
+// entra al motor de orquestación como cualquier otro trabajo, no como un
+// camino especial.
 export function startHumanIntake(
   store: Store,
   request: HumanIntakeRequest,

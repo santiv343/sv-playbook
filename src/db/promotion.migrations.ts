@@ -48,6 +48,14 @@ function reinsertRows(db: Database.Database, rows: unknown[], oldCols: string[])
   }
 }
 
+// SQLite no soporta ADD CONSTRAINT en un ALTER TABLE — para agregar el FK a
+// review_candidates (que no existía en versiones viejas de la tabla) no
+// queda otra que DROP + recrear con el schema nuevo + reinsertar filas
+// viejas fila por fila. reinsertRows() envuelve el INSERT en try/catch con
+// un mensaje explícito de recovery (backup, verificar review_candidates
+// sembrado, reintentar) — el "sin callejones sin salida" de PRINCIPLE-010
+// aplicado a una migración que puede fallar por datos preexistentes
+// inconsistentes.
 function rebuildWithConstraints(db: Database.Database, existingColumns: Set<string>): void {
   const rows = db.prepare(`SELECT * FROM ${PROMOTION_TABLE.CANDIDATES}`).all();
   const oldCols = [...existingColumns];

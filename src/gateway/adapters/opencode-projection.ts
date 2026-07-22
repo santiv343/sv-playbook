@@ -54,6 +54,13 @@ async function responseJson(url: string, label: string): Promise<unknown> {
   return value;
 }
 
+// "Effective" (vs "persisted", ver role-projection-registry.ts) significa:
+// no confiar en lo que el store DICE que se proyectó, ir a preguntarle al
+// server de OpenCode QUÉ tiene configurado ahora mismo — health, tools
+// disponibles, agente efectivo (modelo + permisos). Es la verificación de
+// drift entre "lo que creemos que configuramos" y "lo que el proceso
+// externo realmente tiene cargado", útil después de un restart del server
+// o un archivo de config editado a mano por fuera del sistema.
 async function verifyEffectiveHealth(baseUrl: string, config: ReturnType<typeof adapterConfig>): Promise<void> {
   const health = record(await responseJson(`${baseUrl}${OPENCODE_API_PATH.HEALTH}`, 'OpenCode health'));
   if (health?.healthy !== true) throw new TypeError('OpenCode is not healthy');

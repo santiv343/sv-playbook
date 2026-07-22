@@ -1,3 +1,10 @@
+// review_candidates es inmutable a nivel SQLite (triggers ABORT en UPDATE/
+// DELETE) — coherente con que ReviewCandidateValue (review-candidate.types.ts)
+// se arma una sola vez y se persiste tal cual (persistReviewCandidate,
+// ver F-012: ese insert no está en transacción, a diferencia de este schema
+// que SÍ protege inmutabilidad post-insert). responsibility_input_policies
+// es la tabla que reviewCandidateRequired() consulta para decidir camino
+// moderno vs legacy (F-007).
 export const REVIEW_CANDIDATE_STORE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS responsibility_input_policies (
   responsibility_id TEXT PRIMARY KEY REFERENCES responsibilities(id),

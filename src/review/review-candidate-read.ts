@@ -14,6 +14,11 @@ function selectReviewCandidateSummary() {
   };
 }
 
+// Lecturas de sólo resumen (sin el JSON completo del artifact, que puede
+// pesar mucho — ver reviewCandidateMaxBytes en config) para listados en CLI
+// y consola operativa; el contenido completo se resuelve por separado
+// (loadCandidateEvidence en promotion.repository.ts) sólo cuando
+// efectivamente se necesita procesar un candidato puntual.
 export function listReviewCandidates(store: Store, packetId?: string): readonly ReviewCandidateSummary[] {
   const columns = selectReviewCandidateSummary();
   if (packetId === undefined) {

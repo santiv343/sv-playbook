@@ -1,3 +1,8 @@
+// Vocabulario paralelo al de protocol-proposal-review.constants.ts pero
+// para el dominio de reconciliación de vocabulario de escalación — mismos
+// nombres de campo (proposalId/proposalDigest), mismo verdict PASS/FAIL,
+// pero tablas y flujo separados (protocol_reconciliation_proposals, no
+// protocol_proposals).
 export const RECONCILIATION_VERDICT = {
   PASS: 'PASS',
   FAIL: 'FAIL',

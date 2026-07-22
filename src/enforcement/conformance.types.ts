@@ -1,3 +1,9 @@
+// ConformanceReceipt es deliberadamente EXHAUSTIVO — cada campo es
+// evidencia LITERAL de una verificación puntual (duplicate_control_ids,
+// dangling_references, agent_owner_controls, etc.), no un resumen. Es la
+// mecanización de PRINCIPLE-001 (todo claim de un agente respaldado por
+// output literal de comando) aplicada al propio formato de salida de
+// `enforce` — el receipt completo es la prueba, no sólo el `verdict` final.
 export interface Check {
   name: string;
   status: 'pass' | 'fail';

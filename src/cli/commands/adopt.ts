@@ -25,6 +25,11 @@ function printInventory(io: Io, targetDir: string, inventory: InventoryReport): 
   io.out(`Default branch: ${inventory.git.defaultBranch || 'unknown'}`);
 }
 
+// Dos fases separadas a propósito: sin `--force`, `adopt` sólo INSPECCIONA
+// (inventoryRepo + analyzeGaps) e imprime lo que encontraría/haría — nunca
+// escribe nada al repo ajeno sin que el operador vea el diagnóstico primero
+// y decida explícitamente escalar a `--force` (scaffold real). Es un
+// "dry-run por default", no al revés.
 function printGaps(io: Io, gaps: GapReport): void {
   io.out('Gap analysis:');
   for (const check of gaps.checks) {

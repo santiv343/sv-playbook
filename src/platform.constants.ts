@@ -1,3 +1,6 @@
+// Vocabulario de bajo nivel para abstraer diferencias de plataforma (Windows
+// vs POSIX), señales de proceso, códigos de error de Node y tokens de path —
+// todo lo que platform.ts necesita para no tener strings mágicos repetidos.
 export const OS_PLATFORM = { WINDOWS: 'win32' } as const;
 
 export const PROCESS_SIGNAL = { FORCE: 'SIGKILL' } as const;

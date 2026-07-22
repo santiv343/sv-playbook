@@ -1,3 +1,6 @@
+// ENFORCEMENT_CLASSIFICATION distingue si un control lo hace cumplir el
+// motor (RUNTIME) o un adapter externo (ADAPTER) — no un agente/humano, ver
+// AGENT_OWNER_PATTERN en conformance.ts que rechaza esa tercera opción.
 export const JSON_TOKEN = {
   COLON: ':',
   OPEN_BRACE: '{',
