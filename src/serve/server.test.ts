@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { extname, join } from 'node:path';
 import { test } from 'node:test';
 import { SERVE_ROUTE } from '../cli/commands/serve.constants.js';
 import { gatewayFixture } from '../gateway/gateway.test-support.js';

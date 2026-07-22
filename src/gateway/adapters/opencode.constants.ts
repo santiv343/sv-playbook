@@ -60,6 +60,7 @@ export const OPENCODE_PROVIDER_ERROR = {
 export const OPENCODE_OUTPUT_MODE = {
   NATIVE: 'native',
   VALIDATED_TEXT: 'validated-text',
+  PROMPTED_JSON: 'prompted-json',
 } as const;
 
 export type OpenCodeOutputMode = typeof OPENCODE_OUTPUT_MODE[keyof typeof OPENCODE_OUTPUT_MODE];
@@ -74,6 +75,18 @@ export interface AdapterConfig {
 
 export const OPENCODE_VALIDATED_TEXT_SYSTEM_PROMPT =
   'No tools are available. Never call, request, describe, or emit a tool call. The supplied payload already contains all available context. Your only valid action is to return exactly one raw JSON object matching outputContractRef. Start with { and end with }. Do not use Markdown, commentary, or preambles. Represent missing information inside the declared JSON contract.';
+
+// PROMPTED_JSON es VALIDATED_TEXT sin la prohibición de tools: algunos
+// proveedores en modo "thinking" (confirmado con DeepSeek v4-flash/v4-pro)
+// rechazan la llamada entera si el request combina `tools` con
+// `format: json_schema` (NATIVE) — "Thinking mode does not support this
+// tool_choice", verificado en vivo contra la API real. Para un rol que
+// necesita ejecutar tools de verdad (implementer) pero cuyo output final
+// SÍ debe seguir siendo JSON válido contra outputContractRef (lo exige
+// validateCompletion en gateway-lifecycle.ts, no es opcional), este modo
+// pide el JSON por prompt (igual que VALIDATED_TEXT) sin bloquear tools.
+export const OPENCODE_PROMPTED_JSON_SYSTEM_PROMPT =
+  'Tools are available and you should use them as needed to complete the task. Once your work is done, your final message must be exactly one raw JSON object matching outputContractRef. Start with { and end with }. Do not use Markdown, commentary, or preambles in that final message. Represent missing information inside the declared JSON contract.';
 
 export const OPENCODE_DEFAULT = {
   STRUCTURED_OUTPUT_RETRY_COUNT: 2,

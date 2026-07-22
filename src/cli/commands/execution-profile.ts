@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { ContextError } from '../../context/context.errors.js';
-import { addExecutionProfile, cloneExecutionProfile, listExecutionProfiles, setExecutionProfile } from '../../gateway/profiles.js';
+import { addExecutionProfile, cloneExecutionProfile, listExecutionProfiles, removeExecutionProfile, setExecutionProfile } from '../../gateway/profiles.js';
 import type { ExecutionProfileInput } from '../../gateway/gateway.types.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import { getCwd } from '../../runtime/context.js';
@@ -13,6 +13,7 @@ const USAGE = [
   '  sv-playbook execution-profile add --id <id> --role <role> --adapter <id> --agent <id> --provider <id> --model <id> --adapter-config-file <path> --poll-ms <n> --timeout-ms <n> --grace-ms <n> [--max-duration-ms <n>] --tool <id=allow|deny>...',
   '  sv-playbook execution-profile set --id <id> --role <role> --adapter <id> --agent <id> --provider <id> --model <id> --adapter-config-file <path> --poll-ms <n> --timeout-ms <n> --grace-ms <n> [--max-duration-ms <n>] --tool <id=allow|deny>...',
   '  sv-playbook execution-profile clone --from <id> --id <id> --role <role> --agent <id> [--provider <id>] [--model <id>] [--variant <id>] [--tool <id=allow|deny>]...',
+  '  sv-playbook execution-profile remove --id <id>',
   '  sv-playbook execution-profile list',
 ].join('\n');
 
@@ -20,7 +21,8 @@ class UsageError extends Error {}
 const TOOL_POLICY_EFFECT = { ALLOW: 'allow', DENY: 'deny' } as const;
 const STRING_OPTION_TYPE = 'string';
 const MAX_DURATION_MS_FLAG = 'max-duration-ms';
-const EXECUTION_PROFILE_SUBCOMMAND = { ADD: 'add', CLONE: 'clone', LIST: 'list', SET: 'set' } as const;
+const ID_FLAG = 'id';
+const EXECUTION_PROFILE_SUBCOMMAND = { ADD: 'add', CLONE: 'clone', LIST: 'list', REMOVE: 'remove', SET: 'set' } as const;
 
 function listProfiles(args: string[], io: Io): number {
   if (args.length > 0) throw new UsageError('list takes no arguments');
@@ -82,7 +84,7 @@ function writeProfile(args: string[], io: Io, operation: typeof EXECUTION_PROFIL
     tool: { type: STRING_OPTION_TYPE, multiple: true },
   } });
   const profile: ExecutionProfileInput = {
-    id: required(parsed.values.id, 'id'),
+    id: required(parsed.values.id, ID_FLAG),
     roleId: required(parsed.values.role, 'role'),
     adapterId: required(parsed.values.adapter, 'adapter'),
     agentId: required(parsed.values.agent, 'agent'),
@@ -109,6 +111,19 @@ function writeProfile(args: string[], io: Io, operation: typeof EXECUTION_PROFIL
   return EXIT.OK;
 }
 
+function removeProfile(args: string[], io: Io): number {
+  const parsed = parseArgs({ args, allowPositionals: false, options: { id: { type: STRING_OPTION_TYPE } } });
+  const id = required(parsed.values.id, ID_FLAG);
+  const store = openStore(commonRoot(getCwd()));
+  try {
+    removeExecutionProfile(store, id);
+  } finally {
+    store.close();
+  }
+  io.out(`execution profile removed: ${id}`);
+  return EXIT.OK;
+}
+
 function cloneProfile(args: string[], io: Io): number {
   const parsed = parseArgs({ args, allowPositionals: false, options: {
     from: { type: STRING_OPTION_TYPE }, id: { type: STRING_OPTION_TYPE }, role: { type: STRING_OPTION_TYPE }, agent: { type: STRING_OPTION_TYPE },
@@ -119,7 +134,7 @@ function cloneProfile(args: string[], io: Io): number {
   try {
     const profile = cloneExecutionProfile(store, {
       sourceProfileId: required(parsed.values.from, 'from'),
-      id: required(parsed.values.id, 'id'),
+      id: required(parsed.values.id, ID_FLAG),
       roleId: required(parsed.values.role, 'role'),
       agentId: required(parsed.values.agent, 'agent'),
       ...(parsed.values.provider === undefined ? {} : { providerId: parsed.values.provider }),
@@ -134,6 +149,14 @@ function cloneProfile(args: string[], io: Io): number {
   return EXIT.OK;
 }
 
+const SUBCOMMAND_HANDLERS: Record<string, (rest: string[], io: Io) => number> = {
+  [EXECUTION_PROFILE_SUBCOMMAND.LIST]: listProfiles,
+  [EXECUTION_PROFILE_SUBCOMMAND.CLONE]: cloneProfile,
+  [EXECUTION_PROFILE_SUBCOMMAND.REMOVE]: removeProfile,
+  [EXECUTION_PROFILE_SUBCOMMAND.ADD]: (rest, io) => writeProfile(rest, io, EXECUTION_PROFILE_SUBCOMMAND.ADD),
+  [EXECUTION_PROFILE_SUBCOMMAND.SET]: (rest, io) => writeProfile(rest, io, EXECUTION_PROFILE_SUBCOMMAND.SET),
+};
+
 export const command: Command = {
   name: 'execution-profile',
   summary: 'Manage provider-neutral execution profiles and adapter-specific projections',
@@ -141,12 +164,9 @@ export const command: Command = {
   run(args, io): Promise<number> {
     try {
       const [subcommand, ...rest] = args;
-      if (subcommand === EXECUTION_PROFILE_SUBCOMMAND.LIST) return Promise.resolve(listProfiles(rest, io));
-      if (subcommand === EXECUTION_PROFILE_SUBCOMMAND.CLONE) return Promise.resolve(cloneProfile(rest, io));
-      if (subcommand !== EXECUTION_PROFILE_SUBCOMMAND.ADD && subcommand !== EXECUTION_PROFILE_SUBCOMMAND.SET) {
-        throw new UsageError('missing or unknown execution-profile subcommand');
-      }
-      return Promise.resolve(writeProfile(rest, io, subcommand));
+      const handler = subcommand === undefined ? undefined : SUBCOMMAND_HANDLERS[subcommand];
+      if (handler === undefined) throw new UsageError('missing or unknown execution-profile subcommand');
+      return Promise.resolve(handler(rest, io));
     } catch (error) {
       if (error instanceof UsageError || error instanceof ContextError || error instanceof TypeError || error instanceof SyntaxError) {
         io.err(USAGE);

@@ -136,6 +136,26 @@ export function setExecutionProfile(store: Store, profile: ExecutionProfileInput
   });
 }
 
+// Falta un `execution-profile remove` desde que el comando existe — sin
+// esto, deshacer un profile creado por error (ej. uno de prueba) no tenía
+// ningún camino vía CLI, y tocar la DB a mano viola PRINCIPLE-012.
+// Encontrado en vivo 2026-07-22: `role check` (parte de `npm run verify`)
+// exige cobertura completa de execution profiles apenas existe uno solo —
+// un profile de prueba dejado atrás rompe el gate para todo el repo sin
+// forma de retirarlo limpio.
+export function removeExecutionProfile(store: Store, profileId: string): void {
+  const existing = store.orm.select({ id: executionProfiles.id }).from(executionProfiles)
+    .where(eq(executionProfiles.id, profileId)).get();
+  if (existing === undefined) {
+    throw new ContextError(EXECUTION_PROFILE_ERROR.UNKNOWN, `unknown execution profile: ${profileId}`);
+  }
+  store.orm.transaction((tx) => {
+    tx.delete(roleExecutionProfilePreferences).where(eq(roleExecutionProfilePreferences.profileId, profileId)).run();
+    tx.delete(executionProfileTools).where(eq(executionProfileTools.profileId, profileId)).run();
+    tx.delete(executionProfiles).where(eq(executionProfiles.id, profileId)).run();
+  });
+}
+
 export function loadExecutionProfile(store: Store, profileId: string): ExecutionProfile {
   const row = store.orm.select().from(executionProfiles).where(eq(executionProfiles.id, profileId)).get();
   if (row === undefined) throw new ContextError(EXECUTION_PROFILE_ERROR.UNKNOWN, `unknown execution profile: ${profileId}`);
