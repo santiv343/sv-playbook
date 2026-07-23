@@ -38,6 +38,9 @@ test('loadConfig returns defaults when the file is absent', () => {
     modelEvaluation: {
       evidenceValidityDays: 30,
     },
+    daemon: {
+      dispatchTimeoutMs: 1_200_000,
+    },
     gates: {
       maxLines: 350,
       maxLinesPerFunction: 60,
@@ -102,6 +105,9 @@ test('loadConfig reads a valid config file', () => {
     },
     modelEvaluation: {
       evidenceValidityDays: 45,
+    },
+    daemon: {
+      dispatchTimeoutMs: 1_200_000,
     },
     gates: {
       maxLines: 350,

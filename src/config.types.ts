@@ -7,6 +7,7 @@ export type {
   Autonomy,
   BackupConfig,
   BaselineConfig,
+  DaemonConfig,
   GatesConfig,
   ModelEvaluationConfig,
   OrmApplicationSqlBaseline,
