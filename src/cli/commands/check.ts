@@ -15,6 +15,10 @@ import { scanForSecrets } from '../../check/secrets.js';
 import { readCheckedSources } from '../../check/source-tree.js';
 import { TEST_FILE_MARKER } from '../../check/duplicate-string.constants.js';
 import { renderInstructionsContent } from './instructions.js';
+import { digest } from '../../context/digest.js';
+import { execFileSync } from 'node:child_process';
+import { GIT_ARGUMENT, GIT_EXECUTABLE } from '../../git.constants.js';
+import { PROCESS_STDIO, TEXT_ENCODING } from '../../platform.constants.js';
 import { inspectCommandUsage } from '../../check/command-usage.js';
 import { commands } from '../registry.js';
 
@@ -121,11 +125,24 @@ async function checkInstructions(root: string, io: Io): Promise<boolean> {
 
     if (actual !== expected) {
       io.out(`instructions: ${harness} diverges from source`);
+      io.out(`instructions: drift diagnostics head=${gitHead(root)} rendered-digest=${digest(expected)}`);
       hasDrift = true;
     }
   }
 
   return hasDrift;
+}
+
+function gitHead(root: string): string {
+  try {
+    return execFileSync(GIT_EXECUTABLE, [GIT_ARGUMENT.REV_PARSE, GIT_ARGUMENT.HEAD], {
+      cwd: root,
+      encoding: TEXT_ENCODING.UTF8,
+      stdio: [PROCESS_STDIO.IGNORE, PROCESS_STDIO.PIPE, PROCESS_STDIO.IGNORE],
+    }).trim();
+  } catch {
+    return 'unavailable';
+  }
 }
 
 // Orden importa: `roles` autosana un catálogo de roles virgen

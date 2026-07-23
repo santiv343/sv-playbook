@@ -10,7 +10,7 @@ import type { Io } from '../command.types.js';
 import { initTestRepo } from '../../testkit.js';
 import { openStore } from '../../db/store.js';
 import { bootstrapBundledRoleCatalog } from '../../roles/bundled-profile-bootstrap.js';
-import { renderInstructionsContent } from './instructions.js';
+import { renderInstructionsContent, renderInstructions } from './instructions.js';
 
 function fakeIo(): Io & { outLines: string[]; errLines: string[] } {
   const outLines: string[] = [];
@@ -206,5 +206,19 @@ test('check command-usage passes when every command has usage', async () => {
     const io = fakeIo();
     const code = await main(['check', 'command-usage'], io);
     assert.equal(code, EXIT.OK);
+  });
+});
+
+test('check instructions reports HEAD and rendered content digest when mirrors drift', async () => {
+  await inTempRepo(async (root) => {
+    await renderInstructions({ root, io: fakeIo(), write: true });
+    await writeFile(join(root, 'AGENTS.md'), 'stale generated instructions\n', 'utf8');
+
+    const io = fakeIo();
+    const code = await main(['check', 'instructions'], io);
+    assert.equal(code, EXIT.GATE_FAIL);
+    const output = io.outLines.join('\n');
+    assert.match(output, /head=/);
+    assert.match(output, /rendered-digest=sha256:/);
   });
 });

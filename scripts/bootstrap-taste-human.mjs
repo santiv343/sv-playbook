@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { openStore, commonRoot } from '../dist/db/store.js';
-import { addContextItem, loadContextCatalog, replaceContextPrecedence } from '../dist/context/repository.js';
+import { bootstrapVersionedContextItem, replaceContextPrecedence } from '../dist/context/repository.js';
 import { CONTEXT_ITEM_STATUS } from '../dist/context/context.constants.js';
 import { readMarkdownSection } from '../dist/context/importers/markdown.js';
 import { CONTEXT_PRECEDENCE } from './bootstrap-context.constants.mjs';
@@ -14,8 +14,6 @@ const repoRoot = commonRoot(root);
 const BODY_FILE = 'content/taste/human.md';
 const PROVENANCE = 'content/taste/human.md, bootstrap 2026-07-17';
 const KIND = 'taste-human';
-const VERSION = 1;
-
 // Strength mapping (from content/taste/human.md Delivery column to CONTEXT_ITEM_STRENGTH):
 //   core     -> mandatory  (applies to every run for the listed roles)
 //   scoped   -> advisory   (included only when selectors match)
@@ -153,27 +151,14 @@ try {
   replaceContextPrecedence(store, CONTEXT_PRECEDENCE);
   console.log('context precedence set');
 
-  const catalog = loadContextCatalog(store);
-  const activeRefs = new Set(
-    catalog.items
-      .filter((item) => item.kind === KIND && item.status === CONTEXT_ITEM_STATUS.ACTIVE)
-      .map((item) => item.id),
-  );
-
   for (const entry of entries) {
-    if (activeRefs.has(entry.id)) {
-      console.log(`skip ${entry.id}: active ${KIND} item already exists`);
-      continue;
-    }
-
     const body = readMarkdownSection(bodyFilePath, entry.heading);
     const selectors = {};
     if (entry.roles.length > 0) selectors.role = entry.roles;
     if (entry.phases.length > 0) selectors.phase = entry.phases;
 
-    addContextItem(store, {
+    const result = bootstrapVersionedContextItem(store, {
       id: entry.id,
-      version: VERSION,
       kind: KIND,
       status: CONTEXT_ITEM_STATUS.ACTIVE,
       strength: entry.strength,
@@ -183,10 +168,11 @@ try {
       tags: entry.tags,
       selectors,
       dependencies: [],
-      supersedes: [],
       capabilities: {},
     });
-    console.log(`added context ${entry.id}@${VERSION}`);
+    console.log(result.changed
+      ? `added context ${entry.id}@${result.version}`
+      : `skip context ${entry.id}@${result.version}`);
   }
 
   console.log('\n=== Verifying selective compilation ===');

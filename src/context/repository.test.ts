@@ -9,7 +9,7 @@ import { compileContext } from './compiler.js';
 import { CAPABILITY_EFFECT, CONTEXT_ERROR, CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from './context.constants.js';
 import { ContextError } from './context.errors.js';
 import { persistContextPack } from './packs.js';
-import { addContextItem, loadContextCatalog, replaceContextPrecedence } from './repository.js';
+import { addContextItem, bootstrapVersionedContextItem, loadContextCatalog, replaceContextPrecedence } from './repository.js';
 
 test('SQLite is authoritative for context content, metadata, precedence, and compiled packs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-context-'));
@@ -64,6 +64,26 @@ test('adding a superseding context version atomically retires the active version
     role: 'implementer', phase: 'implementation', tags: ['frontend'], requestedCapabilities: [],
   });
   assert.deepEqual(pack.items.map((item) => item.ref), ['TASTE-UI@2']);
+  store.close();
+});
+
+test('bootstrap versions a changed active context item instead of retaining stale content', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-context-bootstrap-version-'));
+  const store = openStore(root);
+  replaceContextPrecedence(store, ['principle']);
+  const source = {
+    id: 'PRINCIPLE-001', kind: 'principle', status: CONTEXT_ITEM_STATUS.ACTIVE,
+    strength: CONTEXT_ITEM_STRENGTH.MANDATORY, semanticKey: 'determinism',
+    provenance: 'content/principles.md', selectors: {}, tags: [], dependencies: [], capabilities: {},
+  } as const;
+
+  bootstrapVersionedContextItem(store, { ...source, body: 'Original source body.' });
+  bootstrapVersionedContextItem(store, { ...source, body: 'Changed source body.' });
+
+  assert.deepEqual(loadContextCatalog(store).items.map((item) => [item.version, item.status, item.body, item.supersedes]), [
+    [1, CONTEXT_ITEM_STATUS.SUPERSEDED, 'Original source body.', []],
+    [2, CONTEXT_ITEM_STATUS.ACTIVE, 'Changed source body.', ['PRINCIPLE-001@1']],
+  ]);
   store.close();
 });
 
