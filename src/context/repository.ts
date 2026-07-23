@@ -162,6 +162,27 @@ export function bootstrapVersionedContextItem(
   return { changed: true, version };
 }
 
+// Retirar un context item es la contraparte de agregar uno, no su inverso:
+// id+version es inmutable (PK), así que "quitar" un principio/taste/etc. no
+// borra la fila — pasa status a RETIRED, el mismo estado que
+// CONTEXT_ITEM_STATUS declara para esto (ver comentario ahí) pero que hasta
+// ahora ningún código escribía. compileContext() sólo mira ACTIVE, así que
+// un ítem retirado deja de aplicar sin perder su historia (quién lo agregó,
+// cuándo, por qué). Sólo un ítem ACTIVE puede retirarse — uno ya
+// SUPERSEDED/DEFERRED/RETIRED no tiene un estado "vivo" que apagar.
+export function retireContextItem(store: Store, id: string, version: number): void {
+  const found = store.orm.select({ status: contextItems.status }).from(contextItems)
+    .where(and(eq(contextItems.id, id), eq(contextItems.version, version))).get();
+  if (found === undefined) {
+    throw new ContextError(CONTEXT_ERROR.UNKNOWN_ITEM, `no context item ${id}@${version}`);
+  }
+  if (found.status !== CONTEXT_ITEM_STATUS.ACTIVE) {
+    throw new ContextError(CONTEXT_ERROR.INVALID_RETIREMENT, `${id}@${version} is not active`);
+  }
+  store.orm.update(contextItems).set({ status: CONTEXT_ITEM_STATUS.RETIRED, updatedAt: new Date().toISOString() })
+    .where(and(eq(contextItems.id, id), eq(contextItems.version, version))).run();
+}
+
 export function replaceContextPrecedence(store: Store, kinds: readonly string[]): void {
   const unique = [...new Set(kinds)];
   if (unique.length !== kinds.length || unique.some((kind) => kind.trim().length === 0)) {

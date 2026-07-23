@@ -46,8 +46,8 @@
       "digest": "ad1a4ea938189c5a73ca0ae24b6d9a3b04bc054656859424ada7b58152a68000"
     },
     "duplicateStrings": {
-      "count": 1306,
-      "digest": "bca8e9ffea2a1aa478c8227ac7ab7242fc74e39ceb7b28b59891d4ac6762c920"
+      "count": 1308,
+      "digest": "993e98002da9f5687902ad4da4edfbb4b18a400f86540fdec46146a52ad6c87e"
     },
     "fingerprints": [
       "docs/packets/ADOPT-AURORA-001.md",

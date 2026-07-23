@@ -6,7 +6,7 @@ import { ContextError } from '../../context/context.errors.js';
 import type { CapabilityEffect, ContextCompileInput, ContextItemInput, ContextItemStrength } from '../../context/context.types.js';
 import { readMarkdownSection } from '../../context/importers/markdown.js';
 import { persistContextPack } from '../../context/packs.js';
-import { addContextItem, loadContextCatalog, replaceContextPrecedence } from '../../context/repository.js';
+import { addContextItem, loadContextCatalog, replaceContextPrecedence, retireContextItem } from '../../context/repository.js';
 import { commonRoot, openStore } from '../../db/store.js';
 import type { Store } from '../../db/store.types.js';
 import { getCwd } from '../../runtime/context.js';
@@ -17,6 +17,7 @@ import { STRING_OPTION } from './options.constants.js';
 const USAGE = [
   'Usage:',
   '  sv-playbook context add --id <id> --version <n> --kind <kind> --semantic-key <key> --body-file <path> --provenance <text> [--strength <mandatory|advisory|reference>] [options]',
+  '  sv-playbook context retire --id <id> --version <n>',
   '  sv-playbook context precedence <kind> [kind...]',
   '  sv-playbook context compile --role <role> --phase <phase> [options]',
   '  sv-playbook context list',
@@ -26,6 +27,9 @@ const USAGE = [
 ].join('\n');
 
 class UsageError extends Error {}
+
+const ID_FLAG = 'id';
+const VERSION_FLAG = 'version';
 
 function required(value: string | undefined, name: string): string {
   if (value === undefined || value.trim().length === 0) throw new UsageError(`missing --${name}`);
@@ -88,7 +92,7 @@ function add(args: string[], io: Io): number {
     dependency: { type: 'string', multiple: true }, supersedes: { type: 'string', multiple: true },
     capability: { type: 'string', multiple: true },
   } });
-  const version = Number(required(parsed.values.version, 'version'));
+  const version = Number(required(parsed.values.version, VERSION_FLAG));
   const bodyFile = required(parsed.values['body-file'], 'body-file');
   const body = parsed.values.heading === undefined
     ? readFileSync(bodyFile, 'utf8')
@@ -96,7 +100,7 @@ function add(args: string[], io: Io): number {
   const strengthValue = parsed.values.strength ?? CONTEXT_ITEM_STRENGTH.MANDATORY;
   const strength = parseStrength(strengthValue);
   const input: ContextItemInput = {
-    id: required(parsed.values.id, 'id'), version, kind: required(parsed.values.kind, 'kind'),
+    id: required(parsed.values.id, ID_FLAG), version, kind: required(parsed.values.kind, 'kind'),
     status: CONTEXT_ITEM_STATUS.ACTIVE, strength,
     semanticKey: required(parsed.values['semantic-key'], 'semantic-key'),
     body,
@@ -107,6 +111,19 @@ function add(args: string[], io: Io): number {
   };
   withStore((store) => { addContextItem(store, input); });
   io.out(`added context ${input.id}@${input.version}`);
+  return EXIT.OK;
+}
+
+// Retirar cubre principios, taste, y cualquier otro `kind` de context item
+// (ideas de docs/backlog.md no viven acá — son markdown puro, sin registro
+// en la DB, así que no hay nada que retirar por este comando; ver IDEA
+// pendiente sobre llevarlas a un mecanismo con CLI propio).
+function retire(args: string[], io: Io): number {
+  const parsed = parseArgs({ args, allowPositionals: false, options: { id: { type: 'string' }, version: { type: 'string' } } });
+  const id = required(parsed.values.id, ID_FLAG);
+  const version = Number(required(parsed.values.version, VERSION_FLAG));
+  withStore((store) => { retireContextItem(store, id, version); });
+  io.out(`retired context ${id}@${version}`);
   return EXIT.OK;
 }
 
@@ -144,7 +161,7 @@ function list(args: string[], io: Io): number {
   return EXIT.OK;
 }
 
-const SUBCOMMANDS: Readonly<Record<string, (args: string[], io: Io) => number>> = { add, compile, list, precedence };
+const SUBCOMMANDS: Readonly<Record<string, (args: string[], io: Io) => number>> = { add, compile, list, precedence, retire };
 
 export const command: Command = {
   name: 'context',

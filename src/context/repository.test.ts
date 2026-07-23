@@ -9,7 +9,7 @@ import { compileContext } from './compiler.js';
 import { CAPABILITY_EFFECT, CONTEXT_ERROR, CONTEXT_ITEM_STATUS, CONTEXT_ITEM_STRENGTH } from './context.constants.js';
 import { ContextError } from './context.errors.js';
 import { persistContextPack } from './packs.js';
-import { addContextItem, bootstrapVersionedContextItem, loadContextCatalog, replaceContextPrecedence } from './repository.js';
+import { addContextItem, bootstrapVersionedContextItem, loadContextCatalog, replaceContextPrecedence, retireContextItem } from './repository.js';
 
 test('SQLite is authoritative for context content, metadata, precedence, and compiled packs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'svp-context-'));
@@ -84,6 +84,51 @@ test('bootstrap versions a changed active context item instead of retaining stal
     [1, CONTEXT_ITEM_STATUS.SUPERSEDED, 'Original source body.', []],
     [2, CONTEXT_ITEM_STATUS.ACTIVE, 'Changed source body.', ['PRINCIPLE-001@1']],
   ]);
+  store.close();
+});
+
+test('retireContextItem stops an active principle from compiling without deleting its history', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-context-retire-'));
+  const store = openStore(root);
+  replaceContextPrecedence(store, ['principle']);
+  addContextItem(store, {
+    id: 'P-002', version: 1, kind: 'principle', status: CONTEXT_ITEM_STATUS.ACTIVE,
+    strength: CONTEXT_ITEM_STRENGTH.MANDATORY, semanticKey: 'retired-later', body: 'A principle we later retire.',
+    provenance: 'human decision', tags: ['engineering'],
+  });
+
+  retireContextItem(store, 'P-002', 1);
+
+  const catalog = loadContextCatalog(store);
+  assert.deepEqual(catalog.items.map((item) => [item.id, item.version, item.status]), [
+    ['P-002', 1, CONTEXT_ITEM_STATUS.RETIRED],
+  ]);
+  const pack = compileContext(catalog, {
+    role: 'implementer', phase: 'implementation', tags: ['engineering'], requestedCapabilities: [],
+  });
+  assert.deepEqual(pack.items, []);
+  store.close();
+});
+
+test('retireContextItem rejects an unknown item and one that is not active', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'svp-context-retire-invalid-'));
+  const store = openStore(root);
+  replaceContextPrecedence(store, ['principle']);
+  addContextItem(store, {
+    id: 'P-003', version: 1, kind: 'principle', status: CONTEXT_ITEM_STATUS.ACTIVE,
+    strength: CONTEXT_ITEM_STRENGTH.MANDATORY, semanticKey: 'retire-twice', body: 'Retired once already.',
+    provenance: 'human decision',
+  });
+  retireContextItem(store, 'P-003', 1);
+
+  assert.throws(
+    () => { retireContextItem(store, 'P-003', 1); },
+    (error: unknown) => error instanceof ContextError && error.code === CONTEXT_ERROR.INVALID_RETIREMENT,
+  );
+  assert.throws(
+    () => { retireContextItem(store, 'P-NOPE', 1); },
+    (error: unknown) => error instanceof ContextError && error.code === CONTEXT_ERROR.UNKNOWN_ITEM,
+  );
   store.close();
 });
 
