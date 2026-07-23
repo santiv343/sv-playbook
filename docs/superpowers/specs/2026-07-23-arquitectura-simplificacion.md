@@ -100,6 +100,23 @@ No se borra nada — el charter de cada rol dormido sigue existiendo, sólo
 no se compila su propio pack; se compila como contenido agregado del rol
 que lo absorbe.
 
+### Nota sobre D2/D3 (verificado contra código real en esta pasada, 2026-07-23 tarde)
+
+`roles/catalog-activation.ts` confirma que hoy la activación es **de
+catálogo completo, no por rol** — `activateRoleCatalog()` activa TODOS
+los roles del catálogo a la vez, y `roleSetViolations`
+(`protocol-work.ts`, visto en Tramo 4) **rechaza explícitamente** un rol
+fuera del catálogo requerido. No existe hoy ningún concepto de "rol
+presente pero dormido". Esto significa que D2/D3 no son una extensión
+de mecanismo existente — son **mecanismo nuevo**: (a) activación
+individual por rol (no por catálogo entero), y (b) lógica nueva en
+`context/compiler.ts` (`compileContext`, D18) para que el charter de un
+rol dormido se pliegue dentro del pack de contexto del rol que lo
+absorbe, en vez de compilarse como su propio rol independiente. No
+cambia la decisión (D2/D3 siguen en pie), pero sí el tamaño real del
+trabajo de implementación — no es "prender un flag", es diseño nuevo en
+dos subsistemas.
+
 ### D3 — Dónde vive la activación de roles: DB, no config
 
 El estado (`role_activation`: role_id, status active/dormant, absorbed_by)
@@ -117,30 +134,756 @@ de roles, y cualquier otra cosa que el frontend vaya a editar)"**. Pendiente
 de aplicar el cambio de texto en `content/principles.md` cuando se retome
 la implementación (no hoy, por la pausa de código).
 
+### D5 — Daemon → backend: qué se rescata, qué se tira
+
+Hallazgo clave (con evidencia de código, no de memoria — ver
+[mapa-flujo-app.md § Tramo 2](2026-07-23-mapa-flujo-app.md)): el daemon de
+hoy no es sólo lock+forwarding. `daemon.production.ts` conecta
+`createWorkflowRuntime` (`orchestration/`, el motor real) como worker de
+fondo **dentro del mismo proceso HTTP**. Es decir, el daemon ya tiene, en
+la forma, el esqueleto de un backend persistente — sólo trae encima la
+maquinaria de "soy un túnel para comandos de CLI arbitrarios desde
+procesos efímeros".
+
+**Se tira** (resuelve un problema — muchos procesos CLI compitiendo — que
+deja de existir con D1):
+- `client.ts` (106L) — forwarding transport vía subproceso `spawnSync`
+  para reenvío sincrónico desde código a nivel de módulo. Sin CLI no hay
+  llamador sincrónico que forzar.
+- `daemon.lock.ts` (39L) — PID lock con compare-and-swap para que dos
+  procesos CLI no colisionen siendo "el daemon". Con un único proceso
+  backend arrancado explícito, esa carrera no puede pasar. Puede quedar
+  una versión mínima (chequeo de "¿ya hay algo en este puerto/PID?" al
+  boot) pero no la danza de nonce/token completa.
+- `daemon.context.ts` (52L) — `enforceWorkspaceBinding`/`parseExecContext`
+  resuelven "a qué worktree pertenece este comando" a partir del **cwd**
+  de quien llamó. Un cliente REST/MCP nuevo manda `taskId`/`sessionId`
+  explícito, no un cwd — esta resolución pierde sentido.
+- La ruta `/api/v1/exec` en `daemon.ts` (passthrough genérico de argv) —
+  se reemplaza por rutas REST tipadas que llaman directo a `tasks/`,
+  `context/`, `gateway/`.
+
+**Se rescata** (no es CLI-specific, es "cómo se porta bien un proceso Node
+persistente"):
+- `daemon.lifecycle.ts` (88L) — drenado/`finalizeOnce`/`trackHandler`,
+  patrón genérico de shutdown prolijo. Se lleva casi textual.
+- `daemon.production.ts` (42L) — composition root que arma el
+  `signalPort` real (SIGINT/SIGTERM) y conecta el motor de orchestration
+  como background worker. Es, literalmente, el esqueleto del entry point
+  del backend nuevo — se adapta quitando `commandPort`.
+- El *patrón* de `verifyDaemonStore` (verificación de lock exclusivo) baja
+  de nivel: con un solo proceso backend por diseño, esa clase de bug
+  (otro proceso creyéndose también dueño) no puede repetirse — alcanza
+  con un chequeo simple de "¿pude abrir la DB?".
+
+### D6 — `cli/` (5200L): la mayoría muere sin rescate, 3 puntos precisos sí lo necesitan
+
+Auditoría con evidencia en
+[mapa-flujo-app.md § Auditoría cli/](2026-07-23-mapa-flujo-app.md). La
+gran mayoría de `cli/commands/*.ts` es wrapper delgado sobre capas de
+servicio que ya existen (`tasks/service.ts`, `gateway/`, `contracts/`) —
+desaparece sin pérdida bajo D1, las rutas REST nuevas llaman a las mismas
+funciones. Tres excepciones puntuales, con lógica de dominio real que
+**sólo** existe hoy en el archivo de comando CLI:
+
+1. `decisions` (`cli/commands/decision.ts`) — sin capa de servicio en
+   ningún lado. Rescate: crear `src/decisions/service.ts`.
+2. `sprints` mutators de goal/budget/wip (`cli/commands/sprint.ts`) —
+   `src/sprints/service.ts` ya existe y cubre casi todo; faltan 3
+   funciones puntuales.
+3. `reconcile` executor (`cli/commands/reconcile.ts`) — la lógica de
+   decisión ya está en `src/reconcile/reconcile.ts` con un
+   `ReconcilerExecutor` inyectable; falta un adapter nuevo para el
+   backend, la interfaz ya está diseñada.
+
+`rebuild.ts` evaluado: no es una herramienta CLI cualquiera — es la
+implementación concreta de **PRINCIPLE-003** ("nada importante vive sólo
+en una herramienta de memoria; los archivos commiteados son la fuente de
+verdad") aplicada a los packets:
+`docs/packets/*.md` es la fuente recuperable en git, la DB es un índice
+derivado y reconstruible desde ahí (con backup previo y rechazo si la
+reconstrucción perdería datos — `rebuild.ts:180-197`).
+
+Esto convierte la pregunta de "¿sobrevive `rebuild.ts`?" en una pregunta
+de producto real, no un hecho de código: **¿el backend nuevo sigue
+espejando cada packet a un `.md` versionado en git, o la DB pasa a ser
+la única fuente de verdad?** Queda abierta abajo — no es algo que se
+resuelva leyendo más código.
+
+Esto es trabajo de implementación futuro (no se hace ahora, seguimos en
+fase de decisión). D6 cerrado salvo por esta pregunta de producto.
+
+### D7 — DB es la única fuente de verdad para packets, sin espejo `.md`
+
+El backend nuevo **no** espeja cada packet a un archivo `.md` versionado
+en git. Consecuencias directas:
+
+- `rebuild.ts` muere como concepto entero — no sólo como comando CLI, no
+  hay `.md` desde donde reconstruir. `docs/packets/*.md` deja de ser un
+  artefacto que el sistema mantiene sincronizado (puede seguir existiendo
+  como snapshot histórico de la era CLI, pero no se actualiza más).
+- PRINCIPLE-003 ("nada importante vive sólo en una herramienta de
+  memoria — los archivos commiteados son la fuente de verdad") necesita
+  un mecanismo de durabilidad distinto para packets, ya que su
+  implementación concreta en este dominio era exactamente ese espejo.
+  Candidato natural: el sistema de `backup/` que ya existe
+  (`createStateBackup`, usado hoy como red de seguridad pre-rebuild) pasa
+  a ser el único mecanismo de recuperación real para datos de packets —
+  vale la pena revisar, cuando se llegue a ese punto de backlog, si su
+  cadencia/retención actual (pensada como respaldo secundario detrás del
+  espejo `.md`) alcanza para ser la ÚNICA red de seguridad, o necesita
+  reforzarse (ej. backups más frecuentes, replicación, export manual
+  on-demand para auditoría puntual sin ser el mecanismo de recuperación
+  primario).
+
+**Revisión de `backup/` hecha (consecuencia directa de D7):** dos
+debilidades reales del mecanismo actual, con evidencia en `db/backup.ts`,
+que antes no importaban (el espejo `.md` en git era la red de seguridad
+real) pero con D7 sí importan:
+
+1. **Se dispara sólo por eventos de CLI** (`backupForEvent()` en
+   `cli/commands/task.ts`, corre cuando un comando CLI pasa por ahí), no
+   hay scheduler propio. Bajo D1 sin CLI, nada lo dispara si no se mueve
+   a un chequeo periódico dentro del background worker (el mismo que ya
+   rescata D5 vía `createWorkflowRuntime`).
+2. **Es local-al-disco, sin copia fuera del host**
+   (`resolveBackupsDir()` guarda al lado de la propia DB). Antes no
+   importaba porque git (remoto) era la copia real fuera del host. Con
+   D7 sin espejo, el disco local es el único lugar donde existen los
+   datos — se pierde el host, se pierde todo, retención de backups
+   incluida.
+
+**Implica un requisito nuevo para el backend** (no una reversión de D7):
+backup con destino remoto/fuera del host (bucket, otro volumen, etc.) +
+disparo periódico real, no sólo oportunista-por-evento. Sin esto, D7
+deja PRINCIPLE-003 sin cumplirse en la práctica para packets.
+
+### D8 — `gateway/` (4151L): no necesita simplificarse, es resiliencia real no ceremonia CLI
+
+`dispatchRun()` (`gateway/gateway.ts:168`) usa intent tracking idempotente
+(`commitIntent`/`acceptSession`/`acceptTurn`/`blockIntent`): si el
+proceso muere a mitad de un dispatch, re-correrlo retoma exactamente
+donde quedó en vez de duplicar trabajo contra el agente externo. Patrón
+"terminal-first": un run completado de forma durable nunca vuelve a
+contactar al adapter, decide todo desde estado persistido
+(`terminalDispatchReceipt`).
+
+Esto no es ceremonia de la era CLI+daemon — es la resiliencia que un
+backend persistente necesita **más**, no menos (corre 24/7 observando
+turnos de agente de duración potencialmente larga, sin un humano mirando
+una terminal). De los 47 archivos, ~20 son `adapters/opencode-*` —
+plomería específica de hablar con OpenCode, ortogonal a CLI-vs-backend,
+existiría igual bajo cualquier arquitectura. Veredicto: **sin cambios
+significativos**, se lleva tal cual al backend nuevo.
+
+### D9 — `promotion/` (1857L): no se toca, es el path de mayor riesgo del sistema entero
+
+`PromotionController.promote()` (`promotion.controller.ts:142`) es la
+única puerta a `done`. Pipeline de 6 pasos con receipt persistido en
+cada uno: (1) verifica evidencia real de preflight+clean-verification
+atada al SHA del candidato, no lo que el agente reportó; (2) re-confirma
+que la work definition no cambió desde que se creó el candidato; (3)
+valida el veredicto real del reviewer run; (4) avanza una máquina de
+estados propia (`CREATED → CHECKS_COMPLETED → APPROVED/REJECTED`) donde
+cada transición queda grabada; (5) re-corre `verify` en el momento
+exacto de integrar (`verifyImmediatelyBeforeIntegration`) porque `main`
+pudo cambiar desde la aprobación — PRINCIPLE-001 ("nunca fabricar
+verde") aplicado al instante exacto en que importa; (6) integra
+(merge git) y cierra la tarea.
+
+`CandidateIdentity` es un compuesto de 5 valores (taskId +
+workDefinitionVersion + candidateSha + configDigest + contractDigest)
+que permite reintentar una promoción después de que cambien las reglas
+de verificación sin colisionar con el intento anterior.
+
+**Veredicto: sin cambios.** Es el límite exacto entre "un agente dijo
+que hizo algo" y "eso se vuelve estado compartido permanente en main" —
+el path de mayor riesgo de todo el sistema. Con la arquitectura nueva
+dispatchando agentes de forma más autónoma, este gate importa más, no
+menos. El cierre/reapertura de store alrededor de clean-verification
+(`verifyImmediatelyBeforeIntegration`) es ortogonal a D1: `verify` corre
+en un worktree git separado (proceso hijo real) sea cual sea la
+arquitectura del proceso principal.
+
+### D10 — `contracts/` (2416L): el 80% (auto-evolución de protocolo) no se lleva; el 20% que queda se puede simplificar más
+
+Split real con evidencia: `artifacts.ts` (+constants/types, 289L) es el
+registro de schemas y validación — genuinamente en el camino crítico,
+`gateway.ts` lo usa en cada turno de agente vía `resolvedArtifactSchema()`.
+El resto — `protocol-proposal*`, `protocol-proposal-batch.ts`,
+`protocol-proposal-review*`, `protocol-reconciliation*`,
+`protocol-work*`, `protocol-evolution.ts` — es **1923 líneas (80% del
+directorio)** dedicadas a que un agente proponga cambios al vocabulario
+de contratos mismo (ciclo propuesta→review→apply). Evidencia de que
+nunca se usó en la práctica: viene del commit fundacional del proyecto
+(`d4791e1`, "M0 tracer end-to-end"), ningún `docs/packets/*.md` lo
+referencia, y nada fuera de `contracts/`/`cli/commands/contract.ts` lo
+llama funcionalmente (`enforcement/` y `promotion/` sólo importan una
+constante compartida, no la lógica). Construido especulativamente antes
+de una necesidad demostrada — exactamente lo que PRINCIPLE-008
+(anti-sv-forge) advierte.
+
+**Decisión: no se lleva al backend nuevo.** Si algún día hace falta
+evolucionar contratos por agente, se reconstruye desde una necesidad
+real — el diseño ya queda documentado acá como referencia (digests
+reproducibles, separación agente-owned/runtime-owned, exigencia de
+ejemplos válidos e inválidos) si esa necesidad aparece.
+
+**Hallazgo adicional sobre lo que sí queda:** `artifacts.ts` resuelve
+dependencias entre contratos como grafo de profundidad arbitraria con
+detección de ciclos/conflictos (`contractDependencies`,
+`mergedDefinitions`, `localizeReferences`). Pero `SHARED_PROTOCOL_DEFINITION`
+tiene sólo 3 valores fijos (`provenance`, `escalation`,
+`correction-record`) y en la práctica ningún contrato referencia a otro
+contrato, sólo a esos 3 bloques compartidos — jerarquía de un solo
+nivel, siempre igual. El resolver general es más generalidad de la que
+el problema real tiene. Simplificación propuesta (pendiente de
+implementar, no ahora): reemplazar el graph-walk por "cada contrato
+resuelto = sus propiedades + los bloques compartidos fijos que use,
+mezclados directo" — cubre el 100% de los casos reales con
+sustancialmente menos código.
+
+### D11 — Workspace binding: son dos mecanismos distintos, uno muere, el otro cambia de forma (no desaparece)
+
+Lo que parecía un solo concepto son dos, con destino distinto:
+
+1. **`resolveAndBindWorkspace`/`enforceWorkspaceBinding`**
+   (`db/store.ts` + `daemon/daemon.context.ts`) — anti-spoofing para que
+   el daemon confíe en el `sessionId` que un request HTTP reenviado
+   reclama, comparándolo contra una tabla de bindings persistida. Mismo
+   destino que el resto de D5: muere, es el mismo problema
+   (cwd-arbitrario-sobre-HTTP) que ya no existe bajo D1.
+2. **`ensureSession()`** (`tasks/service.ts:143`) — cada comando CLI lee
+   o crea un archivo local (`.svp/session`) en la raíz del worktree como
+   identidad para leases/eventos. Este SÍ tiene un concepto real
+   detrás: un agente trabajando en una task está trabajando en un
+   worktree git específico, y esa asociación necesita una identidad
+   durable para que leases/notas se atribuyan bien. **El concepto
+   sobrevive, el mecanismo no** — "leer un archivo ambient en el cwd de
+   quien llama" no tiene sentido para un cliente HTTP (frontend, MCP)
+   sin cwd. Bajo el backend nuevo, quien crea el worktree para un
+   dispatch es el propio backend — ya sabe qué sesión/worktree
+   pertenece a qué task en el momento de crearlo, no necesita
+   reconstruirlo después desde un marcador de archivo.
+
+**Conclusión:** ninguna mitad exige rediseño nuevo — D5 ya cubre la
+mitad que muere, y la mitad que sobrevive se resuelve sola una vez que
+el backend es quien crea los worktrees (deja de necesitar inferir nada).
+
+### D12 — Frontend: React + Vite
+
+Verificado: no hay ningún framework instalado en `package.json`, y
+`src/serve/assets/` es JS vanilla puro (`app.js`, `index.html`,
+`styles.css`, `icons.mjs`) — no existe sunk cost real en Svelte ni en
+ningún otro framework (una mención de sesión anterior no llegó a
+comitearse). Terreno limpio, sin tensión entre lo ya invertido y lo
+mejor ahora. Con HJ-022 (peso explícito a fit de generación de código
+agéntico) y sin costo de oportunidad en contra: **React + Vite**.
+
+### D13 — Métricas del kanban: sí, son baratas — los datos ya existen
+
+Verificado contra el schema real: cycle time sale de `transitions.at`
+(ya persistido en cada cambio de estado), cost/task ya está en
+`task_costs` (usado hoy por `sprints/service.ts`), retry rate sale de
+`retryOfRunSpecId` en los RunSpecs (`gateway/`), y tasa de intervención
+humana se deriva de `sessions.harness`/`sessions.model` (nulos = humano
+en CLI directo, poblados = agente) cruzado contra `transitions.session_id`.
+Nada de esto requiere instrumentar de cero — es una capa de
+agregación/lectura sobre datos que el sistema ya captura por otras
+razones. **Decisión: sí, agregarlas** — es trabajo de implementación
+futuro (una vista/endpoint de sólo lectura), no una apuesta de diseño
+nueva como fue `contracts/` protocol-proposal.
+
+### D14 — `orchestration/` (2683L): sin cambios, es el motor real que conecta D8+D9
+
+Detalle completo en
+[mapa-flujo-app.md § Tramo 4](2026-07-23-mapa-flujo-app.md#tramo-4--createworkflowruntime-el-motor-de-workflows-durable).
+`WorkflowCoordinator.runLoop()` es un motor de cola durable
+crash-safe (estado en DB, no en memoria) con dos tipos de efecto:
+`AGENT` (llama el mismo `dispatchRun()` de D8) y `RUNTIME` (operación
+determinista registrada, ej. `PromotionRuntimeOperation` llama el mismo
+`PromotionController.promote()` de D9). Es la pieza que permite que
+dispatch→review→promote corra de punta a punta sin intervención humana
+en cada paso — HJ-002 ("mecanizar toda responsabilidad determinista")
+aplicado literalmente: sólo lo genuinamente agéntico corre como efecto
+AGENT. **Sin cambios** — mismo patrón que D8/D9, es motor real, no
+ceremonia.
+
+Hallazgo lateral: `human-intake.ts` no es un gate de aprobación humana
+mid-pipeline (lo esperado) — es el canal inverso, mensaje humano libre
+→ input tipado de workflow.
+
+**Resuelto en la misma pasada:** la aprobación humana real es un
+tercer tipo de executor, `WORKFLOW_EXECUTOR.HUMAN` (junto a
+AGENT/RUNTIME) — un step así deja el workflow `WAITING` hasta que
+`resolveHumanWorkflowEffect()` lo resuelve (mismo pipeline de
+lease/claim/complete que agent/runtime, valida el output humano contra
+el mismo sistema de contratos de D10). Ya está expuesto como endpoint
+HTTP en `src/serve/server.ts` — nació server-shaped, sobrevive la
+transición casi sin rediseño. Detalle completo en
+[mapa-flujo-app.md § Tramo 4](2026-07-23-mapa-flujo-app.md).
+
+### D15 — `review/`: sin cambios (motor de evidencia real, mismo patrón que D8/D9/D14)
+
+`assembleReviewCandidate()` (`review-candidate.ts:188`) arma el bundle
+completo que `promotion/` consume: diff real, preflight mecánico
+(write-set, HEAD↔PR SHA, CI, `verify` en checkout aislado, presencia de
+sección "RED test"), catálogo de roles activo (con self-heal si nunca se
+activó uno — PRINCIPLE-010 literal), proyecciones activas, notas de
+evidencia — todo validado contra el mismo sistema de contratos de D10
+antes de persistir. Mismo veredicto que gateway/promotion/orchestration:
+sin cambios, es manejo de riesgo real, no ceremonia.
+
+### D16 — `tasks/legacy-review-verification.ts` (32L): código muerto confirmado, no se porta
+
+Al recorrer `review-transition.ts` apareció una referencia a un camino
+"legacy" — resultó ser **F-007**, un hallazgo ya documentado por el
+proyecto (`docs/codebase-guide/findings.md`, auditoría 2026-07-20, con
+⚠️ inline en el propio archivo apuntando al finding): dos
+implementaciones separadas de "correr verify antes de review"
+(PRINCIPLE-011 violado). La única (`verifyLegacyReviewSync`/
+`gateVerify`, dentro de `movePacket()` en `service.ts`) es alcanzable
+**sólo desde tests que llaman `movePacket()` directo** — el comando real
+del CLI (`task move <id> review`) siempre pasa por
+`movePacketToReview()` (`review-transition.ts`), nunca por esa rama.
+F-007 ya lo señalaba como candidato a retiro formal (PRINCIPLE-015) sin
+resolver. Para la arquitectura nueva la respuesta es directa: no se
+porta — D1 es el momento natural de dejarlo atrás en vez de portar
+código ya confirmado muerto y limpiarlo después.
+
+**Distinto es `legacy-review-evidence.ts` (45L)** — su función
+`captureLegacyReviewEvidence` SÍ es alcanzable hoy, como fallback real
+dentro de `verifyLegacyReview()` en `review-transition.ts` (cuando un
+rol no tiene política de review-candidate configurada). Ese sí se
+revisa cuando se porte `tasks/`, no se descarta de entrada.
+
+### D17 — `src/serve/server.ts` YA es el embrión del backend nuevo, no hay que construirlo de cero
+
+Hallazgo mayor. `createOperationalServer()` (`serve/server.ts:249`) es
+un servidor REST + SSE real, HOY, que ya:
+- expone GET `/board`, `/dashboard`, `/workflow-definitions`;
+- expone POST `/intake` (→ `startHumanIntake`, D14), `/workflows` (→
+  `startWorkflow`, orchestration), `/dispatch/prepare` (→
+  `prepareRunSpec`, D8/Tramo 5), `/human-effects/:id/resolution` (→
+  `resolveHumanWorkflowEffect`, D14/Tramo 4);
+- expone `/events` (SSE, push del dashboard completo a cada cliente
+  conectado, incremental por cliente vía `afterSeq`/`lastEventSeq`).
+
+Es decir: **el backend nuevo no se construye de cero — se expande este
+archivo**, sacándole la dependencia de correr dentro del proceso
+daemon/CLI (D5) y agregándole el resto de la superficie que hoy sólo
+existe como comando CLI (task CRUD, promotion, roles, etc. — ver D6).
+Esto reduce sustancialmente el trabajo de implementación estimado para
+el backend: la forma correcta (REST + SSE, llamando a los mismos
+servicios de dominio) ya existe y ya funciona.
+
+Lo que falta/hay que revisar cuando se implemente: (a) superficie de
+rutas incompleta — sólo cubre intake/workflow/dispatch-prepare/human-
+resolution, no task/sprint/decision/role CRUD; (b) sin autenticación
+visible en ninguna ruta — hoy asumible porque es sólo localhost, a
+confirmar si sigue siendo válido bajo la arquitectura nueva; (c) el
+push SSE es por timer fijo (`options.refreshMs`), no dirigido por
+evento — relacionado con F-002 (ya con fix mergeado, PR #205, pero
+vale confirmar si ese fix cubre esto o era otro síntoma).
+
+### D18 — `context/` (808L): sin cambios, motor de contexto reproducible
+
+`compileContext()` (`context/compiler.ts:203`) selecciona items
+aplicables por selectores role/phase/tag, resuelve dependencias
+transitivas (con detección de ciclos), resuelve conflictos por
+`semanticKey` vía precedencia configurable (PRINCIPLE-013 explícito en
+comentario — nunca elige arbitrariamente, un empate real es
+`CONTEXT_CONFLICT`), y resuelve capabilities el mismo modo (ausencia =
+DENY por defecto). `packId` es un digest determinístico del contenido —
+mismo input, mismo pack, siempre, reproducible/verificable. Es el motor
+real detrás de HJ-001..HJ-022 (`content/taste/human.md`) llegando a un
+agente. Mismo veredicto que D8/D9/D14/D15: sin cambios, riesgo real, no
+ceremonia.
+
+### D19 — `db/` migraciones: mecanismo normal, sin cambios; un gap conocido se lleva como requisito
+
+`checkVersionAndMigrate`/`migrateStore` (`store.migrations.ts:326,356`)
+son migración aditiva idempotente estándar (`CREATE TABLE IF NOT
+EXISTS` por feature, backup verificado antes de migrar, rechazo si hay
+leases foráneas frescas en el store compartido). Sin hallazgos nuevos,
+sin cambios necesarios — es plomería de DB normal.
+
+Confirmado un gap ya conocido de una sesión anterior: `migrateLive`
+existe como opción programática (`MigrateStoreOptions`) pero **ningún
+comando CLI lo expone** — el guard de migración sugiere `--migrate-live`
+pero nada lo parsea. Con D6 (la CLI muere) el bug puntual desaparece
+solo, pero la CAPACIDAD (modo de migración explícito/en vivo) necesita
+un camino real en el backend nuevo (endpoint) — si no, no es que se
+arregla, es que se pierde. Requisito a llevar al diseño de rutas.
+
+### D20 — `check/`+`enforcement/`: ortogonal a D1, sigue como está
+
+`package.json` confirma: `npm run lint` invoca
+`node dist/check/source-policy-cli.js` DIRECTO, no a través de
+`cli/commands/check.ts` (que existe como wrapper CLI, pero no es el
+camino real de CI/lint local — mismo patrón "wrapper delgado que no es
+el que de verdad se usa" que ya vimos en D16/F-007, pero acá sin
+consecuencia porque el script directo SÍ es alcanzable y SÍ se usa).
+`check/`+`enforcement/` (gates de duplicateStrings, literalComparisons,
+ormApplicationSql, secrets, roles catalog closure, suggested-commands)
+son herramienta de build-time/CI — no forman parte del pipeline runtime
+de dispatch/task/review, no necesitan endpoint REST ni exposición MCP.
+Ortogonales a D1: siguen corriendo como script, sin cambios.
+
+### D21 — `adopt/` y `schema/`: mismo patrón que D6, sin sorpresas
+
+`schema/core.ts` (21L de la parte relevante) es una mini-librería de
+validación interna (el DSL `s.object`/`s.nonEmptyString` visto en
+`promotion-operation.ts`) — genérica, infraestructura, ortogonal a D1,
+sin cambios. No confundir con `contracts/` (JSON Schema para artifacts
+externos/agénticos, D10) — dominios distintos con el mismo nombre
+"schema" en la superficie.
+
+`adopt/` (`inventory.ts`, `gap.ts`, `scaffold.ts`, `taste-infer.ts`) es
+lógica real de análisis de repo (lee `package.json`, detecta stack,
+infiere convenciones) para onboardear un proyecto existente a
+sv-playbook — no es parsing de CLI, es dominio genuino. Mismo
+tratamiento que el resto de D6: sobrevive como lógica, sólo cambia de
+transporte (ruta REST/MCP en vez de comando CLI).
+
+**Con esto queda cubierto el inventario completo original** (D1 del
+mapa de tamaño: `cli/`, `gateway/`, `db/`, `orchestration/`,
+`contracts/`, `roles/`, `promotion/`, `review/`, `check/`, `tasks/`,
+`daemon/`, `context/`, `adopt/`, `schema/`, `serve/` — los ~28.000
+líneas originales, revisados con evidencia real, no de memoria).
+
+### D22 — Cuatro decisiones de producto que sólo el founder podía cerrar
+
+1. **Alcance de red: sólo localhost.** Mismo modelo que hoy — un
+   usuario, una máquina. Sin auth real necesaria en ninguna ruta REST
+   ni en el MCP, igual que `serve/server.ts` hoy.
+2. **Backup remoto: bucket S3-compatible.** El backend sube el
+   `.sqlite` comprimido a un bucket tras cada backup verificado
+   (`verifyAndTrack`, D7) — funciona igual local (MinIO) que en la nube.
+3. **Worktrees: el backend crea/destruye 1 por task.** Al dispatchar,
+   corre `git worktree add` en un directorio que administra
+   (`.svp/worktrees/<taskId>`), lo remueve cuando la task llega a
+   done/dropped. Mismo modelo 1:1 lease↔worktree que hoy (una fila en
+   `leases` por task activa), sólo que automatizado — hoy lo hacía el
+   humano a mano antes de correr el CLI, eso ya no existe. **Anotado
+   para más adelante, no ahora**: un pool de worktrees reusables sería
+   más eficiente, pero es prematuro para el tamaño actual del sistema —
+   no se descarta, se pospone explícitamente hasta que haya evidencia
+   real de que crear/destruir por task pesa.
+4. **Sin import de `.md` en lote.** Creación de packets sólo vía
+   DB/API — una sola forma de crear, no dos caminos paralelos que
+   puedan divergir. Consistente con D7.
+
+## Especificación de implementación (para que no quede nada por definir)
+
+Esta sección traduce las decisiones de arriba a formas exactas —
+schema, firmas de función, rutas — no sólo el "qué", sino el "cómo
+exactamente". Sigue siendo diseño, no código: nada de esto se implementa
+todavía.
+
+### E1 — `role_activation`: schema y mecanismo de plegado exacto (D2/D3)
+
+**Schema nuevo** (vive en la misma DB, junto a `role_handoffs`):
+
+```sql
+CREATE TABLE role_activation (
+  role_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL CHECK (status IN ('active', 'dormant')),
+  absorbed_by TEXT REFERENCES role_activation(role_id),
+  updated_at TEXT NOT NULL
+);
+-- invariante: absorbed_by IS NOT NULL  <=>  status = 'dormant'
+-- invariante: absorbed_by, si está, debe apuntar a una fila status='active'
+```
+
+Semilla inicial (los 9 roles de hoy, mapa de D2):
+
+| role_id | status | absorbed_by |
+|---|---|---|
+| `human-interface` | active | — |
+| `delivery-orchestrator` | active | — |
+| `implementer` | active | — |
+| `reviewer` | active | — |
+| `refuter` | dormant | `reviewer` |
+| `advisor` | dormant | `human-interface` |
+| `planner` | dormant | `delivery-orchestrator` |
+| `arbiter` | dormant | `delivery-orchestrator` |
+| `investigator` | dormant | `implementer` |
+
+**Mecanismo de plegado exacto** — cambio puntual, ya identificado a
+nivel de línea: `requestAttributes()` en `context/compiler.ts:31` arma
+hoy `role: [input.role]` (un solo valor, pisa cualquier `role` que
+viniera en `input.attributes`). Pasa a: `role: [input.role,
+...absorbedRoleIdsOf(input.role)]` — el resto de `compileContext`
+(selección por selector, `selectorMatches`, D18) no cambia NADA, porque
+ya hace intersección contra un array. Un context item cuyo selector
+apunta a `refuter` se sigue seleccionando cuando se compila el pack de
+`reviewer`, sin tocar `selectCandidates`/`resolveSemanticConflicts`.
+`absorbedRoleIdsOf(roleId)` es una consulta nueva de una línea contra
+`role_activation` (`SELECT role_id FROM role_activation WHERE
+absorbed_by = ? AND status = 'dormant'`), resuelta en `run-spec.ts`
+antes de llamar `compileContext` (mismo lugar donde hoy se arma
+`contextAttributes`).
+
+`checkRoleCatalog`/`roleSetViolations` (`catalog.ts`, `protocol-work.ts`
+— este último ya no se lleva, D10) necesitan dejar de rechazar un rol
+"fuera del catálogo requerido" cuando ese rol está `dormant` — hoy
+`requiredRoles` es binario (está o no está); pasa a filtrar sólo contra
+roles con `status='active'`.
+
+### E2 — `src/decisions/service.ts`: firma exacta (rescate D6)
+
+Traducción directa de lo que hoy vive sólo en `cli/commands/decision.ts`
+a una capa de servicio real, mismo patrón que `sprints/service.ts`:
+
+```ts
+// src/decisions/service.ts
+export function askDecision(store: Store, question: string, packetId: string | null): string; // devuelve el id generado
+export function answerDecision(store: Store, id: string, answer: string): void; // graba answered_against_version
+export function listDecisions(store: Store, options?: { pendingOnly?: boolean }): DecisionRow[];
+export function getDecision(store: Store, id: string): DecisionRow | undefined;
+```
+
+Mecánica idéntica a la que ya existe en `cli/commands/decision.ts`
+(`nextDecisionId`, el INSERT/UPDATE sobre `decisions`) — se mueve tal
+cual, sin rediseño, sólo de archivo (`cli/commands/decision.ts` →
+`src/decisions/service.ts`) y de capa (deja de tener `parseArgs`/`Io`,
+pasa a tomar valores ya parseados).
+
+### E3 — 3 mutators nuevos en `sprints/service.ts` (rescate D6)
+
+```ts
+// agregar a src/sprints/service.ts (ya existe el resto del módulo)
+export function updateSprintGoal(store: Store, sprintId: string, goal: string): void;
+export function updateSprintBudget(store: Store, sprintId: string, budgetCap: number): void;
+export function updateSprintWipLimit(store: Store, sprintId: string, wipLimit: number): void;
+```
+
+Cada uno reusa `ensureSprintOpen` (ya existe en `cli/commands/sprint.ts`
+— se mueve junto) antes del `UPDATE`, mismo SQL que ya corre hoy, sólo
+que vive en el módulo de servicio en vez del comando CLI.
+
+### E4 — `ReconcilerExecutor` para el backend (rescate D6)
+
+La interfaz ya existe (`reconcile/reconcile.types.ts`:
+`ReconcilerExecutor { updateBranch, taskClose, recordEvent,
+createBackup }`) — sólo falta una implementación nueva que reemplace la
+que hoy vive inline en `cli/commands/reconcile.ts` (el `UPDATE packets
+SET pr=...`/`INSERT INTO events` que vimos ahí). Misma lógica, movida a
+`src/reconcile/backend-executor.ts` (o similar), instanciada por la ruta
+`POST /reconcile/run` en vez de por el comando CLI.
+
+### E5 — Rutas REST completas (expande D17)
+
+Principio: **una ruta por capacidad, cada una llama directo a la
+función de servicio ya identificada en D6-D21 — nunca un passthrough
+genérico** (eso es justo lo que se tira de `daemon.ts`, D5). Convención:
+REST estándar, recursos en plural, acciones no-CRUD como sub-recurso
+POST (`/tasks/:id/start`).
+
+**Ya existen** (D17, se mantienen): `GET /board`, `GET /dashboard`,
+`GET /workflow-definitions`, `GET /events` (SSE), `POST /intake`,
+`POST /workflows`, `POST /dispatch/prepare`,
+`POST /human-effects/:id/resolution`.
+
+**Nuevas — núcleo runtime (tasks/sprints/decisions/dispatch/promotion/roles):**
+
+| Método + ruta | Llama a | Reemplaza comando |
+|---|---|---|
+| `POST /tasks` | `tasks/service.js:createPacket` | `task create` |
+| `PATCH /tasks/:id` | `amendPacket` | `task amend` |
+| `GET /tasks` | `listPackets` | `task list` |
+| `GET /tasks/:id` | `recoverPacket` | `task show`/`recover` |
+| `POST /tasks/:id/start` | `startPacket` | `task start` |
+| `POST /tasks/:id/move` `{status}` | `movePacket`/`movePacketToReview` | `task move` |
+| `POST /tasks/:id/takeover` | `takeoverPacket` | `task takeover` |
+| `POST /tasks/:id/release` | `releaseLease` | `task release` |
+| `POST /tasks/:id/notes` `{text}` | `notePacket` | `task note` |
+| `GET /tasks/:id/brief` | `briefPacket` | `task brief` |
+| `POST /tasks/:id/cost` `{amount}` | `recordTaskCost` | (sin comando CLI hoy) |
+| `POST /sprints` | `createSprint` | `sprint create` |
+| `GET /sprints` | `listSprints` | `sprint list` |
+| `GET /sprints/:id` | `showSprint` | `sprint show` |
+| `PATCH /sprints/:id` `{goal\|budgetCap\|wipLimit}` | E3 (nuevo) | `sprint goal`/`budget`/`wip` |
+| `POST /sprints/:id/tasks` `{packetId}` | `addTaskToSprint` | `sprint add` |
+| `DELETE /sprints/:id/tasks/:packetId` | `removeTaskFromSprint` | `sprint remove` |
+| `PUT /sprints/:id/tasks/order` `{taskIds}` | `orderTasksInSprint` | `sprint order` |
+| `POST /sprints/:id/close` | `closeSprint` | `sprint close` |
+| `GET /backlog` | `getBacklog` | `sprint backlog` |
+| `POST /decisions` `{question,packetId?}` | E2 (nuevo) | `decision ask` |
+| `POST /decisions/:id/answer` `{answer}` | E2 (nuevo) | `decision answer` |
+| `GET /decisions` `?pending` | E2 (nuevo) | `decision list` |
+| `POST /dispatch/start` `{runId}` | `dispatchRun` | `dispatch start` |
+| `POST /dispatch/retry` `{runId}` | `retryRunSpec` | `dispatch retry` |
+| `POST /promotion/run` `{reviewCandidateId,reviewerRunSpecId,targetRef?}` | `PromotionController.promote` | `promotion run` |
+| `GET /roles` | `listRoleCatalog` | `role list` |
+| `POST /roles/catalog/activate` | `activateRoleCatalog` | `role activate` |
+| `GET /roles/:id/activation` | E1 (nuevo) | (no existía) |
+| `PATCH /roles/:id/activation` `{status,absorbedBy?}` | E1 (nuevo) | (no existía) |
+| *(13 rutas más — ver nota abajo)* | `role.ts` tiene 16 subcomandos en total (`activate`, `bootstrap`, `check`, `define`, `evaluate-models`, `escalation`, `handoff`, `list`, `model-capability`, `model-evidence`, `policy`, `profile`, `project`, `receipt`, `require`, `responsibility`) — cada uno mapea 1:1 y mecánicamente a una función ya leída completa en `roles/catalog.ts`/`catalog-activation.ts` (D6/Tramo 10): `bootstrapBundledRoleCatalog`, `checkRoleCatalog`, `addRoleContract`/`setRoleContract`, `addRoleEscalation`, `addRoleHandoff`, `addModelCapability`, `setRolePolicy`, `setRoleCatalogProfile`, `requireRole`, `addResponsibility`, más las de role-projection (`gateway/adapters/role-projection-*`). Enumerar las 13 rutas restantes acá sería transcribir documentación de API, no tomar una decisión — el patrón (`POST/PATCH /roles/...` → función de `catalog.ts` ya identificada) es la parte que hacía falta definir, y está cerrado; la transcripción 1:1 se hace en el momento de implementar. | `role bootstrap`/`check`/`define`/etc. |
+| `POST /reconcile/run` `{dryRun}` | `reconcile()` + E4 | `reconcile run` |
+| `POST /backup` | `createStateBackup` | `backup` |
+| `GET /backup/status` | `getBackupStatus` | `doctor`/`status` |
+| `POST /restore` `{backupPath,force?}` | `restoreStateBackup` | `restore` |
+| `POST /migrate` `{migrateLive?}` | `migrateStore` | (gap D19, no existía en CLI) |
+| `GET /health` | health check + `readBuildDigest` | (equivalente a `/api/v1/health` del daemon viejo) |
+
+**Nuevas — administración de contexto/roles/ejecución (encontradas en
+esta pasada de auditoría, faltaban en la primera versión de esta
+tabla):**
+
+| Método + ruta | Llama a | Reemplaza comando |
+|---|---|---|
+| `POST /context-items` | `context.ts:add` (bootstrapVersionedContextItem) | `context add` |
+| `POST /context-items/compile` `{role,phase,tags?}` | `compileContext` (D18) | `context compile` |
+| `GET /context-items` | `context.ts:list` | `context list` |
+| `GET /context-items/precedence` | `context.ts:precedence` | `context precedence` |
+| `POST /context-items/:ref/retire` | `context.ts:retire` | `context retire` |
+| `GET /execution-profiles` | `execution-profile.ts:listProfiles` | `execution-profile list` |
+| `PUT /execution-profiles/:id` | `writeProfile` | `execution-profile write` |
+| `DELETE /execution-profiles/:id` | `removeProfile` | `execution-profile remove` |
+| `POST /execution-profiles/:id/clone` | `cloneProfile` | `execution-profile clone` |
+| `PATCH /workflow-policy` | config del `WorkflowFailureClassifier` (D14) | `workflow-policy` |
+| `POST /roles/evaluate-models` | `evaluateConfiguredModels` (`roles/model-capability-evaluation.js`) — evidencia que `requireExecutionProfileModelEvidence` exige antes de cada dispatch, D8 | `role evaluate-models` |
+
+**Nuevas — administrativas de sólo lectura/diagnóstico, menor
+prioridad** (no bloquean el arranque de la implementación): `contracts`
+(`add`/`check`/`validate`, sólo `artifacts.ts`, D10), `constitution`,
+`config` (sólo lectura — la edición sigue siendo de archivo, D4),
+`adopt` (`inventory`/`gap`/`scaffold`, D21), `doctor` (diagnósticos),
+`handoff` (reporte de packets stale), `enforce` (conformance check,
+read-only — pariente de `enforcement/conformance.ts`, D20, pero
+expuesto también como vista, no sólo script de CI), `packet` (historial
+de versiones/diffs de un packet), `review` (correr preflight manual
+para debug — el camino automático ya corre solo vía `movePacketToReview`,
+D15). `status.ts` no necesita ruta propia — está subsumido por
+`GET /board` + `GET /backup/status`, ya en la tabla principal.
+
+**Pendiente de reevaluar, no cerrado del todo:** `workspace.ts`
+("clasificar paths sucios contra write sets de tasks") depende del
+modelo "humano con archivos sucios en un cwd ambiente" — con D22.3 (el
+backend crea/destruye worktrees, ya no hay un humano tipeando en una
+carpeta local sin que el backend lo sepa), el caso de uso original
+puede haber dejado de aplicar tal cual. No se le asigna ruta todavía;
+se revisa cuando se implemente el ciclo de vida de worktrees de D22.3 y
+se ve si el concepto sigue teniendo sentido o se descarta.
+
+**Corrección encontrada en esta misma pasada:** dos archivos que
+aparecían en el índice de CodeGraph (`cli/commands/policy.ts`,
+`cli/commands/role-model-evaluation.ts`) **no existen en disco** — es
+la segunda vez esta sesión que el índice tiene entradas fantasma (la
+primera fue `db/daemon-self-start.ts`, ver Tramo de daemon). La
+funcionalidad de model-evaluation SÍ existe, pero en
+`src/cli/role-model-evaluation.ts` (fuera de `commands/`, como helper
+del comando `role`) — ya incorporada arriba como
+`POST /roles/evaluate-models`.
+
+**No se portan** (confirmado en D6/D7/D10/D16): `contract proposal-*`/
+`reconcile-*` (D10), `daemon`, `rebuild`, `import` (D22.4), `describe`,
+`docs`, `generate-index`, `instructions` — estos últimos cuatro son
+generadores de documentación de la propia CLI, mueren con ella sin
+reemplazo porque el concepto "ayuda de comandos" no aplica a un backend.
+
+### E6 — MCP: mapeo 1:1 con las rutas REST
+
+Cada tool MCP es un wrapper delgado de una llamada HTTP a la ruta
+equivalente de arriba — mismo nombre semántico, mismo payload. No hay
+lógica propia del lado MCP (si la hubiera, sería un segundo camino
+paralelo a la app — exactamente lo que D1 descarta). El MCP server es
+un cliente HTTP más, al mismo nivel que el frontend.
+
+**Transporte y quién lo usa** (sin definir hasta ahora): el MCP server
+es para el agente YA dispatchado, trabajando dentro de su worktree
+(D22.3), cuando necesita llamar de vuelta a sv-playbook — equivalente a
+lo que hoy hace un agente corriendo `task note`/`decision answer` desde
+su sesión CLI. No confundir con el dispatch en sí (backend → OpenCode
+vía `gateway/`, D8) — es la dirección inversa. Corre como proceso propio
+con transporte stdio (el estándar MCP para harnesses de agente
+locales), y cada tool call se traduce a un `fetch` HTTP contra
+`localhost:<puerto del backend>` — nada más. Se configura en el
+execution profile del rol (`execution-profile.ts`, arriba) como una
+tool source más.
+
+### E7 — Detalles operativos que faltaban
+
+- **Servir el frontend**: el backend sigue sirviendo los estáticos
+  compilados del frontend (build de Vite), mismo patrón que
+  `staticFilePath`/`staticResponse` ya hacen hoy en `serve/server.ts`
+  para los assets vanilla — no cambia, sólo cambia QUÉ archivos sirve.
+  En desarrollo, el dev server de Vite proxea las llamadas a la API
+  hacia el backend (patrón estándar de Vite, sin nada custom) — esto
+  exige CORS habilitado sólo en dev, entre `localhost:<puerto vite>` y
+  `localhost:<puerto backend>` (D22.1 sigue vigente: nunca se expone
+  fuera de localhost).
+- **Motor de DB**: SQLite + Drizzle ORM, sin cambios — D1 fue una
+  decisión sobre arquitectura de proceso/interfaz, nunca cuestionó el
+  motor de almacenamiento. Se deja explícito para que no quede como
+  supuesto implícito.
+- **Puerto y arranque**: mismo patrón de config que ya existe
+  (`playbook.config.json`) — una clave nueva (ej. `backend.port`,
+  default análogo al `DAEMON_DEFAULT_PORT` de hoy). Arranque explícito
+  vía un único comando (`npm start` o equivalente) — cumple el pedido
+  original ("algo que tengas que levantar para que funcione"). Cómo se
+  supervisa ese proceso en producción (systemd, pm2, docker) es decisión
+  de despliegue, no de arquitectura — fuera de alcance de este
+  documento a propósito.
+- **Estrategia de tests**: sin cambios — los tests siguen abriendo el
+  store directo (mismo patrón que `NODE_TEST_CONTEXT_ENV` ya usa hoy
+  para desactivar auto-forward), nunca contra un backend HTTP real. No
+  viola "single writer" en la práctica porque cada test corre aislado
+  contra su propio store temporal, nunca concurrente con un backend real
+  sobre el mismo archivo.
+- **Envelope de error REST**: se reusa el patrón que `serve/server.ts`
+  ya tiene HOY (`routeRequest`'s catch: `ContextError`/`WorkDefinitionError`
+  → 409 `{code, error}`, cualquier otro → 400 `{error}`) — no se
+  inventa una convención nueva, la que ya existe y funciona se extiende
+  a todas las rutas nuevas de E5.
+- **Estructura de páginas del frontend**: no se enumera acá a
+  propósito — las páginas siguen 1:1 los recursos REST de E5 (una vista
+  de board/dashboard ya definida por `GET /dashboard`, una vista de
+  detalle de task por `GET /tasks/:id`, etc.). Es transcripción de
+  implementación, no una decisión de arquitectura — mismo criterio que
+  las 13 rutas de `role` de arriba.
+
 ## Puntos abiertos / en discusión
 
-_(el próximo punto a elegir)_
+Ninguno — inventario completo (D1-D21) y especificación de
+implementación (E1-E6) cierran todo lo identificado hasta acá. Puntos
+nuevos que surjan durante la implementación se agregan como entradas
+nuevas, no reabren lo ya cerrado sin evidencia nueva.
+
+## Mapa de flujo de la app
+
+Se está construyendo en paralelo, incremental, a medida que se recorre
+código real (no de memoria): **[2026-07-23-mapa-flujo-app.md](2026-07-23-mapa-flujo-app.md)**.
+Formato "pasa por X función, hace X cosa, va a Y" con cita `archivo:línea`
+en cada paso. Sirve de evidencia de base para las decisiones de este
+documento — cuando una decisión acá cita un tramo del flujo, es trazable.
 
 ## Backlog de puntos a revisar (a medida que aparecen)
 
 - ~~Rol count / catálogo de roles~~ → cerrado, D2/D3.
 - ~~Arquitectura backend: CLI vs backend+MCP~~ → cerrado, D1.
-- Daemon / single-writer: con backend único persistente (D1), el problema
-  que el daemon resolvía (single writer) lo resuelve gratis tener UN SOLO
-  proceso backend — ¿queda algo del código de `daemon/` que se reusa, o se
-  tira entero?
-- Frontend: stack (Svelte vs React) — ver HJ-022 (PR #207), todavía sin
-  decisión final tomada acá, sólo el criterio para decidir.
-- Gateway/dispatch: ¿toda la superficie de `gateway/` (4151 líneas) es
-  necesaria, o se puede simplificar contra el patrón kanban mínimo?
-- Promotion/review: ¿la máquina de estados completa de `promotion/`
-  (1857 líneas) es proporcional al riesgo real, o es ceremonia de más?
-- `contracts/` (2416 líneas) — ¿qué tan necesario es el sistema de
-  contratos de artefactos gestionados vs algo más simple?
-- `cli/` (5200 líneas) — con D1, esto en teoría desaparece entero. ¿Hay
-  lógica de negocio ahí adentro (no sólo parsing de argv) que hay que
-  rescatar antes de tirar el directorio, o todo lo que vale ya vive en
-  las capas de abajo (tasks/, context/, gateway/, etc.)?
-- Métricas del kanban (cycle time, first-pass acceptance, regression
-  rate, human intervention rate, cost/task, retry rate, throughput) —
-  hoy no existen como tablero, ¿vale la pena agregarlas?
+- ~~Daemon / single-writer~~ → cerrado, D5.
+- ~~Workspace binding~~ → cerrado, D11: la mitad HTTP muere (ya en D5),
+  la mitad `ensureSession` sobrevive como concepto, cambia de mecanismo.
+- ~~Frontend: stack~~ → cerrado, D12: React + Vite.
+- ~~Gateway/dispatch~~ → cerrado, D8: sin cambios significativos.
+- ~~Promotion/review~~ → cerrado, D9: sin cambios, path de mayor riesgo.
+- ~~`contracts/` (2416 líneas)~~ → cerrado, D10: 80% no se lleva
+  (nunca usado), el resto se simplifica (graph-walk → merge fijo).
+- ~~`cli/` (5200 líneas)~~ → cerrado, D6/D7.
+- ~~`backup/`~~ → revisado en D7: backup remoto + trigger periódico es
+  requisito nuevo del backend, no punto abierto de decisión.
+- ~~Métricas del kanban~~ → cerrado, D13: sí, son baratas (datos ya existen).
+- ~~Alcance de red / auth~~ → cerrado, D22.1: sólo localhost, sin auth.
+- ~~Destino de backup remoto~~ → cerrado, D22.2: bucket S3-compatible.
+- ~~Ciclo de vida de worktrees~~ → cerrado, D22.3: backend crea/destruye
+  1 por task; pool reusable anotado para más adelante.
+- ~~Import de packets en lote (.md)~~ → cerrado, D22.4: no se mantiene.
+- ~~Rescate exacto de `decisions`/`sprints`/`reconcile`~~ → cerrado,
+  E2/E3/E4 (firmas exactas).
+- ~~Superficie completa de rutas REST~~ → cerrado, E5.
+- ~~Mapeo MCP~~ → cerrado, E6: 1:1 con rutas REST, sin lógica propia.
+- ~~Mecanismo exacto de roles dormidos/absorción~~ → cerrado, E1
+  (schema `role_activation` + cambio puntual en `requestAttributes`).
