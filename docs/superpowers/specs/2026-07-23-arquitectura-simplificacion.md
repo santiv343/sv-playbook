@@ -93,12 +93,69 @@ judgments cuando está dormido, no se pierde la capacidad):
 | `refuter` | `reviewer` |
 | `advisor` | `human-interface` |
 | `planner` | `delivery-orchestrator` |
-| `arbiter` | `delivery-orchestrator` |
+| `arbiter` | ~~`delivery-orchestrator`~~ **`human-interface`** — corregido en D32, conflicto de auto-arbitraje encontrado al cruzar contra las cartas reales |
 | `investigator` | `implementer` |
 
 No se borra nada — el charter de cada rol dormido sigue existiendo, sólo
 no se compila su propio pack; se compila como contenido agregado del rol
 que lo absorbe.
+
+### D32 — Corrección a D2: `arbiter` no puede absorberse en `delivery-orchestrator` (conflicto de auto-arbitraje)
+
+Encontrado cruzando D2 contra `content/roles/generated-charters.md`
+(las cartas reales, no la descripción cualitativa que originó D2).
+`arbiter` existe específicamente para resolver desacuerdos entre
+`planner` (que propone) y `refuter` (que objeta) — es el árbitro NEUTRAL
+entre ambos (`arbiter`'s incoming handoff es de `refuter`, outgoing a
+`delivery-orchestrator` y `planner`). D2 absorbe **tanto** `planner`
+como `arbiter` en `delivery-orchestrator`. Si eso se implementa tal
+cual, `delivery-orchestrator` terminaría arbitrando desacuerdos sobre
+su propia propuesta absorbida (la de `planner`) — exactamente lo que
+HJ-010 prohíbe ("no role... self-approves") y lo que HJ-016 existe para
+evitar ("reviewers should attempt to falsify the candidate, not confirm
+the implementer's narrative").
+
+**Corrección**: `arbiter` se absorbe en `human-interface`, no en
+`delivery-orchestrator`. Encaja con HJ-018 (regla de decisión humana):
+"si la categoría no está clara, investigar y refutar antes de crear
+autoridad... si cambia intención/valores/apetito de riesgo, decide el
+humano vía human-interface" — un desacuerdo genuino entre planner y
+refuter sin un árbitro dedicado escala naturalmente a human-interface
+(y de ahí, si hace falta, al humano) en vez de resolverse en silencio
+por el mismo rol que propuso lo que se está disputando.
+
+**Verificado que los otros tres mapeos SÍ están limpios** (mismo cruce
+contra cartas reales, sin encontrar conflicto):
+- `advisor`→`human-interface`: sus handoffs de entrada/salida en el
+  catálogo actual son EXCLUSIVAMENTE entre sí (`advisor` sólo habla con
+  `human-interface`, en ambas direcciones) — evidencia fuerte de que el
+  mapeo ya estaba bien elegido.
+- `investigator`→`implementer`: la restricción de investigator ("no
+  modificar el candidato mientras diagnostica") no genera un loop de
+  auto-aprobación porque `implementer` YA tiene prohibido
+  `candidate.approve` en su propia carta — el gate de aprobación real
+  (D9, externo al rol) queda intacto pase lo que pase con esta
+  absorción.
+- `refuter`→`reviewer`: ambos son roles de juicio adversarial, pero
+  sobre objetos DISTINTOS del ciclo de vida (`refuter` evalúa
+  *planes*, antes del trabajo; `reviewer` evalúa *candidatos*, después)
+  — nunca terminan arbitrando el output del otro, evalúan artefactos
+  producidos por roles diferentes en momentos diferentes. Fusión
+  coherente.
+
+**Tabla de absorción corregida (reemplaza la de D2):**
+
+| Dormido | Absorbido por |
+|---|---|
+| `refuter` | `reviewer` |
+| `advisor` | `human-interface` |
+| `planner` | `delivery-orchestrator` |
+| `arbiter` | **`human-interface`** (corregido, era `delivery-orchestrator`) |
+| `investigator` | `implementer` |
+
+E1 (schema `role_activation`) se actualiza con esta corrección: la
+fila semilla de `arbiter` lleva `absorbed_by = 'human-interface'`, no
+`'delivery-orchestrator'`.
 
 ### Nota sobre D2/D3 (verificado contra código real en esta pasada, 2026-07-23 tarde)
 
@@ -596,7 +653,7 @@ CREATE TABLE role_activation (
 -- invariante: absorbed_by, si está, debe apuntar a una fila status='active'
 ```
 
-Semilla inicial (los 9 roles de hoy, mapa de D2):
+Semilla inicial (los 9 roles de hoy, mapa de D2 corregido por D32):
 
 | role_id | status | absorbed_by |
 |---|---|---|
@@ -607,7 +664,7 @@ Semilla inicial (los 9 roles de hoy, mapa de D2):
 | `refuter` | dormant | `reviewer` |
 | `advisor` | dormant | `human-interface` |
 | `planner` | dormant | `delivery-orchestrator` |
-| `arbiter` | dormant | `delivery-orchestrator` |
+| `arbiter` | dormant | `human-interface` (D32) |
 | `investigator` | dormant | `implementer` |
 
 **Mecanismo de plegado exacto** — cambio puntual, ya identificado a
@@ -699,7 +756,7 @@ POST (`/tasks/:id/start`).
 | `POST /tasks/:id/takeover` | `takeoverPacket` | `task takeover` |
 | `POST /tasks/:id/release` | `releaseLease` | `task release` |
 | `POST /tasks/:id/notes` `{text}` | `notePacket` | `task note` |
-| `POST /tasks/:id/evidence` `{label,detail}` | `recordEvidence` (D26, nuevo) | (no existía) |
+| `POST /tasks/:id/evidence` `{label,detail}` | `recordEvidence` (D26, nuevo) — exige `actorKind:'human'` para labels marcadas `attestedBy:'human'` (D35) | (no existía) |
 | `GET /tasks/:id/brief` | `briefPacket` | `task brief` |
 | `POST /tasks/:id/cost` `{amount}` | `recordTaskCost` | (sin comando CLI hoy) |
 | `POST /sprints` | `createSprint` | `sprint create` |
@@ -1110,13 +1167,139 @@ backend" donde el borrado queda implícito) — con este documento como
 evidencia de no-uso ya lista para citar, y el delta de líneas real
 (medido, no estimado) como parte del receipt de cierre.
 
+## Cruce completo contra el perfil de juicio humano (`content/taste/human.md`, HJ-001..HJ-021)
+
+Pedido explícito del founder de hacerlo con calma, no apurado — se hizo
+leyendo el archivo completo (no de memoria parcial) y pensando cada
+HJ contra D1-D32, no sólo pattern-matching. HJ-020 confirmado como
+"intentionally skipped" (compiló a gate mecánico, comentario propio del
+script de bootstrap) — no es un gap. **HJ-022 (citado en D12) no está
+mergeado** — PR #207 sigue `OPEN`, no `main`; mi resumen de sesión
+anterior decía "mergeado" y estaba mal. D12 se sostiene igual por su
+propio razonamiento, pero HJ-022 formalmente sigue en estado
+"propuesto", no vinculante — exactamente el estado que HJ-021 prescribe
+para taste nueva sin confirmar. Corrección de proceso, no de diseño:
+mergear PR #207 (es un doc chico, listo).
+
+De HJ-001 a HJ-021, la mayoría reforzó decisiones ya tomadas sin
+encontrar nada nuevo (HJ-006/007/008/010/012/013/016/017/018 — todos
+consistentes con D1-D32, sin acción). Lo que sí produjo hallazgos
+reales:
+
+### D32 — (ver arriba) HJ-004/HJ-010/HJ-016/HJ-018: corrección de `arbiter` en D2
+
+Ya registrado arriba — el hallazgo más grande de esta pasada, encontrado
+al cruzar HJ-004 (límites explícitos de autoridad) contra las cartas de
+rol reales.
+
+### D33 — HJ-001/HJ-002/HJ-019: falta reconciliación de worktrees huérfanos al arranque
+
+D22.3 (backend crea/destruye 1 worktree por task) no tiene el mismo
+mecanismo de auto-reparación que YA existe para runs de gateway
+(`reconcileOrphanedGatewayRuns`, corre ANTES de que el coordinator
+empiece a reclamar trabajo nuevo, Tramo 4) y efectos de workflow
+(`recoverExpired`, D14). Si el backend crashea entre crear un worktree
+y cerrar la task, ese worktree queda huérfano — sin un mecanismo
+mecánico de reconciliación, un humano terminaría corriendo `git
+worktree prune` a mano, exactamente lo que HJ-002 ("mecanizar toda
+responsabilidad determinista") y HJ-019 ("destructive recovery or
+cleanup by improvisation" está en la lista explícita de rechazo)
+prohíben.
+
+**Requisito nuevo para el backend**: al arrancar (mismo lugar que
+`reconcileOrphanedGatewayRuns`), reconciliar worktrees en
+`.svp/worktrees/` contra tasks realmente activas — un worktree sin task
+activa correspondiente se remueve mecánicamente, no se deja para que
+alguien lo note eventualmente.
+
+### D34 — HJ-014: el backup remoto de D22.2 no especificaba cifrado
+
+HJ-014 declara el default explícito: *"periodic **encrypted**/verified
+offsite backup"*. D22.2/D7 especificaron bucket S3-compatible +
+verificación (`verifyAndTrack`) pero **nunca mencionaron cifrado** — un
+descuido real, no una decisión consciente de omitirlo.
+
+**Corrección**: el backup que sube al bucket (D22.2) se cifra antes de
+subir (o se usa server-side encryption del propio bucket, si el
+proveedor lo da nativo — MinIO y S3 real ambos lo soportan) — se agrega
+como requisito duro a D22.2, no como nice-to-have.
+
+### D35 — HJ-019: el diseño de evidencia etiquetada (D26) permite que un agente reclame su propia evidencia sin verificación
+
+Releyendo D26 contra HJ-019 ("an agent checking its own permissions or
+claiming its own evidence" — anti-patrón explícito): el diseño tal como
+quedó (`POST /tasks/:id/evidence {label, detail}`) no distingue entre
+evidencia **mecánica** (la que ya existe hoy — `persistPreflightEvent`,
+generada por un chequeo real, no reclamada) y evidencia **manual/
+reclamada** (un caller diciendo "hice el security-signoff, confiá en
+mí" sin que nada lo verifique). Tal como está diseñado, un agente podría
+auto-declarar `security-signoff` sin que nadie lo haya revisado
+realmente — exactamente el anti-patrón que HJ-019 rechaza.
+
+**Corrección a D26**: la ruta `POST /tasks/:id/evidence` exige
+`actorKind === 'human'` (mismo campo de D24) para labels que el work
+definition marque como `attestedBy: 'human'` en vez de mecánicos —
+evidencia que sólo un chequeo automático puede satisfacer
+(`preflight`, `clean-verification`) sigue viniendo del camino mecánico
+existente, nunca de este endpoint; evidencia que requiere juicio humano
+(`security-signoff`) sólo la puede registrar un caller con
+`actorKind: 'human'`, nunca un agente auto-certificándose.
+
+### D36 — HJ-015: la superficie de UI necesita diseño real de "qué es verdad mecánica vs. resumen de agente", no sólo transcripción de rutas
+
+E7 dejó la estructura de páginas del frontend fuera a propósito
+("transcripción de implementación"). Releyendo HJ-015 con calma: eso es
+correcto para la ESTRUCTURA de páginas (qué vista existe por cada
+recurso), pero HJ-015 pide algo más específico que no es transcripción
+— *"never present an LLM summary as mechanical truth"*. El dashboard
+(`readWorkflowDashboard`, D17) mezcla estado mecánico real (status de
+tasks, leases) con lo que un agente reportó de su propio trabajo — la
+UI necesita distinguir visualmente cuál es cuál, no mostrarlo todo con
+la misma jerarquía visual como si fuera igual de confiable. **No se
+resuelve acá** (es diseño de frontend, no de arquitectura de backend)
+pero se deja como requisito explícito para cuando arranque ese trabajo,
+en vez de asumir que "una página por recurso REST" ya lo cubre.
+
+### D37 — HJ-005: clasificación adopt/adapt/incubate/build/defer, hecha implícitamente
+
+HJ-005 pide clasificar explícito antes de construir. La comparación
+contra la propuesta externa de "kanban agéntico" (mencionada en el
+contexto original de este documento) ya cumplió el espíritu de esto —
+mi conclusión explícita: dado que el valor real es la integración
+bespoke con el schema/lógica ya existente de sv-playbook (roles,
+packets, promotion, contratos), no hay un producto de mercado que
+"adoptar" sin perder esa integración — la clasificación es **build**,
+trivialmente, no por default sino porque se evaluó y no aplica otra
+categoría. Se deja explícito para que no quede como supuesto no
+examinado.
+
+**Pendiente de verificar en implementación, no ahora**: si OpenCode (el
+único adapter real hoy, D8) soporta configurar MCP como tool source —
+E6 lo asume; si no lo soporta today, el mecanismo de E6 necesita un
+adapter intermedio en vez de configuración directa. No se verificó el
+soporte real de OpenCode en esta pasada.
+
+### D38 — HJ-009: recordatorio explícito de estado de madurez — todo D1-D37 es `DECLARED`, nada más
+
+Ninguna decisión de este documento pasó de `DECLARED` — no hay
+`IMPLEMENTED`, `VERIFIED`, ni `ACTIVATED` en nada de lo que dice D1-D37.
+Se deja como recordatorio explícito, no implícito, siguiendo HJ-009
+literal ("only an activated capability with a current runtime receipt
+may be described as an existing guarantee"). Cuando se implemente cada
+punto, avanza en la escalera — este documento no se actualiza
+retroactivamente para sonar más terminado de lo que está.
+
 ## Puntos abiertos / en discusión
 
-Ninguno — inventario completo (D1-D22), cruce contra la auditoría
-PRINCIPLE-016 previa (D23-D27), y cruce contra los 16 principios
-completos (D28-D31) cierran todo lo identificado hasta acá. Puntos
-nuevos que surjan durante la implementación se agregan como entradas
-nuevas, no reabren lo ya cerrado sin evidencia nueva.
+Ninguno de los identificados hasta esta pasada. Inventario completo
+(D1-D22), cruce contra la auditoría PRINCIPLE-016 previa (D23-D27),
+cruce contra los 16 PRINCIPLE-XXX completos (D28-D31), y cruce contra
+el perfil de juicio humano completo HJ-001..HJ-021 (D32-D38) cierran
+todo lo identificado hasta acá — con la salvedad honesta de D38: todo
+sigue en estado `DECLARED`, ninguna de estas correcciones está
+implementada todavía. Puntos nuevos que surjan durante la
+implementación se agregan como entradas nuevas, no reabren lo ya
+cerrado sin evidencia nueva.
 
 ## Mapa de flujo de la app
 
@@ -1167,3 +1350,11 @@ documento — cuando una decisión acá cita un tramo del flujo, es trazable.
   PRINCIPLE-010 (envelope de error necesita `hint`), PRINCIPLE-012
   (reformulación urgente, la CLI ya no es la interfaz), PRINCIPLE-015
   (D10/D25 necesitan packet de remoción formal, no borrado silencioso).
+- ~~Cruce completo contra HJ-001..HJ-021~~ → cerrado, D32-D38:
+  corrección real a D2 (`arbiter` causaba auto-arbitraje, va a
+  `human-interface`), reconciliación de worktrees huérfanos (D33),
+  cifrado de backup faltante (D34), evidencia etiquetada exige
+  `actorKind:'human'` para labels de juicio humano (D35), UI necesita
+  distinguir verdad mecánica de resumen de agente (D36), clasificación
+  build explícita (D37), recordatorio de madurez (D38). PR #207
+  (HJ-022) sigue sin mergear — corrección de proceso pendiente.
