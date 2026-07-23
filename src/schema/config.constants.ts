@@ -57,6 +57,10 @@ export const ModelEvaluationConfigSchema = s.object({
   evidenceValidityDays: s.positiveInteger(),
 });
 
+export const DaemonConfigSchema = s.object({
+  dispatchTimeoutMs: s.positiveInteger(),
+});
+
 export const ReviewPreflightConfigSchema = s.object({
   baseReference: s.nonEmptyString(),
   preparationCommand: s.string(),
@@ -86,6 +90,7 @@ export const PlaybookConfigSchema = s.object({
   tasks: TasksConfigSchema,
   backup: BackupConfigSchema,
   modelEvaluation: ModelEvaluationConfigSchema,
+  daemon: DaemonConfigSchema,
   baseline: s.optional(BaselineConfigSchema),
   gates: GatesConfigSchema,
 });
@@ -122,6 +127,7 @@ function mergeDefaults(raw: Record<string, unknown>): Record<string, unknown> {
     tasks: mergeNested(raw.tasks, DEFAULTS.tasks),
     backup: mergeNested(raw.backup, DEFAULTS.backup),
     modelEvaluation: mergeNested(raw.modelEvaluation, DEFAULTS.modelEvaluation),
+    daemon: mergeNested(raw.daemon, DEFAULTS.daemon),
     gates: mergeNested(raw.gates, DEFAULTS.gates),
   };
   if (raw.baseline !== undefined) {

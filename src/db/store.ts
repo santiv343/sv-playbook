@@ -275,7 +275,7 @@ function tryAutoForward(): void {
       process.exit(1);
     }
 
-    process.exit(forwardToDaemonSync(args, token, port));
+    process.exit(forwardToDaemonSync(args, token, port, repoRoot));
   } catch { /* si algo falla acá, seguir en modo directo es más seguro que bloquear el comando */ }
 }
 

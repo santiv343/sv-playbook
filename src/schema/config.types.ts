@@ -1,5 +1,5 @@
 import type * as s from './core.types.js';
-import type { TierSchema, AutonomySchema, BackupConfigSchema, BaselineConfigSchema, ComplexityCheckpointConfigSchema, GatesConfigSchema, ModelEvaluationConfigSchema, PlaybookConfigSchema, ReviewPreflightConfigSchema, TasksConfigSchema } from './config.constants.js';
+import type { TierSchema, AutonomySchema, BackupConfigSchema, BaselineConfigSchema, ComplexityCheckpointConfigSchema, DaemonConfigSchema, GatesConfigSchema, ModelEvaluationConfigSchema, PlaybookConfigSchema, ReviewPreflightConfigSchema, TasksConfigSchema } from './config.constants.js';
 
 // Todos estos tipos se DERIVAN de los schemas (s.Infer), nunca se declaran
 // por separado — un cambio al schema en config.constants.ts propaga
@@ -14,6 +14,7 @@ export type LiteralComparisonBaseline = NonNullable<BaselineConfig['literalCompa
 export type DuplicateStringBaseline = NonNullable<BaselineConfig['duplicateStrings']>;
 export type GatesConfig = s.Infer<typeof GatesConfigSchema>;
 export type ModelEvaluationConfig = s.Infer<typeof ModelEvaluationConfigSchema>;
+export type DaemonConfig = s.Infer<typeof DaemonConfigSchema>;
 export type ReviewPreflightConfig = s.Infer<typeof ReviewPreflightConfigSchema>;
 export type ComplexityCheckpointConfig = s.Infer<typeof ComplexityCheckpointConfigSchema>;
 export type TasksConfig = s.Infer<typeof TasksConfigSchema>;

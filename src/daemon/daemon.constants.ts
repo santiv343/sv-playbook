@@ -21,8 +21,7 @@ export const ERR_INVALID_CONTEXT = 'invalid context';
 /** TCP connect deadline in ms for the forwarding transport child process.
  *  The child gives up and exits this long after issuing the HTTP POST if the
  *  daemon has not accepted the TCP connection. Once connected, there is no
- *  inactivity timeout — commands set their own deadlines.
- *  Override via daemon config (not yet implemented). */
+ *  inactivity timeout — commands set their own deadlines. */
 export const DAEMON_CONNECT_TIMEOUT_MS_DEFAULT = 5000;
 
 /** Full-request timeout in ms for the forwarding transport child process.
@@ -32,19 +31,16 @@ export const DAEMON_CONNECT_TIMEOUT_MS_DEFAULT = 5000;
  *  responding after accepting the TCP connection. */
 export const DAEMON_REQUEST_TIMEOUT_MS_DEFAULT = 30000;
 
-/** Timeout override for commands known to run long for real reasons (ej.
- *  `dispatch start`, que espera a un turno de agente real completo — puede
- *  tardar minutos, no segundos). Encontrado en vivo: el default de 30s
- *  mataba `dispatch start` en silencio a mitad de un dispatch real contra
- *  OpenCode, sin ningún mensaje (ver git log — root-caused 2026-07-22).
- *  20 minutos da margen sobre el noProgressTimeoutMs típico (10 min) de un
- *  execution profile sin ser indefinido. */
-export const DAEMON_REQUEST_TIMEOUT_MS_LONG_RUNNING = 1_200_000;
-
 /** argv prefix (post `sv-playbook`) that identifies the one command known
- *  to legitimately run long — matched positionally by forwardTimeoutForArgs,
- *  same "top-level command name outside cli/commands/" pattern as
- *  STORE_PROCESS_KIND in db/store.constants.ts. */
+ *  to legitimately run long for real reasons (`dispatch start`, que espera
+ *  a un turno de agente real completo — puede tardar minutos, no segundos.
+ *  Encontrado en vivo: el default de 30s mataba `dispatch start` en
+ *  silencio a mitad de un dispatch real contra OpenCode, sin ningún
+ *  mensaje — root-caused 2026-07-22). Matched positionally by
+ *  forwardTimeoutForArgs, same "top-level command name outside
+ *  cli/commands/" pattern as STORE_PROCESS_KIND in db/store.constants.ts.
+ *  Su piso real es `daemon.dispatchTimeoutMs` en playbook.config.json
+ *  (config.constants.ts DAEMON_DEFAULTS), no una constante acá. */
 export const DISPATCH_LONG_RUNNING_ARGS = ['dispatch', 'start'] as const;
 
 /** Sentinel de exit code que el script hijo de forwardToDaemonSync usa

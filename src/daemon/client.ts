@@ -2,10 +2,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { NODE_EVAL_FLAG, PROCESS_STDIO, TEXT_ENCODING } from '../platform.constants.js';
-import { BUILD_DIGEST_HEALTH_FIELD, DAEMON_CONNECT_TIMEOUT_MS_DEFAULT, DAEMON_FORWARD_TIMEOUT_EXIT_CODE, DAEMON_REQUEST_TIMEOUT_MS_DEFAULT, DAEMON_REQUEST_TIMEOUT_MS_LONG_RUNNING, DISPATCH_LONG_RUNNING_ARGS, GIT_DIR_NAME } from './daemon.constants.js';
+import { BUILD_DIGEST_HEALTH_FIELD, DAEMON_CONNECT_TIMEOUT_MS_DEFAULT, DAEMON_FORWARD_TIMEOUT_EXIT_CODE, DAEMON_REQUEST_TIMEOUT_MS_DEFAULT, DISPATCH_LONG_RUNNING_ARGS, GIT_DIR_NAME } from './daemon.constants.js';
 import { SESSION_FILE_NAME } from '../tasks/service.constants.js';
 import type { ExecutionContext } from '../runtime/context.types.js';
 import { getContext } from '../runtime/context.js';
+import { loadConfig } from '../config.js';
 
 // The forwarding transport runs in a child node process so it can be awaited
 // synchronously from module-load code (store.ts tryAutoForward). The child
@@ -81,15 +82,19 @@ export function fetchDaemonBuildDigestSync(port: number): string | null {
 // sesión + prompt + poll hasta terminal) — puede tardar minutos, no
 // segundos. Encontrado en vivo 2026-07-22: con el timeout plano de 30s,
 // un dispatch real contra OpenCode moría a mitad de camino sin aviso.
-export function forwardTimeoutForArgs(argv: readonly string[]): number {
+// El piso para dispatch start viene de playbook.config.json (daemon.dispatchTimeoutMs,
+// default en config.constants.ts) en vez de estar fijo acá — un proyecto con
+// modelos más lentos o un maxRunDurationMs de execution profile más alto
+// necesita más margen que el que sirvió en las pruebas contra OpenCode/DeepSeek.
+export function forwardTimeoutForArgs(argv: readonly string[], repoRoot: string): number {
   const isLongRunning = DISPATCH_LONG_RUNNING_ARGS.every((token, index) => argv[index] === token);
-  return isLongRunning ? DAEMON_REQUEST_TIMEOUT_MS_LONG_RUNNING : DAEMON_REQUEST_TIMEOUT_MS_DEFAULT;
+  return isLongRunning ? loadConfig(repoRoot).daemon.dispatchTimeoutMs : DAEMON_REQUEST_TIMEOUT_MS_DEFAULT;
 }
 
-export function forwardToDaemonSync(argv: string[], token: string, port: number, ctx?: ExecutionContext, requestTimeoutMs?: number): number {
+export function forwardToDaemonSync(argv: string[], token: string, port: number, repoRoot: string, ctx?: ExecutionContext, requestTimeoutMs?: number): number {
   const context = ctx ?? getContext() ?? { cwd: process.cwd(), sessionId: readSessionId(process.cwd()) };
   const body = JSON.stringify({ token, argv, context });
-  const timeout = requestTimeoutMs ?? forwardTimeoutForArgs(argv);
+  const timeout = requestTimeoutMs ?? forwardTimeoutForArgs(argv, repoRoot);
   const result = spawnSync(process.execPath, [NODE_EVAL_FLAG, buildForwardScript(body, port, timeout)], {
     stdio: ['ignore', 'inherit', 'inherit'],
   });

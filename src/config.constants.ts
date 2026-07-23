@@ -28,6 +28,16 @@ export const TASKS_DEFAULTS = {
   },
 };
 
+// dispatchTimeoutMs cubre cuánto puede tardar el daemon en responder a un
+// `dispatch start` reenviado (espera un turno de agente real: sesión +
+// prompt + poll hasta terminal, minutos, no segundos). El default replica
+// el piso que ya probamos en vivo contra OpenCode/DeepSeek; configurable
+// por proyecto porque un execution profile con modelos más lentos, o un
+// `maxRunDurationMs` de perfil más alto, puede necesitar más margen.
+export const DAEMON_DEFAULTS = {
+  dispatchTimeoutMs: 1_200_000,
+} as const;
+
 export const DEFAULTS: PlaybookConfig = {
   productName: 'unnamed',
   chatLanguage: 'en',
@@ -45,6 +55,7 @@ export const DEFAULTS: PlaybookConfig = {
     onEvents: [BACKUP_EVENT.DONE, BACKUP_EVENT.FORCE_TAKEOVER, BACKUP_EVENT.RESTORE, BACKUP_EVENT.SCHEMA_MISMATCH],
   },
   modelEvaluation: { ...MODEL_EVALUATION_DEFAULTS },
+  daemon: { ...DAEMON_DEFAULTS },
   gates: {
     maxLines: 350,
     maxLinesPerFunction: 60,
