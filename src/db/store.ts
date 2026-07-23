@@ -241,6 +241,12 @@ function tryAutoForward(): void {
     const args = process.argv.slice(2);
     if (args[0] === STORE_PROCESS_KIND.DAEMON) return;
 
+    // Scripts de setup del pipeline de build (scripts/bootstrap-*.mjs) no
+    // deben pasar por el daemon — son parte del pipeline de build/verify,
+    // no del ciclo dispatch/CLI del usuario.
+    const thisScript = process.argv[1];
+    if (thisScript && /^bootstrap-[\w.-]+\.mjs$/.test(basename(thisScript))) return;
+
     // Clasificar en la raíz del worktree: desde un subdirectorio, la entrada
     // .git local difiere del common dir, lo cual clasificaría mal a simples
     // subdirectorios del checkout principal como si fueran worktrees enlazados.
