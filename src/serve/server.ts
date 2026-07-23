@@ -22,10 +22,10 @@ import { readPromotionDashboard } from '../promotion/promotion.receipts.js';
 
 const UI_ROOT = fileURLToPath(new URL('./assets', import.meta.url));
 
-function dashboard(store: Store, repoRoot: string): OperationalDashboard {
+function dashboard(store: Store, repoRoot: string, afterSeq = 0): OperationalDashboard {
   return {
     board: readBoardStatus(store, repoRoot),
-    workflow: readWorkflowDashboard(store),
+    workflow: readWorkflowDashboard(store, afterSeq),
     promotions: readPromotionDashboard(store),
     generatedAt: new Date().toISOString(),
   };
@@ -212,11 +212,14 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function writeDashboard(store: Store, repoRoot: string, client: ServerResponse): void {
+function writeDashboard(store: Store, repoRoot: string, client: ServerResponse, afterSeq: number): number {
   try {
-    writeEvent(client, SSE_EVENT.DASHBOARD, dashboard(store, repoRoot));
+    const value = dashboard(store, repoRoot, afterSeq);
+    writeEvent(client, SSE_EVENT.DASHBOARD, value);
+    return value.workflow.lastEventSeq;
   } catch (error: unknown) {
     writeEvent(client, SSE_EVENT.ERROR, { error: errorMessage(error) });
+    return afterSeq;
   }
 }
 
@@ -225,15 +228,14 @@ function attachEventStream(
   repoRoot: string,
   req: IncomingMessage,
   res: ServerResponse,
-  clients: Set<ServerResponse>,
+  clients: Map<ServerResponse, number>,
 ): void {
   res.writeHead(HTTP_STATUS.OK, {
     'Content-Type': CONTENT_TYPE.EVENT_STREAM,
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
   });
-  clients.add(res);
-  writeDashboard(store, repoRoot, res);
+  clients.set(res, writeDashboard(store, repoRoot, res, 0));
   req.on(PROCESS_EVENT.CLOSE, () => { clients.delete(res); });
 }
 
@@ -241,14 +243,15 @@ function attachEventStream(
 // sirve los assets estáticos de la UI, una API REST de sólo-lectura/acción
 // puntual (board, dashboard, catálogo de workflows, intake humano, dispatch)
 // y un endpoint SSE (/events) que empuja el dashboard completo a cada
-// cliente conectado cada `options.refreshMs` — así la UI no tiene que
-// hacer polling, y varios clientes pueden mirar el mismo tablero en vivo.
+// cliente conectado cada `options.refreshMs` — el push es incremental por
+// cliente vía afterSeq/lastEventSeq, así cada cliente recibe sólo eventos
+// nuevos desde su último tick.
 export function createOperationalServer(
   store: Store,
   repoRoot: string,
   options: OperationalServerOptions,
 ): Server {
-  const clients = new Set<ServerResponse>();
+  const clients = new Map<ServerResponse, number>();
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? SERVE_ROUTE.ROOT, `http://${req.headers.host ?? 'localhost'}`);
     if (req.method === HTTP_METHOD.GET && url.pathname === SERVE_ROUTE.EVENTS) {
@@ -266,7 +269,9 @@ export function createOperationalServer(
   });
   const timer = setInterval(() => {
     if (clients.size === EMPTY_SIZE) return;
-    for (const client of clients) writeDashboard(store, repoRoot, client);
+    for (const [client, afterSeq] of clients) {
+      clients.set(client, writeDashboard(store, repoRoot, client, afterSeq));
+    }
   }, options.refreshMs);
   server.on(PROCESS_EVENT.CLOSE, () => { clearInterval(timer); });
   return server;
