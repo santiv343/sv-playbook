@@ -187,3 +187,9 @@ Reject a design or run that relies on any of these:
 ## HJ-021: Unknowns must remain explicit
 
 Do not infer a personal preference merely from one accepted implementation. New taste is proposed with evidence and scope, then confirmed by the human before becoming binding. Open product questions, security promises, retention policy, notification defaults, UI behavior, and reviewer policy stay explicit until their configured contracts are accepted.
+
+## HJ-022: Weigh agentic code-generation fit when choosing tools
+
+When choosing a framework, language, library, or platform for work agents will implement, code-generation reliability is an explicit factor, not an afterthought: how well-represented the tool is in training data, how stable its API surface is, and how recently it changed shape. A technically superior tool that generates unreliable code from agents is not automatically the better choice, and a popular tool is not automatically the right one regardless of fit.
+
+Weigh this against the tool's actual fit for the problem and any real sunk cost already invested. State the trade-off explicitly — what is gained, what is risked — so the human decides with it visible, per HJ-007. Do not let it silently become the sole deciding factor.
