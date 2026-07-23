@@ -12,6 +12,9 @@ import { WORKFLOW_EXECUTOR } from '../orchestration/orchestration.constants.js';
 import { HTTP_STATUS, REFERENCE_KIND } from '../platform.constants.js';
 import { WORK_DEFINITION_INITIAL_VERSION } from '../tasks/work-definition.constants.js';
 
+const MIN_NEW_EVENTS_ON_INCREMENTAL_TICK = 0;
+const FULL_HISTORY_REPLAY_THRESHOLD = 50;
+
 const REQUEST: WorkRunSpecRequest = {
   roleId: 'implementer',
   phase: 'delivery',
@@ -134,11 +137,11 @@ test('El push SSE es incremental: el segundo tick no reenvía eventos ya vistos 
   server.close();
   await once(server, 'close');
   assert.ok(typeof second === 'object' && second !== null);
-  const secondWorkflow = Reflect.get(second, 'workflow') as Record<string, unknown> | undefined;
+  const secondWorkflow: unknown = Reflect.get(second, 'workflow');
   assert.ok(typeof secondWorkflow === 'object' && secondWorkflow !== null);
-  const secondEvents = secondWorkflow.events;
+  const secondEvents: unknown = Reflect.get(secondWorkflow, 'events');
   assert.ok(Array.isArray(secondEvents));
-  assert.ok(secondEvents.length > 0, 'el segundo tick debe traer al menos el evento nuevo del workflow recién creado');
-  assert.ok(secondEvents.length < 50, 'el segundo tick NO debe reenviar el historial completo desde seq 0');
+  assert.ok(secondEvents.length > MIN_NEW_EVENTS_ON_INCREMENTAL_TICK, 'el segundo tick debe traer al menos el evento nuevo del workflow recién creado');
+  assert.ok(secondEvents.length < FULL_HISTORY_REPLAY_THRESHOLD, 'el segundo tick NO debe reenviar el historial completo desde seq 0');
   store.close();
 });
