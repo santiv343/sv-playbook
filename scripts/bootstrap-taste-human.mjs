@@ -142,6 +142,12 @@ const entries = [
     roles: ['human-interface', 'advisor', 'planner', 'refuter', 'arbiter', 'delivery-orchestrator', 'reviewer'],
     phases: ['inference', 'proposal', 'open-decision'], tags: ['uncertainty'],
   },
+  {
+    id: 'HJ-022', heading: 'HJ-022: Weigh agentic code-generation fit when choosing tools',
+    semanticKey: 'hj-agentic-fit-tool-choice', strength: 'advisory',
+    roles: ['advisor', 'planner', 'refuter', 'delivery-orchestrator', 'implementer'],
+    phases: ['architecture', 'sourcing', 'tooling-selection', 'implementation'], tags: ['tool-choice', 'agentic-fit'],
+  },
 ];
 
 const bodyFilePath = join(root, '..', BODY_FILE);
