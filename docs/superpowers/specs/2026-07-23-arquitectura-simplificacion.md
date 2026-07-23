@@ -781,9 +781,16 @@ del comando `role`) — ya incorporada arriba como
 
 **No se portan** (confirmado en D6/D7/D10/D16): `contract proposal-*`/
 `reconcile-*` (D10), `daemon`, `rebuild`, `import` (D22.4), `describe`,
-`docs`, `generate-index`, `instructions` — estos últimos cuatro son
-generadores de documentación de la propia CLI, mueren con ella sin
-reemplazo porque el concepto "ayuda de comandos" no aplica a un backend.
+`docs`, `generate-index` — generadores de ayuda/documentación de la
+propia CLI, mueren con ella sin reemplazo porque el concepto "ayuda de
+comandos" no aplica a un backend.
+
+**Corrección (D28, PRINCIPLE-004): `instructions` NO va en la lista de
+arriba** — a diferencia de esos tres, `instructions --write` es el
+mecanismo que mantiene generados `CLAUDE.md`/`AGENTS.md`/mirrors de
+harness desde `content/principles.md` y demás fuentes canónicas.
+Necesita ruta propia: `POST /instructions/write` → misma lógica de
+compilación que hoy, movida de comando CLI a handler de ruta.
 
 ### E6 — MCP: mapeo 1:1 con las rutas REST
 
@@ -838,7 +845,13 @@ tool source más.
   ya tiene HOY (`routeRequest`'s catch: `ContextError`/`WorkDefinitionError`
   → 409 `{code, error}`, cualquier otro → 400 `{error}`) — no se
   inventa una convención nueva, la que ya existe y funciona se extiende
-  a todas las rutas nuevas de E5.
+  a todas las rutas nuevas de E5. **Corrección (D29, PRINCIPLE-010)**:
+  se agrega un campo `hint: string | null` al envelope — poblado desde
+  `LifecycleError.hint` donde ya existe hoy en la lógica de dominio, y
+  obligatorio para cualquier error nuevo introducido durante el port.
+  Sin esto, el envelope original sería un retroceso respecto a la guía
+  que la CLI ya da hoy (ej. `LifecycleError.hint`,
+  `WORKTREE_DAEMON_REQUIRED_TEXT`).
 - **Estructura de páginas del frontend**: no se enumera acá a
   propósito — las páginas siguen 1:1 los recursos REST de E5 (una vista
   de board/dashboard ya definida por `GET /dashboard`, una vista de
@@ -959,11 +972,149 @@ filas relacionadas que deben persistir juntas o no persistir). Se
 aplica cuando se porte `review-candidate.ts` — no requiere diseño
 nuevo, sólo alinear con el patrón que ya existe en el propio codebase.
 
+## Cruce completo contra los 16 PRINCIPLE-XXX (`content/principles.md`)
+
+D23-D27 sólo cruzaron contra PRINCIPLE-016 (la auditoría previa del
+proyecto). El founder pidió el cruce completo, los 16. Recorrido
+principio por principio contra D1-D27:
+
+- **PRINCIPLE-001 (determinismo primero)** — reforzado, no violado: D9
+  (`verifyImmediatelyBeforeIntegration`), D18 (`packId` reproducible),
+  D26 (evidencia etiquetada en vez de boolean). Sin acción.
+- **PRINCIPLE-002 (spec-driven arriba, TDD abajo)** — no tocado por
+  D1-D27; `tasks/` (packets/work-definitions) sobrevive sin cambios de
+  forma (D6). Sin acción.
+- **PRINCIPLE-003 (nada vive sólo en memoria)** — resuelto en D7
+  (backup remoto reemplaza al espejo `.md`). Cerrado.
+- **PRINCIPLE-004 (una fuente, N espejos)** — **violación encontrada**:
+  ver D28 abajo.
+- **PRINCIPLE-005 (presupuesto de complejidad declarado)** — el proyecto
+  es TIER-2; la pregunta que originó todo este rediseño ("¿28k líneas/9
+  roles es proporcional?") ES este principio en acción, resuelta vía
+  D2/D3 (reducción de roles) y D10/D25 (subtracción de lo especulativo).
+  Sin acción nueva.
+- **PRINCIPLE-006 (parar es éxito)** — principio de comportamiento de
+  agente, no de arquitectura de sistema. No aplica a D1-D27.
+- **PRINCIPLE-007 (nada muere sin tumba)** — normalmente para proyectos
+  enteros, pero el espíritu (registro durable de qué murió, por qué, con
+  puntero de revival) aplica igual a subsistemas grandes que se
+  eliminan (D10: ~1923L de `contracts/`; D25: `enforcement/`; D6: `cli/`
+  entero). **Este documento + el tag `arch-v1-cli-frozen` ya cumplen esa
+  función** — es la tumba. Se deja explícito para que no quede como
+  supuesto implícito.
+- **PRINCIPLE-008 (anti-sv-forge)** — ya aplicado en D10/D25. Encontrado
+  en esta pasada: `adopt/` también tiene cero uso real (ningún packet
+  lo referencia), mismo patrón — pero con un matiz real: es una
+  herramienta de uso único por proyecto externo adoptado, no de uso
+  repetido como `protocol-proposal`, así que su cero-uso pesa menos.
+  **No se recomienda subtracción todavía** — se anota como "a vigilar",
+  distinto de D10/D25 que sí tenían evidencia fuerte.
+- **PRINCIPLE-009 (boilerplate generado, deltas autorados)** — los
+  scripts `bootstrap-*.mjs` (context/principles/taste) son build-time,
+  corren en `npm run verify`, no son comandos CLI runtime — no tienen
+  equivalente en E5 porque no lo necesitan, siguen como scripts. Se deja
+  explícito para que no se confunda con lo que sí muere (D6).
+- **PRINCIPLE-010 (sin caminos sin salida)** — **gap encontrado**: ver
+  D29 abajo.
+- **PRINCIPLE-011 (una sola fuente por hecho)** — ya cubierto extenso
+  (D10, D23, F-004/013/015 vía D6). Sin acción nueva.
+- **PRINCIPLE-012 (la CLI es la única interfaz)** — **contradicción
+  directa con D1**: ver D30 abajo, la más seria de esta pasada.
+- **PRINCIPLE-013 (núcleo libre de opiniones)** — ya reformulado, D4.
+- **PRINCIPLE-014 (calidad es el modo de operar)** — meta-principio
+  sobre cómo tratar correcciones repetidas como gaps del sistema; esta
+  sesión entera (el pivote de arquitectura) es una instancia de este
+  principio aplicado, no algo que D1-D27 deba satisfacer puntualmente.
+- **PRINCIPLE-015 (subtracción con la misma mecánica que adición)** —
+  **gap de proceso encontrado**: ver D31 abajo.
+- **PRINCIPLE-016 (correctitud cross-domain)** — ya aplicado en D23-D27.
+
+### D28 — PRINCIPLE-004: `instructions --write` no puede morir sin reemplazo
+
+Encontrado corrigiéndome a mí mismo: en E5 agrupé `instructions` junto
+con `describe`/`docs`/`generate-index` como "generadores de
+documentación de la CLI, mueren sin reemplazo". Error — `instructions
+--write` no es un generador de docs cualquiera, es **el mecanismo que
+mantiene vivo PRINCIPLE-004 mismo**: compila `content/principles.md` +
+`content/roles/generated-charters.md` + demás fuentes canónicas hacia
+`CLAUDE.md`/`AGENTS.md`/mirrors específicos de harness. Si muere sin
+reemplazo, PRINCIPLE-004 dejaría de tener mecanismo — los mirrors
+quedarían congelados la primera vez que la fuente cambie.
+
+**Corrección**: `instructions --write` se agrega a E5 con ruta propia:
+`POST /instructions/write` (o se deja como script post-build, igual que
+`bootstrap-*.mjs` — cualquiera de las dos formas mantiene el mecanismo
+vivo; la que NO es aceptable es dejarlo sin ningún camino). `describe`,
+`docs`, `generate-index` sí mueren sin reemplazo — esos son ayuda de
+comandos CLI en sí, que deja de existir junto con la CLI (ninguno de
+los tres mantiene un principio vivo, a diferencia de `instructions`).
+
+### D29 — PRINCIPLE-010: el envelope de error de E7 necesita hints accionables, no sólo `{code, error}`
+
+La CLI de hoy da guía real en sus errores — `LifecycleError.hint`
+(ej. "usá `task takeover <ID>`"), `WORKTREE_DAEMON_REQUIRED_TEXT`
+(texto largo con el comando exacto a correr). El envelope de error que
+E7 heredó de `serve/server.ts` (`{code, error}`) no tiene un campo para
+esto — sólo mensaje y código, sin acción sugerida. Bajo PRINCIPLE-010
+("todo error que un agente puede encontrar debe llevar una salida
+documentada, no destructiva") esto es un retroceso real respecto a la
+CLI actual si se implementa tal cual.
+
+**Corrección al envelope de E7**: agregar un campo `hint: string |
+null` al envelope de error — se popula desde `LifecycleError.hint`
+donde ya existe hoy, y desde equivalentes nuevos donde haga falta (ej.
+`WORKTREE_DAEMON_REQUIRED_TEXT` ya no aplica bajo D1, pero cualquier
+error nuevo que aparezca durante el port debe llevar su propio hint, no
+quedar como excepción genérica sin salida).
+
+### D30 — PRINCIPLE-012: reformulación necesaria, misma clase de cambio que D4/PRINCIPLE-013
+
+**La contradicción más seria de esta pasada.** Texto actual: *"la CLI
+es la única interfaz — todo create/edit/query/recovery pasa por la
+CLI... si la CLI no puede hacer algo, es un gap de la CLI, nunca una
+excepción"*. D1 mata la CLI como interfaz por completo. Sin reformular
+este principio, la arquitectura nueva entera queda en violación de la
+metodología que la gobierna — no es un detalle menor, es la misma
+familia de problema que D4 ya resolvió para PRINCIPLE-013.
+
+**Reformulación propuesta** (mismo espíritu, nueva interfaz):
+
+> PRINCIPLE-012 — **La API del backend es la única interfaz.**
+> Operational state (la DB, definiciones de tasks, el board) nunca se
+> lee ni se escribe directo — todo create/edit/query/recovery pasa por
+> las rutas del backend (E5), consumidas igual por el frontend y por el
+> MCP (E6) — ningún camino paralelo. Acceso directo a la DB o edición a
+> mano de un archivo de estado es una violación instantánea, igual para
+> agentes que para el orquestador. Si el backend no puede hacer algo,
+> eso es un gap del backend (un packet), nunca una excepción.
+
+Nota de coherencia: esto es literalmente lo que D5 (tirar el
+passthrough genérico `/api/v1/exec`) y E5 (cada ruta llama directo a
+una función de servicio, nunca un passthrough) ya venían haciendo sin
+haberlo atado explícitamente al principio que gobierna — la práctica ya
+estaba alineada, sólo faltaba el texto. Pendiente aplicar el cambio en
+`content/principles.md` cuando se retome la implementación (mismo
+estado que D4).
+
+### D31 — PRINCIPLE-015: las subtracciones de D10/D25 necesitan su propio packet de remoción, no borrado silencioso
+
+PRINCIPLE-015 exige que remover tenga la misma mecánica que agregar:
+"removal work es un tipo de packet de primera clase con su propia forma
+de evidencia (delta de métricas + telemetría de no-uso + verify verde)".
+D10 (contracts/ protocol-proposal, ~1923L) y D25 (`enforcement/`) ya
+tienen la evidencia de no-uso reunida en este documento — pero eso es
+la EVIDENCIA, no el packet formal. **Requisito para la implementación**:
+cuando se ejecute el port, D10 y D25 se abren como packets de tipo
+remoción explícitos (no como parte de un packet de "construir el
+backend" donde el borrado queda implícito) — con este documento como
+evidencia de no-uso ya lista para citar, y el delta de líneas real
+(medido, no estimado) como parte del receipt de cierre.
+
 ## Puntos abiertos / en discusión
 
-Ninguno — inventario completo (D1-D22, D23-D27 tras cruzar contra la
-auditoría PRINCIPLE-016 previa del proyecto) y especificación de
-implementación (E1-E7) cierran todo lo identificado hasta acá. Puntos
+Ninguno — inventario completo (D1-D22), cruce contra la auditoría
+PRINCIPLE-016 previa (D23-D27), y cruce contra los 16 principios
+completos (D28-D31) cierran todo lo identificado hasta acá. Puntos
 nuevos que surjan durante la implementación se agregan como entradas
 nuevas, no reabren lo ya cerrado sin evidencia nueva.
 
@@ -1002,3 +1153,17 @@ documento — cuando una decisión acá cita un tramo del flujo, es trazable.
 - ~~Mapeo MCP~~ → cerrado, E6: 1:1 con rutas REST, sin lógica propia.
 - ~~Mecanismo exacto de roles dormidos/absorción~~ → cerrado, E1
   (schema `role_activation` + cambio puntual en `requestAttributes`).
+- ~~Ciclo `gateway/`↔`orchestration/`↔`review/` (F-018)~~ → cerrado,
+  D23: romper partiendo `run-spec.ts`.
+- ~~Modelo de confianza humano/agente (F-006)~~ → cerrado, D24:
+  resuelto por la separación de clientes (frontend/MCP), no por archivo.
+- ~~`enforcement/` desconectado (F-014)~~ → cerrado, D25: se retira.
+- ~~Formato de evidencia etiquetada (F-010)~~ → cerrado, D26: diseño
+  exacto con columna `evidence_label`.
+- ~~Transacción faltante en `persistReviewCandidate` (F-012)~~ →
+  cerrado, D27: se envuelve en `transact()` al portar.
+- ~~Cruce completo contra los 16 PRINCIPLE-XXX~~ → cerrado, D28-D31:
+  PRINCIPLE-004 (`instructions` no puede morir sin reemplazo),
+  PRINCIPLE-010 (envelope de error necesita `hint`), PRINCIPLE-012
+  (reformulación urgente, la CLI ya no es la interfaz), PRINCIPLE-015
+  (D10/D25 necesitan packet de remoción formal, no borrado silencioso).
