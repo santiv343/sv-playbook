@@ -699,6 +699,7 @@ POST (`/tasks/:id/start`).
 | `POST /tasks/:id/takeover` | `takeoverPacket` | `task takeover` |
 | `POST /tasks/:id/release` | `releaseLease` | `task release` |
 | `POST /tasks/:id/notes` `{text}` | `notePacket` | `task note` |
+| `POST /tasks/:id/evidence` `{label,detail}` | `recordEvidence` (D26, nuevo) | (no existía) |
 | `GET /tasks/:id/brief` | `briefPacket` | `task brief` |
 | `POST /tasks/:id/cost` `{amount}` | `recordTaskCost` | (sin comando CLI hoy) |
 | `POST /sprints` | `createSprint` | `sprint create` |
@@ -845,10 +846,124 @@ tool source más.
   implementación, no una decisión de arquitectura — mismo criterio que
   las 13 rutas de `role` de arriba.
 
+## Auditoría sistémica previa del proyecto (`findings.md`, F-001..F-018) cruzada contra D1-D22
+
+El propio proyecto ya había hecho un pase PRINCIPLE-016 completo
+(`docs/codebase-guide/architecture-review.md`, 2026-07-21) — cruzar sus
+18 hallazgos contra las decisiones de hoy encontró 4 puntos reales que
+D1-D22 no cubrían por mirar subsistema-por-subsistema en vez de
+concern-por-concern. F-004/F-013/F-015 (helpers de CLI triplicados) son
+moot — mueren solos con D6. F-008 (store huérfano) y F-016 (corregido,
+transacciones DEFERRED/IMMEDIATE) son higiene de repo / ya neutralizado,
+sin acción nueva acá. Los 4 que sí importaban:
+
+### D23 — F-018: romper el ciclo `gateway/`↔`orchestration/`↔`review/` durante la reconstrucción
+
+Causa raíz concreta, ya vista con evidencia propia en Tramo 5 sin
+marcarla en su momento: `gateway/run-spec.ts` tiene DOS puntos de
+entrada — `prepareRunSpec` (para packets, importa `resolveManualInput`
+de `review/review-candidate.ts`) y `prepareWorkflowRunSpec` (para
+efectos de workflow, importa el tipo `WorkflowEffect` de
+`orchestration/service.types.ts`) — ambos convergen en `prepareResolved`
+(el núcleo genérico). Es ese doble origen lo que obliga a `gateway/` a
+conocer tipos de `review/` y `orchestration/`, mientras que
+`orchestration/effect-executors.ts` necesita llamar de vuelta a
+`gateway/dispatchRun` para ejecutar — de ahí el ciclo en ambas
+direcciones.
+
+**Fix concreto**: partir `run-spec.ts` en dos capas. El núcleo
+caller-agnostic (`prepareResolved`, `persistRunSpec`, validaciones) se
+queda en `gateway/` y toma un `ResolvedRunSpecRequest` ya armado — deja
+de importar nada de `review/`/`orchestration/`. Los dos puntos de
+entrada específicos (`prepareRunSpec` para packets,
+`prepareWorkflowRunSpec` para efectos) se mueven cada uno junto a su
+dominio origen (`tasks/`o un `dispatch/` nuevo para el primero,
+`orchestration/` para el segundo) e importan el núcleo de `gateway/` —
+una sola dirección. Resultado: `gateway/` deja de importar de
+`review/`/`orchestration/` por completo; `review/`/`orchestration/`
+siguen importando de `gateway/` (la dirección esperada, ya así en
+`architecture.md`). Se implementa como parte de E5 (las rutas de
+dispatch ya se están reescribiendo de todos modos).
+
+### D24 — F-006: resuelto por diseño, no por decisión — la separación de clientes ya distingue humano de agente
+
+El bug (`destructive-gate.ts` y `decision.ts` interpretando la
+ausencia/presencia de `.svp-session-role` al revés) no sobrevive tal
+cual: ese archivo era un mecanismo CLI-nativo (marcador local en el
+cwd), y ya no hay CLI (D6). Pero la pregunta de fondo — "¿cómo sabe el
+sistema si quien pide algo es un humano o un agente?" — sigue siendo
+real, y la arquitectura nueva ya la resuelve mejor de lo que la vieja
+podía: **hay dos clientes distintos y separados por transporte**
+(frontend = humano, MCP = agente, D1/E6) — la identidad ya no se infiere
+de un archivo ambiguo, la determina el canal por el que llegó el
+request. Mecanismo concreto: cada request que el MCP proxea lleva un
+`actorKind: 'agent'` explícito; el frontend siempre manda
+`actorKind: 'human'` (mismo patrón que `HUMAN_INTAKE_VALUE.LOCAL_ACTOR`
+que `serve/server.ts` ya usa hoy para `requestedBy`). Es trivialmente
+falseable en teoría (localhost sin auth, D22.1) — pero eso ya es cierto
+del modelo de confianza completo bajo D22.1, no es una regresión nueva.
+`destructive-gate.ts`/`decision answer` pasan a leer este campo en vez
+de un archivo — una sola fuente, sin la ambigüedad que causaba F-006.
+
+**Aplicado también donde no estaba el bug original, por consistencia**:
+`POST /human-effects/:id/resolution` (D14/E5,
+`resolveHumanWorkflowEffect`) hoy no verifica que quien resuelve un
+step `executor: human` sea realmente un humano — cualquier caller puede
+resolverlo. Con `actorKind` ya definido, esta ruta exige
+`actorKind === 'human'` — si no, `403`. Sin este chequeo, D24 resolvía
+sólo los dos casos que el hallazgo original mencionaba y dejaba el
+mismo problema de fondo sin cerrar en un tercer lugar.
+
+**Riesgo aceptado, dicho explícito**: bajo D22.1 (localhost, sin auth),
+`actorKind` es un campo que el propio caller declara — un MCP mal
+configurado o un script arbitrario en la misma máquina podría mentir y
+mandar `actorKind: 'human'`. Esto no es una regresión: es el mismo
+límite de confianza que D22.1 ya aceptó (todo lo que llega a
+localhost:puerto es confiable) — se deja explícito acá para que sea una
+decisión visible, no un supuesto oculto.
+
+### D25 — F-014: `enforcement/`/`conformance.ts` se retira formalmente (PRINCIPLE-015)
+
+Confirmado por la auditoría previa: no está enganchado a
+`VERIFICATION_MANIFEST` ni a CI, cero invocaciones fuera de sus propios
+tests. Mismo patrón que D10 (`contracts/` protocol-proposal) — construido,
+nunca demostró necesidad real. No se porta al backend nuevo.
+
+### D26 — F-010: formato de evidencia etiquetada (diseño exacto)
+
+Hoy `gateEvidence` sólo chequea "¿existe algún evento de evidencia?",
+nunca cuál — un packet que declara `evidenceRequired: ['final-sha',
+'security-signoff', 'load-test-passed']` se satisface con cualquier
+evento, sin importar cuál. Diseño para el port:
+
+- Los eventos de evidencia (`EVENT_EVIDENCE`) ganan un campo nuevo
+  `evidence_label TEXT NULL` (columna nueva en la tabla de eventos, o
+  su equivalente en el schema nuevo).
+- Registrar evidencia pasa a exigir la etiqueta:
+  `recordEvidence(store, packetId, label, detail)` — `label` debe ser
+  uno de los valores declarados en `evidenceRequired` del work
+  definition, o se rechaza (`unknown evidence label: X, expected one of
+  [...]`).
+- El gate cambia de "¿existe al menos un evento?" a "¿existe al menos
+  un evento por CADA label en `evidenceRequired`?" — el mismo patrón de
+  `assertPreflight`/`checkArtifactContracts` (acumular violaciones,
+  nunca aprobar con hallazgos parciales sin resolver).
+- Ruta REST nueva (se agrega a E5): `POST /tasks/:id/evidence`
+  `{label, detail}`.
+
+### D27 — F-012: `persistReviewCandidate` se envuelve en `transact()` al portar
+
+Fix mecánico confirmado, mismo patrón que `closePromotedTask`
+(`promotion.receipts.ts`) ya usa para el mismo tipo de problema (3
+filas relacionadas que deben persistir juntas o no persistir). Se
+aplica cuando se porte `review-candidate.ts` — no requiere diseño
+nuevo, sólo alinear con el patrón que ya existe en el propio codebase.
+
 ## Puntos abiertos / en discusión
 
-Ninguno — inventario completo (D1-D21) y especificación de
-implementación (E1-E6) cierran todo lo identificado hasta acá. Puntos
+Ninguno — inventario completo (D1-D22, D23-D27 tras cruzar contra la
+auditoría PRINCIPLE-016 previa del proyecto) y especificación de
+implementación (E1-E7) cierran todo lo identificado hasta acá. Puntos
 nuevos que surjan durante la implementación se agregan como entradas
 nuevas, no reabren lo ya cerrado sin evidencia nueva.
 
