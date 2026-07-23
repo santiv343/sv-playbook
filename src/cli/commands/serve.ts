@@ -84,6 +84,9 @@ async function runServer(args: string[], io: Io): Promise<number> {
       const onSignal = (): void => { void stop(EXIT.OK); };
       process.on('SIGINT', onSignal);
       process.on('SIGTERM', onSignal);
+      // The daemon can also terminate through its authenticated shutdown route.
+      // Follow its terminal latch so the UI cannot outlive its store owner.
+      void daemon.done.then(() => { void stop(EXIT.OK); });
       server.on(PROCESS_EVENT.ERROR, (error: NodeJS.ErrnoException) => {
         io.err(error.code === NODE_ERROR_CODE.ADDRESS_IN_USE
           ? `Port ${options.port} is already in use`
