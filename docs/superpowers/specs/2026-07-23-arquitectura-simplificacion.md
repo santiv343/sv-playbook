@@ -618,13 +618,20 @@ líneas originales, revisados con evidencia real, no de memoria).
    `.sqlite` comprimido a un bucket tras cada backup verificado
    (`verifyAndTrack`, D7) — funciona igual local (MinIO) que en la nube.
 3. **Worktrees: el backend crea/destruye 1 por task.** Al dispatchar,
-   corre `git worktree add` en un directorio que administra
-   (`.svp/worktrees/<taskId>`), lo remueve cuando la task llega a
-   done/dropped. Mismo modelo 1:1 lease↔worktree que hoy (una fila en
-   `leases` por task activa), sólo que automatizado — hoy lo hacía el
-   humano a mano antes de correr el CLI, eso ya no existe. **Anotado
-   para más adelante, no ahora**: un pool de worktrees reusables sería
-   más eficiente, pero es prematuro para el tamaño actual del sistema —
+   corre `git worktree add` en un directorio que administra —
+   **corregido en D48**: `<repo-root>/.worktrees/<taskId>`, la
+   convención que YA existe y está en uso real
+   (`content/dispatch/adapters.md`, gitignoreada), no `.svp/worktrees/`
+   como se propuso originalmente acá sin verificar contra convención
+   existente. Mismo path de siempre, sólo que ahora lo crea el backend
+   en vez de que el agente lo cree a mano vía `git worktree add` como
+   Step 1 de su propio prompt (`content/dispatch/worker.md`, D49). Mismo
+   modelo 1:1 lease↔worktree que hoy (una fila en `leases` por task
+   activa), sólo que automatizado — hoy lo hacía el agente a mano al
+   principio de su propio prompt de dispatch, eso ya no existe.
+   **Anotado para más adelante, no ahora**: un pool de worktrees
+   reusables sería más eficiente, pero es prematuro para el tamaño
+   actual del sistema —
    no se descarta, se pospone explícitamente hasta que haya evidencia
    real de que crear/destruir por task pesa.
 4. **Sin import de `.md` en lote.** Creación de packets sólo vía
@@ -1162,6 +1169,33 @@ estaba alineada, sólo faltaba el texto. Pendiente aplicar el cambio en
 `content/principles.md` cuando se retome la implementación (mismo
 estado que D4).
 
+**Corrección importante (D46), encontrada leyendo `VISION.md`/`anatomy.md`
+completos**: la reformulación de D30 no alcanza con aplicarla sólo a
+`content/principles.md`. El texto viejo de PRINCIPLE-012 ("la CLI es la
+interfaz única") aparece repetido, casi palabra por palabra, como texto
+CANÓNICO en al menos 4 lugares distintos:
+1. `content/principles.md` (PRINCIPLE-012 mismo).
+2. `content/review.md` — hard rule del reviewer checklist: *"Direct DB
+   access outside src/db or hand-edited packet files (PRINCIPLE-012)"*
+   — cita el principio viejo como criterio de rechazo instantáneo en
+   cada PR.
+3. `docs/VISION.md` — lo lista como una de exactamente **5 invariantes
+   del motor, "never configurable"**: *"The CLI is the sole
+   interface... If the CLI can't do something, that's a gap, never a
+   shortcut."*
+4. `docs/anatomy.md` — es literalmente **la primera de "las tres reglas
+   que explican todas las demás"**: *"El CLI es el único escritor de
+   estado. Ningún agente — ni el orquestador — toca el store ni los
+   artifacts directamente."*
+
+Esto no cambia la decisión de D30, pero sí su alcance real: cuando se
+aplique la reformulación, hay que propagarla a los 4 lugares, no sólo al
+principio fuente — si sólo se actualiza `principles.md`, quedan 3
+documentos fundacionales contradiciendo al principio que citan como
+canónico, exactamente la clase de drift que PRINCIPLE-004 (una fuente,
+N espejos) existe para prevenir. Se agrega como parte del alcance de
+D30, mismo ticket/packet cuando se implemente, no una decisión nueva.
+
 ### D31 — PRINCIPLE-015: las subtracciones de D10/D25 necesitan su propio packet de remoción, no borrado silencioso
 
 PRINCIPLE-015 exige que remover tenga la misma mecánica que agregar:
@@ -1217,9 +1251,10 @@ prohíben.
 
 **Requisito nuevo para el backend**: al arrancar (mismo lugar que
 `reconcileOrphanedGatewayRuns`), reconciliar worktrees en
-`.svp/worktrees/` contra tasks realmente activas — un worktree sin task
-activa correspondiente se remueve mecánicamente, no se deja para que
-alguien lo note eventualmente.
+`<repo-root>/.worktrees/` (path corregido en D48) contra tasks
+realmente activas — un worktree sin task activa correspondiente se
+remueve mecánicamente, no se deja para que alguien lo note
+eventualmente.
 
 ### D34 — HJ-014: el backup remoto de D22.2 no especificaba cifrado
 
@@ -1503,6 +1538,90 @@ D24 donde ya debía estar).
   E3 (sprints), D21 (adopt), E4 (reconcile) ya describían — sin
   discrepancias.
 
+## Inventario completo de `docs/`+`content/` (39 documentos) — pedido explícito de no conformarse
+
+El founder pidió el inventario explícito, no ir "dándome cuenta" de a
+uno. Los 39 documentos reales de `docs/`+`content/` (sin contar los 2
+que este documento y su hermano son), todos ahora leídos completos:
+`content/{cli,dispatch/adapters,dispatch/worker,instructions/cold-start,
+principles,review,roles/{format,generated-charters,implementer,
+orchestrator,planner,product,reviewer},rubric,skills/repo-state,
+taste/human}.md`, `docs/{anatomy,ARCHIVE,backlog,how-it-works,
+QUICKSTART,REORG,VISION}.md`, `docs/codebase-guide/{architecture,
+architecture-review,cross-reference,explicacion-simple,findings,
+glossary,README,repository-map}.md`, los 11 `flows/flow-XX.md`. Cuatro
+hallazgos reales de la última tanda (`VISION.md`, `anatomy.md`,
+`how-it-works.md`, `content/{dispatch,review}.md`):
+
+### D46 — (ver arriba, ya incorporado a D30) propagación de PRINCIPLE-012 a 4 documentos fundacionales
+
+Ya registrado dentro de D30 más arriba — `VISION.md` ("5 invariantes,
+never configurable") y `anatomy.md` ("la primera de las 3 reglas que
+explican todas las demás") repiten el texto viejo de PRINCIPLE-012 con
+el mismo peso que `content/principles.md` mismo. Se agrega al alcance
+de D30, no es una decisión nueva.
+
+### D47 — `how-it-works.md` tiene staleness real y grande, independiente de D1-D46
+
+Dos secciones desactualizadas de forma seria, verificado contra el
+código real (no contra lo que el doc afirma):
+
+1. **§11 (durabilidad)** dice explícito: *"today `backup state` does a
+   `copyFileSync`... and `restore state` overwrites the live DB WITHOUT
+   ANY VERIFICATION... The diagram below is the TARGET being built...
+   it is the destination, not today's code."* Pero `db/backup.ts` (leído
+   directo para D7/D22.2) YA tiene `VACUUM INTO`, restore verificado
+   (integrity_check + sha256 + versión de schema), swap atómico, y
+   destino configurable fuera de `.svp/` — exactamente lo que el doc
+   llama "target, in progress". El doc describe el sistema como mucho
+   más primitivo y peligroso de lo que es hoy. Sólo el destino REMOTO
+   (lo que D22.2 sí definió como pendiente) sigue siendo genuinamente
+   `PLANNED`.
+2. **§7 (roles)** describe la taxonomía VIEJA de 6 roles
+   (`product/planner/orchestrator/implementer/reviewer/format`, los
+   archivos `content/roles/*.md` que IDEA-113 ya marcó stale) en vez de
+   los 9 roles reales del catálogo en DB — mismo hallazgo que IDEA-113,
+   confirmado independiente en un tercer documento.
+
+**No cambia ninguna decisión D1-D46** (todas se fundamentaron leyendo
+código real, no este doc) — pero confirma que el propio proyecto tiene
+drift documentado real y pre-existente, no causado por esta sesión.
+Queda anotado para la limpieza de contenido que de todos modos hace
+falta cuando se implemente el pivote (`docs/` entero necesita revisión,
+dado que la CLI que describe deja de existir).
+
+### D48 — el worktree que D22.3 inventó ya tiene una convención establecida y en uso real
+
+`content/dispatch/adapters.md`: *"Worker worktrees live under
+`<repo-root>/.worktrees/<packet-id>`... gitignored."* — y
+`content/dispatch/worker.md` (el prompt real que se despacha) tiene al
+worker corriendo `git worktree add "<WORKDIR>" ...` como su Step 1
+literal, con `WORKDIR` bajo esa misma convención. D22.3 propuso
+`.svp/worktrees/<taskId>` sin verificar que ya existe una convención
+real, en uso, documentada (`.worktrees/` en la raíz del repo, no dentro
+de `.svp/`). **Corrección a D22.3**: usar `<repo-root>/.worktrees/<taskId>`,
+la convención que ya existe, no inventar una nueva — mismo path, sólo
+gestionado por el backend en vez de por el propio agente vía `git`
+directo.
+
+### D49 — `content/dispatch/worker.md` (la plantilla real de prompt) necesita reescritura completa para la arquitectura nueva
+
+Hallazgo grande, no anotado hasta ahora: la plantilla real que HOY se
+despacha a cada worker (`content/dispatch/worker.md`) tiene al agente
+corriendo la CLI directo en cada paso (`CLI task brief/start/note/move`,
+`CLI = node <WORKDIR>/bin/sv-playbook.js`) — la CLI muere entera con D6.
+Bajo la arquitectura nueva, cada uno de esos pasos (`task brief`→
+`GET /tasks/:id/brief`, `task start`→`POST /tasks/:id/start`, etc., ya
+en la tabla de E5) se convierte en una llamada MCP en vez de un comando
+de shell. **Esto no es un detalle menor de E6** — es que la plantilla
+de dispatch completa (`content/dispatch/worker.md`, la que efectivamente
+recibe cada agente al ser despachado) necesita reescribirse paso a paso
+para MCP, no sólo "existe un mapeo 1:1" en abstracto. Mismo destino para
+`content/skills/repo-state.md` (el único skill existente, llama
+`status`/`doctor` vía CLI). Trabajo de implementación real, con alcance
+propio — se anota como entregable explícito del port, no como detalle
+implícito de E6.
+
 ## Puntos abiertos / en discusión
 
 Ninguno de los identificados hasta esta pasada. Inventario completo
@@ -1588,6 +1707,14 @@ documento — cuando una decisión acá cita un tramo del flujo, es trazable.
   E5 nunca aplicó el fix de `actorKind` (D24) a `decision answer`, su
   propio caso original — corregido. Todo lo demás confirma D1-D44 sin
   discrepancias, leído línea por línea, no sólo el índice.
+- ~~Inventario completo de los 39 docs de `docs/`+`content/`~~ →
+  cerrado, D46-D49: propagar D30 a `VISION.md`/`anatomy.md` además de
+  `principles.md`; `how-it-works.md` tiene staleness real (backup
+  descrito como mucho más primitivo de lo que es, roles con taxonomía
+  vieja); D22.3 corregido para usar la convención de worktree que ya
+  existe (`.worktrees/`, no `.svp/worktrees/`); `content/dispatch/
+  worker.md` (la plantilla real de dispatch) necesita reescritura
+  completa para MCP, entregable propio del port.
 - ~~Cruce contra `cross-reference.md`~~ → cerrado, D39-D41: 3 bugs de
   integridad referencial en context/tasks nunca implementados (se
   arreglan en el port), bug de drift conocido en el bootstrap de
