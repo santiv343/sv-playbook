@@ -778,7 +778,7 @@ POST (`/tasks/:id/start`).
 | `POST /sprints/:id/close` | `closeSprint` | `sprint close` |
 | `GET /backlog` | `getBacklog` | `sprint backlog` |
 | `POST /decisions` `{question,packetId?}` | E2 (nuevo) | `decision ask` |
-| `POST /decisions/:id/answer` `{answer}` | E2 (nuevo) | `decision answer` |
+| `POST /decisions/:id/answer` `{answer}` | E2 (nuevo) — exige `actorKind:'human'` (D24/D45, éste era el ejemplo ORIGINAL de F-006, sin este chequeo el checkpoint de complejidad completo queda como callejón sin salida) | `decision answer` |
 | `GET /decisions` `?pending` | E2 (nuevo) | `decision list` |
 | `POST /dispatch/start` `{runId}` | `dispatchRun` | `dispatch start` |
 | `POST /dispatch/retry` `{runId}` | `retryRunSpec` | `dispatch retry` |
@@ -1470,6 +1470,39 @@ del proyecto tiene al menos una entrada con status incorrecto — no se
 corrige acá (no es alcance de esta auditoría de arquitectura), sólo se
 deja registrado para quien retome `docs/backlog.md`.
 
+## Lectura completa de los 11 flow-docs (`docs/codebase-guide/flows/`), línea por línea
+
+Pedido explícito del founder de no conformarme con "bajo valor
+esperado" — se leyeron los 11 completos, no sólo el índice ni la nota
+flagged de flow-06. La gran mayoría confirma D1-D44 sin agregar nada
+(flow-01, 02, 03, 04, 05, 08, 09 — mismo territorio ya trazado con
+evidencia propia en `mapa-flujo-app.md`, cero discrepancias). Dos
+cosas reales:
+
+### D45 — La tabla E5 nunca aplicó el fix de D24 a su propio caso original (`decision answer`)
+
+`flow-10-complexity-checkpoint.md` recuerda, con la cita completa, que
+`decision answer` es EXACTAMENTE el ejemplo original de F-006: *"si
+esto no se corrige, el checkpoint de complejidad completo... es un
+callejón sin salida para el caso de uso más común"*. D24 estableció el
+mecanismo (`actorKind`) y lo aplicó explícito a la ruta de evidencia
+(D35) y a `resolve-human-effect` (addendum de D24) — pero la fila de
+`POST /decisions/:id/answer` en la tabla de E5 se quedó sin la
+anotación, pese a ser el caso que originó todo el hallazgo. Corregido
+directo en la tabla de E5 (no hace falta una decisión nueva, es aplicar
+D24 donde ya debía estar).
+
+### Confirmado, sin cambios: flow-10 y flow-11 agregan detalle real que no cambia ninguna decisión
+
+- **flow-10** (`checkpoint-gate.ts`/`novelty.ts`): `detectNovelty()`
+  compara contra la UNIÓN de write_sets de TODOS los packets que
+  existieron alguna vez (`packet_definitions`, no sólo activos) — detalle
+  de dominio (`tasks/`), sobrevive sin cambios bajo D6.
+- **flow-11** (backup/restore/rebuild, sprints, adopt, reconcile):
+  confirma exactamente el comportamiento que D7/D22.2 (backup),
+  E3 (sprints), D21 (adopt), E4 (reconcile) ya describían — sin
+  discrepancias.
+
 ## Puntos abiertos / en discusión
 
 Ninguno de los identificados hasta esta pasada. Inventario completo
@@ -1550,6 +1583,11 @@ documento — cuando una decisión acá cita un tramo del flujo, es trazable.
   (correctamente diferido, no tocar), IDEA-132 (valida D30 y confirma
   D7 de forma independiente). `docs/backlog.md` tiene un status
   desactualizado (IDEA-118) — D39 queda con tercera confirmación.
+- ~~Lectura completa de `architecture.md`/`glossary.md`/
+  `explicacion-simple.md`/los 11 flow-docs~~ → cerrado, D45: la tabla
+  E5 nunca aplicó el fix de `actorKind` (D24) a `decision answer`, su
+  propio caso original — corregido. Todo lo demás confirma D1-D44 sin
+  discrepancias, leído línea por línea, no sólo el índice.
 - ~~Cruce contra `cross-reference.md`~~ → cerrado, D39-D41: 3 bugs de
   integridad referencial en context/tasks nunca implementados (se
   arreglan en el port), bug de drift conocido en el bootstrap de
