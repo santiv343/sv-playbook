@@ -4,6 +4,18 @@
 > tras el trabajo de la semana del 2026-07-13 al 2026-07-19. Si volvés
 > después de perderte, empezá acá.
 
+> **Actualización 2026-07-23 — pivote de arquitectura en curso.** Todo lo
+> de abajo describe con precisión lo que corre HOY en `main` (CLI +
+> daemon, nada de esto se implementó todavía distinto). Pero está en
+> discusión/decidido (no implementado) un cambio de arquitectura de
+> fondo: la CLI deja de ser la interfaz, pasa a ser backend + frontend +
+> MCP. Ver `docs/superpowers/specs/2026-07-23-arquitectura-simplificacion.md`
+> (registro de decisiones, D1-D38) y
+> `docs/superpowers/specs/2026-07-23-mapa-flujo-app.md` (cómo funciona el
+> sistema actual, con cita `archivo:línea`) antes de asumir que el
+> catálogo de 9 roles o el daemon de escritor único de abajo van a seguir
+> existiendo tal cual.
+
 ## Qué hay hoy, en `main`, funcionando
 
 - **Packets 100% en la DB SQLite** (decisión D4). Ya no existen archivos
