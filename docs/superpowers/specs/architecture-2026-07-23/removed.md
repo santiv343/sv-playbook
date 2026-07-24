@@ -1,8 +1,9 @@
 # Qué muere, qué se retira, qué sobrevive parcial
 
 ← [índice](README.md) · fuente: `arquitectura-simplificacion.md`
-D5/D6/D7/D10/D16/D20/D25/D31/D56 · PRINCIPLE-007 (nada muere sin tumba) —
-este documento + el tag git `arch-v1-cli-frozen` cumplen esa función.
+D5/D6/D7/D10/D16/D20/D25/D31/D56/D57/D58 · PRINCIPLE-007 (nada muere sin
+tumba) — este documento + el tag git `arch-v1-cli-frozen` cumplen esa
+función.
 
 ## Muere sin reemplazo
 
@@ -28,7 +29,20 @@ este documento + el tag git `arch-v1-cli-frozen` cumplen esa función.
   lo referencia, nada fuera de `contracts/`/`cli/commands/contract.ts` lo
   llama funcionalmente. Si algún día hace falta, se reconstruye desde una
   necesidad real — el diseño queda documentado como referencia en el
-  registro de auditoría (`Dn` D10).
+  registro de auditoría (`Dn` D10). **Trae 9 tablas de DB consigo, no 7**
+  (corregido en D57 tras auditar el schema real: `artifact_contract_activations`
+  y `artifact_contract_metadata` son parte del mismo cluster muerto,
+  usadas exclusivamente por estos mismos archivos, sin el prefijo
+  `protocol_` que las hacía fáciles de ver de un vistazo) — ver
+  [data-and-migrations.md](data-and-migrations.md#auditoría-de-tablas)
+  para el detalle completo de la auditoría de las 83 tablas reales de la
+  DB.
+- **`packets/document.ts`** (`generatePacketDocument`/
+  `parsePacketDocument`, D43) — se retira entero (D58, decisión del
+  founder): la conveniencia de redactar un packet en `.md` e importarlo
+  no sobrevive como camino secundario. Creación de packets es
+  exclusivamente vía DB/API (D22.4), sin excepción — sólo el tipo
+  `PacketDefinition` sobrevive como tipo interno donde haga falta.
 - **`tasks/legacy-review-verification.ts`** (32L) — código muerto
   confirmado (F-007 ya documentado por el proyecto): alcanzable sólo
   desde tests que llaman `movePacket()` directo, nunca desde el comando
@@ -74,32 +88,26 @@ este documento + el tag git `arch-v1-cli-frozen` cumplen esa función.
   — lógica real de análisis de repo para onboardear un proyecto existente,
   sobrevive como lógica, sólo cambia de transporte (ruta REST/MCP en vez
   de comando CLI). **Fix pendiente antes de portar** (D56, encontrado
-  recorriendo el código con evidencia real): `scaffold.ts` crea
-  `docs/packets/` incondicionalmente y `gap.ts` la trata como requisito de
-  instalación — contradice la decisión de abajo (DB como única fuente).
-  Se quita del checklist de `analyzeGaps`; si la conveniencia de autoría
-  en `.md` sobrevive (pregunta abierta, ver
-  [remaining-work.md](remaining-work.md)), el directorio se crea sólo
-  cuando esa función se usa, no como parte incondicional de la
-  instalación.
-- **`packets/document.ts`** (`generatePacketDocument`/`parsePacketDocument`)
-  — sólo el tipo `PacketDefinition` y estas dos funciones puras
-  sobreviven, como mecanismo de exportar/inspeccionar un packet a `.md`,
-  no como fuente de verdad.
+  recorriendo el código con evidencia real, ya sin ambigüedad tras D58):
+  `scaffold.ts` crea `docs/packets/` incondicionalmente y `gap.ts` la
+  trata como requisito de instalación — contradice la decisión de abajo
+  (DB como única fuente) y ahora que D58 retiró la autoría en `.md` del
+  todo, el directorio deja de tener cualquier consumidor. Se quita del
+  checklist de `analyzeGaps` y `scaffold.ts` deja de crearlo — sin
+  condicional, es requisito directo.
 
 ## DB como única fuente de verdad para packets (sin espejo `.md`)
 
 El backend nuevo **no** espeja cada packet a un archivo `.md` versionado
 en git — es la decisión detrás de la mayoría de lo de arriba (`rebuild.ts`,
-el fix de `adopt/`, lo que sobrevive de `packets/document.ts`). Consecuencia
-directa: PRINCIPLE-003 ("nada importante vive sólo en una herramienta de
-memoria") necesita un mecanismo de durabilidad distinto para packets — el
-sistema de `backup/` que ya existe (`createStateBackup`) pasa a ser la
-única red de recuperación real, ver
+el fix de `adopt/`, el retiro completo de `packets/document.ts`).
+Consecuencia directa: PRINCIPLE-003 ("nada importante vive sólo en una
+herramienta de memoria") necesita un mecanismo de durabilidad distinto
+para packets — el sistema de `backup/` que ya existe
+(`createStateBackup`) pasa a ser la única red de recuperación real, ver
 [operational-decisions.md](operational-decisions.md#backup) para los dos
 requisitos nuevos que eso exige (remoto + trigger periódico).
 
-**Pregunta de producto que sigue sin resolver del todo** (no es un hecho de
-código): ¿la conveniencia de autoría en `.md` (redactar en texto plano,
-importar) se mantiene como camino secundario aunque el espejo automático
-ya no exista? Ver [remaining-work.md](remaining-work.md).
+**Cerrado (D58)**: la autoría de packets en `.md` NO sobrevive como
+camino secundario — decisión directa del founder. DB/API es la única
+forma de crear un packet, sin excepción.

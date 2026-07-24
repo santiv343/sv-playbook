@@ -1,7 +1,7 @@
 # Lo que no se resuelve leyendo más código
 
 ← [índice](README.md) · fuente: `arquitectura-simplificacion.md` D6/D31/D36/
-D37/D49, barrido de backlog D50-D54
+D37/D49, barrido de backlog D50-D54/D57/D58
 
 Esto no son huecos en la investigación — son preguntas de producto/proceso
 que el propio registro de auditoría identificó como genuinamente abiertas,
@@ -10,18 +10,14 @@ Ninguna bloquea empezar a escribir el spec de implementación.
 
 ## Preguntas de producto sin cerrar del todo
 
-- **¿La autoría de packets en `.md` sobrevive como conveniencia
-  secundaria?** Desde que la DB es la única fuente de verdad
-  ([removed.md](removed.md)), redactar un packet en texto plano e
-  importarlo ya no es necesario para durabilidad — pero puede seguir
-  siendo cómodo para autoría. Si la respuesta es sí, `packets/document.ts`
-  (las dos funciones que sobreviven) tiene un consumidor real; si es no,
-  también se pueden retirar. No se decide acá.
 - **UI: distinguir verdad mecánica de resumen de agente.** HJ-015 exige
   que el frontend nunca presente un resumen de LLM como si fuera hecho
   verificado — señalado como necesidad real durante el cruce contra
   HJ-019, pero es trabajo de diseño de frontend, no de esta capa de
-  arquitectura. Queda para cuando se diseñe el frontend en concreto.
+  arquitectura. Queda para cuando se diseñe el frontend en concreto. Es
+  la única pregunta de esta categoría que sigue abierta — la otra (¿la
+  autoría de packets en `.md` sobrevive?) ya se cerró: no, se retira
+  (D58, decisión del founder) — ver [removed.md](removed.md).
 
 ## Trabajo de implementación con alcance propio (no implícito en otra pieza)
 
@@ -37,11 +33,6 @@ Ninguna bloquea empezar a escribir el spec de implementación.
 
 ## Deuda que sobrevive al port sin agravarse
 
-- **Auditoría completa de las 73 tablas de la DB** (IDEA-092) — el
-  cluster `protocol_*` (7 tablas) ya se retiró como parte de
-  [removed.md](removed.md), pero la auditoría completa de posibles
-  solapamientos (`packets`/`packet_definitions`/`task_costs`/`sprints`/
-  `sprint_tasks`) sigue sin hacerse. Crédito parcial, no cerrado.
 - **Patrón sistémico de "detección de divergencia por digest"** — aparece
   en 6 lugares del sistema (3 ya resueltos: activación de catálogo de
   roles, versión de schema, identidad de promoción; 3 sin resolver: dos

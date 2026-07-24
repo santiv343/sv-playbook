@@ -1864,6 +1864,89 @@ incondicional de la instalación. Encontrado recién al recorrer
 `adopt/` con evidencia real (Tramo 14) — ni D6 ni D7 lo habían cruzado
 contra este archivo específico en su momento.
 
+## D57 — Auditoría real de las 73 (en verdad 83) tablas de la DB (IDEA-092), pedida explícita por el founder
+
+El founder, al revisar los documentos condensados, pidió investigar esto
+en serio ("investiga que esto es importante") y cuestionó el número
+("me parecen una exageración, deberían ser muchísimas menos"). Se abrió
+un store SQLite real (`:memory:`, `SCHEMA` completo aplicado) y se
+consultó `sqlite_master` directamente — no grep de texto, conteo real
+contra un store vivo:
+
+```
+SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'
+→ 83 tablas, 0 vistas
+```
+
+**Primera corrección**: son 83, no 73 — `docs/backlog.md` (IDEA-092)
+volvió a quedar desactualizado, mismo patrón ya confirmado 3 veces esta
+sesión (IDEA-118/091/033, D39/D54).
+
+**Segunda corrección, más importante**: el cluster `protocol_*` que D10
+ya había decidido retirar (nunca usado, evidencia reunida ahí) tiene
+**9 tablas, no 7**. `artifact_contract_activations` (usada
+exclusivamente por `protocol-proposal-review.ts`) y
+`artifact_contract_metadata` (usada exclusivamente por
+`protocol-evolution.ts`/`protocol-work.ts`) son parte del mismo cluster
+muerto — D10 las había pasado por alto porque no llevan el prefijo
+`protocol_` en el nombre. Confirmado con grep de callers reales: cero
+uso fuera de `contracts/protocol-*`. Retirar el cluster completo (ya
+decidido, D10/D25) baja el conteo real de 83 a **74**.
+
+**Tercera verificación — la sospecha específica de IDEA-092 no se
+sostiene**: IDEA-092 nombraba "posible solapamiento" entre
+`packets`/`packet_definitions`/`task_costs`/`sprints`/`sprint_tasks`
+como candidato a violación de PRINCIPLE-011 (mismo hecho en más de un
+lugar). Revisado con evidencia — NO hay solapamiento real:
+`packet_definitions` está deliberadamente versionado por separado de
+`packets` porque `CandidateIdentity` (D9,
+[runtime-engines.md](architecture-2026-07-23/runtime-engines.md)) necesita
+detectar si la work definition cambió desde que se creó un candidato de
+review — es una decisión de diseño con propósito, no descuido.
+`task_costs` es un ledger de eventos de costo por packet, no un
+duplicado de ningún campo de `packets`. `sprints`/`sprint_tasks` es una
+relación N:M estándar (sprint↔packet) con tabla de unión. Estructura
+normalizada correcta, PRINCIPLE-011 no está violado acá.
+
+**Cuarta verificación — el resto de las 74 tablas restantes, por
+dominio, con evidencia de uso real (no asumido)**:
+
+| Dominio | Tablas | Evidencia |
+|---|---|---|
+| Core (packets/sprints/decisions/promotion/constitution/workspace) | 21 | base `SCHEMA`, sin sospecha |
+| Contexto (`context_items` + selectors/deps/supersessions/capabilities/precedence/packs) | 10 | motor de `compileContext`, Tramo 9 |
+| Gateway/dispatch (execution profiles, run specs, sesiones/turnos/estado/eventos de gateway) | 9 | Tramo 5, patrón CQRS-like explícito en comentario propio del código: `gatewayRunState` es snapshot mutable (compare-and-swap), `gatewayRunEvents` es historial append-only completo — NO son la misma tabla con nombre distinto, son las dos mitades de un patrón intencional |
+| Orquestación (workflow definitions/steps/routes/runs/effects/events + config) | 10 | Tramo 4 |
+| Roles/catálogo (contratos, responsabilidades, handoffs, políticas, prohibiciones, escalación, capacidades de modelo) | 18 | grep de callers reales: cada tabla usada activamente desde `catalog.ts`/`catalog-activation.ts`/`catalog-validator.ts`/`bundled-profile-bootstrap.ts`/`charter-projection.ts` — es el espejo en DB de la estructura real de `content/roles/generated-charters.md` (misión, efectos prohibidos, clases de escalación, condiciones de parada — cada uno un campo real de un charter) |
+| Proyección de roles + review candidates + artifact contracts (núcleo, no protocol-proposal) | 6 | Tramos 6b/11 |
+
+**Veredicto**: la corrección real y accionable es la del cluster
+`protocol_*` (9 tablas, no 7 — ya en curso vía D10/D25/PRINCIPLE-015).
+Más allá de eso, no hay evidencia de duplicación real — 74 tablas para
+4 motores genuinamente ricos (roles, contexto, gateway, orquestación)
+más el núcleo de packets/sprints/promoción no es sobre-ingeniería
+verificable; es normalización estándar de un dominio con esa cantidad
+real de conceptos distintos. Colapsar tablas normalizadas en columnas
+JSON blob para bajar el conteo violaría PRINCIPLE-011 (una fuente por
+hecho, consultable) en vez de servirlo. Se documenta acá con la
+evidencia completa para que quede trazable — si en el futuro aparece
+evidencia de una tabla específica sin uso real (mismo patrón que
+`protocol_*`), se retira con el mismo mecanismo (packet de remoción,
+PRINCIPLE-015), no por intuición de que "83 suena a mucho".
+
+### D58 — Cerrado: la autoría de packets en `.md` se retira, no sobrevive como conveniencia
+
+Pregunta que había quedado abierta (D6/[remaining-work.md](architecture-2026-07-23/remaining-work.md)):
+¿la conveniencia de redactar un packet en `.md` y importarlo sobrevive
+aunque el espejo automático ya no exista (D7)? El founder la cierra:
+**se retira**. `packets/document.ts` (`generatePacketDocument`/
+`parsePacketDocument`, D43) deja de tener consumidor real bajo la
+arquitectura nueva — ya no sobrevive ni siquiera como mecanismo
+secundario. Creación de packets es exclusivamente vía DB/API (D22.4),
+sin excepción. Esto simplifica [removed.md](architecture-2026-07-23/removed.md):
+`packets/` completo (no sólo el import en lote) se mueve de "sobrevive
+parcial" a "muere sin reemplazo".
+
 ## Puntos abiertos / en discusión
 
 Ninguno. Inventario completo (D1-D22), cruce contra la auditoría
@@ -1990,3 +2073,11 @@ documento — cuando una decisión acá cita un tramo del flujo, es trazable.
   cerrado, Tramos 11-17 del mapa de flujo, con hallazgo nuevo D56
   (`adopt/scaffold.ts` sigue creando `docs/packets/` como parte del
   checklist de instalación, contradice D7 — corregido).
+- ~~Auditoría real de las 73/83 tablas de la DB (IDEA-092)~~ → cerrado,
+  D57: conteo real contra store vivo (83, no 73), cluster `protocol_*`
+  corregido a 9 tablas (no 7), sospecha de solapamiento
+  packets/sprints/task_costs verificada y descartada con evidencia, el
+  resto de las 74 tablas restantes confirmado como normalización real
+  de 4 dominios legítimamente ricos, no sobre-ingeniería.
+- ~~¿La autoría de packets en `.md` sobrevive?~~ → cerrado, D58: no,
+  se retira — decisión del founder.
