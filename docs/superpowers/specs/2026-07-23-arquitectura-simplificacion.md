@@ -1947,6 +1947,74 @@ sin excepción. Esto simplifica [removed.md](architecture-2026-07-23/removed.md)
 `packets/` completo (no sólo el import en lote) se mueve de "sobrevive
 parcial" a "muere sin reemplazo".
 
+## D59 — Segunda pasada sobre las ~60 ideas "ortogonales" del backlog, pedida explícita por el founder
+
+El founder pidió releer las ideas restantes con más cuidado ("revisalas y
+si necesitas algo de mi decime"), no conformarse con la clasificación en
+bloque de D50-D54. Se releyeron las 148 líneas completas una tercera vez,
+esta vez cruzando cada entrada "unvalidated ortogonal" contra el código
+real, no sólo contra su propio texto.
+
+**Seis entradas más confirmadas obsoletas/stale, no marcadas así** — el
+mismo patrón que IDEA-118/091/033 (D39/D54), ahora con 6 casos nuevos, 9
+en total esta sesión. No se editó `docs/backlog.md` (se mantiene como
+material fuente de auditoría, mismo criterio que D54 — las correcciones
+quedan acá, trazables, no se tocó el archivo original):
+
+- **IDEA-011** ("check secrets scanner") — shipeado, confirmado en
+  `docs/REORG.md`: *"Scanner de secretos (`check secrets`) integrado al
+  pipeline."* Backlog sigue "unvalidated (strong candidate)".
+- **IDEA-015** ("sprint/milestone grouping en el board") — shipeado, las
+  tablas `sprints`/`sprint_tasks` y `sprints/service.ts` completo ya
+  existen (Tramo 16). Backlog sigue "unvalidated".
+- **IDEA-020** ("taste inference desde el repo existente") — shipeado,
+  `adopt/taste-infer.ts` implementa exactamente esto (Tramo 14). Backlog
+  sigue "unvalidated".
+- **IDEA-024** ("charter de rol `orchestrator`") — superseded por la
+  reconstrucción del catálogo de 9 roles — `delivery-orchestrator` ya
+  existe en `bundled-profile.constants.ts` con misión y handoffs
+  completos. Backlog sigue "unvalidated".
+- **IDEA-036** ("quiet test reporter") — shipeado, confirmado en
+  `package.json`: `"test:quiet": "... --test-reporter dot ..."`.
+  Backlog sigue "unvalidated".
+- **IDEA-060** ("migración de stores aged debe manejar `promotion_*`
+  faltante") — implícitamente confirmado resuelto por el propio texto de
+  IDEA-120 (*"code review finding on the IDEA-060 fix (PR #181,
+  merged)"*) — pero la fila de IDEA-060 nunca se actualizó. Backlog
+  sigue "unvalidated".
+
+**Confirma con más fuerza el propio IDEA-098** (backlog entries go stale
+silently) — 9 entradas confirmadas stale en una sola sesión de auditoría
+es evidencia real de que el problema que esa idea describe sigue activo,
+no hipotético.
+
+**Tres hallazgos con scope real, ya propagados a los documentos
+condensados**:
+
+1. **IDEA-090** (promotion `TARGET_STALE` sobre-dispara en candidatos ya
+   integrados) — bug real y específico en `ensureIntegrationAttempt`
+   (`promotion.integration.ts:148-150`) que sobrevive el port sin que D9
+   lo cubriera (D9 dice "sin cambios" a nivel de arquitectura, correcto,
+   pero este bug puntual sigue ahí). Nota agregada a
+   [runtime-engines.md](architecture-2026-07-23/runtime-engines.md).
+2. **IDEA-111** (principio candidato: superficie de comandos
+   autodescubrible desde una sola fuente) — su premisa original es sobre
+   la CLI, que muere con D1; el principio de fondo (nunca duplicar a
+   mano la superficie de la interfaz) aplica igual de fuerte a las rutas
+   REST nuevas — re-scopeado como nota en
+   [backend-api.md](architecture-2026-07-23/backend-api.md).
+3. **IDEA-040/041/045** (botones de dispatch/kill en el board, vista de
+   transcript en vivo, arquitectura de información del panel operativo)
+   — quedaron diseñadas contra la consola vieja pero el contenido de
+   producto sigue siendo el input real para diseñar el frontend nuevo
+   (D12) — pointer agregado a
+   [README.md](architecture-2026-07-23/README.md#frontend-en-una-nota-no-amerita-doc-propio).
+
+**El resto de las ~60 confirmado genuinamente ortogonal** tras esta
+segunda pasada, sin encontrar más casos stale ni más scope real para el
+pivote de arquitectura — quedan como estaban, `unvalidated`, válidas
+como backlog de producto, no re-litigadas acá.
+
 ## Puntos abiertos / en discusión
 
 Ninguno. Inventario completo (D1-D22), cruce contra la auditoría

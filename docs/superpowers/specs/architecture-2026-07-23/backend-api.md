@@ -99,6 +99,19 @@ cwd ambiente — con el backend creando/destruyendo worktrees (ver
 original puede haber dejado de aplicar. Se revisa al implementar el ciclo
 de vida de worktrees, no antes.
 
+## Principio a llevar al port: la superficie de rutas debe ser autodescubrible desde una sola fuente
+
+IDEA-111 proponía este principio para la CLI (`describe --json` como
+única fuente, nunca duplicado a mano en docs/skills/MCP) — la premisa
+original muere con la CLI (D1), pero el principio de fondo aplica igual
+de fuerte acá: la tabla de rutas de este documento, el mapeo 1:1 del MCP
+([mcp-and-identity.md](mcp-and-identity.md)), y cualquier documentación
+human-facing de la API deben derivar de una sola fuente generada (ej. un
+router tipado del que se derive automáticamente el catálogo de rutas),
+nunca mantenerse sincronizados a mano en 3 lugares. No es una ruta nueva
+que agregar a la tabla — es una restricción de implementación sobre
+cómo se construye toda esta superficie.
+
 ## Detalles operativos (E7)
 
 - **Envelope de error**: se reusa el patrón que `serve/server.ts` ya tiene

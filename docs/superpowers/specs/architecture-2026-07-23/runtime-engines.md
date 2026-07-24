@@ -31,7 +31,20 @@ reviewer, avanza una máquina de estados propia, re-corre `verify` en el
 momento exacto de integrar (`main` pudo cambiar desde la aprobación),
 integra y cierra. `CandidateIdentity` (taskId + workDefinitionVersion +
 candidateSha + configDigest + contractDigest) permite reintentar sin
-colisionar con el intento anterior. Sin cambios.
+colisionar con el intento anterior. Sin cambios de arquitectura.
+
+**Bug puntual que sobrevive el port, a arreglar durante la
+implementación** (IDEA-090): `ensureIntegrationAttempt`
+(`promotion.integration.ts:148-150`) exige `refSha(target) ===
+candidate.baseSha` incluso cuando `candidate.candidateSha` ya es
+ancestro del target ref — un merge no relacionado que avanza `main`
+entre la aprobación y la integración dispara `TARGET_STALE` sobre un
+candidato que en realidad ya está integrado, forzando re-candidatura y
+re-review completos de un árbol idéntico. Fix propuesto: antes de tirar
+`TARGET_STALE`, si `git.isAncestor(candidateSha, refSha(target))`,
+registrar la intención y dejar que `integrateCandidate` tome el camino
+"ya integrado" existente — el guard estricto se mantiene sólo para
+fast-forwards reales.
 
 ## `orchestration/` — el motor de workflows durable
 

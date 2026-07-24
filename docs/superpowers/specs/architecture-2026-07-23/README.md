@@ -52,6 +52,18 @@ Estructura de páginas: 1:1 con los recursos REST de
 [backend-api.md](backend-api.md) — no se enumera, es transcripción de
 implementación.
 
+**Input de producto para cuando se diseñe en concreto** (backlog
+IDEA-040/041/045, revisadas y confirmadas todavía relevantes aunque
+fueron pensadas contra la consola vieja): botones de dispatch/kill en el
+board con el PID real detrás; vista de detalle de card con el mismo
+transcript en vivo que el propio CLI del agente mostraría (poll +
+render por parte/tool/status); arquitectura de información en 4 bloques
+— barra de operaciones (orquestador + workers activos + cola de
+revisión), feed de actividad cronológico filtrable, kanban de trabajo
+puro, panel de escalaciones visualmente prioritario (vacío = nada
+necesita al humano). Todo deriva de estado ya existente
+(`GET /events` SSE, `GET /dashboard`) — no pide infraestructura nueva.
+
 ## Motor de almacenamiento
 
 SQLite + Drizzle ORM, sin cambios — el pivote fue sobre arquitectura de
