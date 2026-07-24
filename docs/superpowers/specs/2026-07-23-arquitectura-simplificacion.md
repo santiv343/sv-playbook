@@ -1289,17 +1289,86 @@ may be described as an existing guarantee"). Cuando se implemente cada
 punto, avanza en la escalera — este documento no se actualiza
 retroactivamente para sonar más terminado de lo que está.
 
+## Cruce contra `docs/codebase-guide/cross-reference.md` (auditoría de la auditoría, 2026-07-21)
+
+Documento no leído hasta ahora, encontrado citado de pasada en el grep
+de F-007. Cruza los 18 hallazgos de `findings.md` contra `docs/backlog.md`
+y contra 4 paquetes de investigación dispatchados el 2026-07-19 (nunca
+implementados). Tres cosas relevantes para D1-D38:
+
+### D39 — Tres bugs de integridad referencial en `context/`/`tasks/`, nunca implementados, se arreglan en el port
+
+Del paquete `referential-integrity-audit` (`IDEA-119`), con línea exacta:
+
+1. `context/repository.ts` valida selectores `role` contra un SET
+   ESTÁTICO (`BUNDLED_ROLE_ID`), no contra la tabla real
+   `role_contracts` — un rol custom que reemplaza al bundled no se
+   reconoce.
+2. `addContextItem()` inserta `dependencies` sin comprobar que el par
+   `context_items(id, version)` referenciado exista.
+3. `tasks/service.ts`'s `upsertDeps` filtra en silencio dependencias de
+   packets inexistentes — un `depends_on` roto desaparece sin error en
+   vez de rechazarse.
+
+Los tres viven en `context/`/`tasks/`, que sobreviven al port (D6/D18)
+sin cambios de forma — si no se corrigen ahora, se portan con el bug
+adentro. Mismo patrón de decisión que D26/D27: **se arreglan durante el
+port** (fail-closed en vez de silent-drop, validar contra la tabla real
+en vez de un set estático) — consistente con el resto de esta auditoría,
+no como excepción.
+
+### D40 — El bootstrap de contexto (que D28 ya dijo que debía sobrevivir) tiene un bug de drift conocido, sin arreglar
+
+Del paquete `ci-instructions-drift-root-cause` (research ya archivado
+más arriba por estar graduado — el ARREGLO que se aplicó fue un
+reordenamiento de `TARGETS` en `check.ts`, un parche del síntoma, NO el
+arreglo de fondo que este mismo documento identifica). Causa raíz real:
+`bootstrap-principles.mjs`/`bootstrap-taste-human.mjs` **omiten cada
+identidad ya existente en vez de comparar contra un digest de la fuente
+actual** — si `content/principles.md` cambia, el bootstrap no detecta
+el drift y el store sigue sirviendo contenido viejo.
+
+D28 (PRINCIPLE-004) ya estableció que `instructions --write` y el
+pipeline de bootstrap deben sobrevivir al port — esto agrega un
+requisito: sobrevivir **arreglado**, no tal cual. El bootstrap pasa de
+"omitir si ya existe" a "comparar digest de la fuente contra el digest
+persistido, re-bootstrapear si divergen" — mismo patrón de detección
+que D19 ya usa para migraciones de schema (`readStoreSchemaVersion`) y
+que D8 ya usa para el catálogo de roles (`requireActiveRoleCatalog`,
+rechaza por DRIFT).
+
+### D41 — Patrón sistémico: "detección de divergencia por digest" debería ser una utilidad única, no tres arreglos separados
+
+El hallazgo más valioso de `cross-reference.md`: el MISMO defecto de
+raíz — "¿cómo sé que dos representaciones del mismo hecho divergieron?"
+resuelto de forma incompleta — aparece en D39 (referencias
+context/tasks), D40 (bootstrap de contexto), y ya estaba parcialmente
+resuelto en otros tres lugares (D8 catálogo de roles, D19 schema
+version, D9 `assertCurrentIdentity` en promoción). Son la MISMA pregunta
+en seis lugares, con tres respuestas correctas ya existentes
+(comparación de digest) y tres lugares donde falta (D39×3, D40).
+
+**Requisito de diseño nuevo, aplicable a todo el port**: en vez de que
+cada dominio reinvente su propia comparación de digest, extraer un
+patrón único reusable (ej. `assertNoDrift(current, persisted, label)`
+o equivalente) que D8/D9/D19 ya implementan cada uno por su cuenta —
+usarlo también para cerrar D39/D40, y para cualquier verificación de
+divergencia nueva que aparezca durante la implementación. Esto es
+HJ-012 aplicado literalmente ("buscar la abstracción compartida... en
+vez de un parche local que deja la clase de falla abierta") — el mismo
+principio que ya usamos para encontrar D39/D40 en primer lugar.
+
 ## Puntos abiertos / en discusión
 
 Ninguno de los identificados hasta esta pasada. Inventario completo
 (D1-D22), cruce contra la auditoría PRINCIPLE-016 previa (D23-D27),
-cruce contra los 16 PRINCIPLE-XXX completos (D28-D31), y cruce contra
-el perfil de juicio humano completo HJ-001..HJ-021 (D32-D38) cierran
-todo lo identificado hasta acá — con la salvedad honesta de D38: todo
-sigue en estado `DECLARED`, ninguna de estas correcciones está
-implementada todavía. Puntos nuevos que surjan durante la
-implementación se agregan como entradas nuevas, no reabren lo ya
-cerrado sin evidencia nueva.
+cruce contra los 16 PRINCIPLE-XXX completos (D28-D31), cruce contra el
+perfil de juicio humano completo HJ-001..HJ-021 (D32-D38), y cruce
+contra `cross-reference.md` (D39-D41) cierran todo lo identificado
+hasta acá — con la salvedad honesta de D38: todo sigue en estado
+`DECLARED`, ninguna de estas correcciones está implementada todavía.
+Puntos nuevos que surjan durante la implementación se agregan como
+entradas nuevas, no reabren lo ya cerrado sin evidencia nueva.
 
 ## Mapa de flujo de la app
 
@@ -1358,3 +1427,10 @@ documento — cuando una decisión acá cita un tramo del flujo, es trazable.
   distinguir verdad mecánica de resumen de agente (D36), clasificación
   build explícita (D37), recordatorio de madurez (D38). PR #207
   (HJ-022) sigue sin mergear — corrección de proceso pendiente.
+- ~~Cruce contra `cross-reference.md`~~ → cerrado, D39-D41: 3 bugs de
+  integridad referencial en context/tasks nunca implementados (se
+  arreglan en el port), bug de drift conocido en el bootstrap de
+  contexto (D28 necesitaba esta corrección), y un patrón sistémico de
+  "detección de divergencia por digest" que aparece en 6 lugares
+  distintos — se extrae como utilidad única en vez de 3 arreglos
+  separados.
