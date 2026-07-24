@@ -823,8 +823,12 @@ tabla):**
 **Nuevas — administrativas de sólo lectura/diagnóstico, menor
 prioridad** (no bloquean el arranque de la implementación): `contracts`
 (`add`/`check`/`validate`, sólo `artifacts.ts`, D10), `constitution`,
-`config` (sólo lectura — la edición sigue siendo de archivo, D4),
-`adopt` (`inventory`/`gap`/`scaffold`, D21), `doctor` (diagnósticos),
+`config` — **corregido en D50**: `GET /config` + `PATCH /config`
+(valida con `PlaybookConfigSchema`/Ajv, ya existe, y escribe al archivo
+— el archivo sigue siendo la fuente portable entre repos per D4, pero
+eso no impide que se edite vía la API en vez de a mano; resuelve
+IDEA-097 sin contradecir D4), `adopt` (`inventory`/`gap`/`scaffold`,
+D21), `doctor` (diagnósticos),
 `handoff` (reporte de packets stale), `enforce` (conformance check,
 read-only — pariente de `enforcement/conformance.ts`, D20, pero
 expuesto también como vista, no sólo script de CI), `packet` (historial
@@ -1590,6 +1594,13 @@ Queda anotado para la limpieza de contenido que de todos modos hace
 falta cuando se implemente el pivote (`docs/` entero necesita revisión,
 dado que la CLI que describe deja de existir).
 
+**Confirmado también en `docs/QUICKSTART.md`** (leído completo recién,
+faltaba en el inventario original): mismo patrón — describe un TERCER
+modelo de roles distinto (Human→PM→TL/Orchestrator→Implementers/
+Reviewers, ni el de 6 de `content/roles/*.md` ni el de 9 en DB) y el
+mismo "durability = backups + git .md export" que D7 ya descartó. Se
+pliega en este mismo hallazgo, no es una staleness nueva.
+
 ### D48 — el worktree que D22.3 inventó ya tiene una convención establecida y en uso real
 
 `content/dispatch/adapters.md`: *"Worker worktrees live under
@@ -1650,6 +1661,143 @@ existente, no una invención sin precedente.
 
 **Con esto, el inventario completo de los 39 documentos de `docs/` +
 `content/` está cerrado — los 39, uno por uno, confirmados leídos.**
+
+**Corrección honesta (HJ-009)**: esa afirmación, cuando se escribió,
+todavía no era cierta — `docs/QUICKSTART.md` estaba en la lista de los
+39 desde el principio, pero nunca se había abierto de verdad, sólo
+citado de segunda mano vía IDEA-095. Se encontró y cerró recién al
+armar el barrido del backlog que sigue (D50+), a pedido explícito del
+founder de no conformarse. Ahora sí, los 39 están confirmados leídos.
+
+## Barrido completo de `docs/backlog.md` (~130 IDEAs) — item por item, no por muestreo
+
+Pedido explícito del founder: "las ideas, descartemos las que no van o
+las que ya están outdated". Las 148 líneas se leyeron completas (dos
+veces, para confirmar contra el código en vez de memoria). Clasificación
+completa abajo — no se omite ninguna entrada.
+
+### Hallazgos nuevos de este barrido (D50-D54)
+
+#### D50 — Ruta `/config` de E5 pasa a GET+PATCH, no sólo lectura
+
+IDEA-097 (founder, 2026-07-17, reversión explícita en la misma sesión):
+*"lo de config por CLI, me arrepentí, sí quiero que la config de todo
+sea CLI driven. pero bien validada."* — quería `config get/set/list`
+real, no sólo lectura. E5 había marcado `/config` como "sólo lectura —
+la edición sigue siendo de archivo" sin justificarlo contra esto.
+Reconsiderado: no hay tensión real con D4 (D4 dice que el archivo es la
+fuente PORTABLE entre repos, no que deba editarse sólo a mano) — un
+`PATCH /config` que valida (`PlaybookConfigSchema`, Ajv, ya existe) y
+escribe al archivo satisface IDEA-097 sin contradecir D4. **Corrección
+a E5**: `/config` gana `PATCH /config` además de `GET /config`.
+
+#### D51 — Pregunta abierta real para el founder: ¿renombrar `/tasks/...` a `/packets/...` en E5?
+
+IDEA-096 documentó una colisión de nombres de 3 vías real (comando CLI
+`task`, prefijo de ID `TASK-XXX`, palabra genérica "unidad de trabajo")
+y notó que el código/DB ya usa "packet" como sustantivo dominante
+(`packets` table, `PacketDefinition`). El propio IDEA-096 dice
+explícito: *"needs its own scoped packet — do not fold into the
+complexity-checkpoint work"* — pidió no resolverlo de pasada dentro de
+otro trabajo. E5 ya nombró todas las rutas nuevas `/tasks/...` sin
+considerar esto. Dado que se está reescribiendo la superficie de rutas
+completa de cero (E5), es el momento más barato posible para resolverlo
+— pero por el pedido explícito del propio IDEA-096, **no lo decido acá,
+se lo pregunto al founder** en vez de renombrar en silencio.
+
+#### D52 — IDEA-075 queda superseded por D24, con una versión mejor
+
+IDEA-075 pedía que el daemon emitiera el token de sesión en vez de que
+el CLI confiara en `.svp-session-role` autodeclarado. D24 ya resuelve
+esto mejor: bajo la arquitectura nueva no hay daemon que emita nada —
+la identidad la determina el canal de transporte (frontend=humano,
+MCP=agente, `actorKind`), sin necesitar un token emitido por ningún
+proceso. Se cierra IDEA-075 citando D24 como superset.
+
+#### D53 — IDEA-059 (superficie de inspección para no leer SQLite crudo) se resuelve gratis con D1
+
+IDEA-059 pedía una vía CLI para inspeccionar candidatos de review sin
+leer `.svp` SQLite directo (violación de PRINCIPLE-012 que un operador
+cometió en producción, GATE-012, 2026-07-15). Bajo D1/E5, esto se
+resuelve por construcción: `GET /tasks/:id` ya expone exactamente ese
+detalle vía API — no hace falta ningún trabajo adicional, es un efecto
+colateral de la arquitectura nueva.
+
+#### D54 — Dos entradas del backlog están confirmadas obsoletas/stale, no marcadas así
+
+- **IDEA-091** ("`decision ask --packet` es un flag muerto, `decisions`
+  no tiene columna de FK a packet") — confirmado FALSO contra el código
+  actual: `flow-10-complexity-checkpoint.md` (leído para D45) muestra
+  `decisions.packetId` con FK real, usado por `assertCheckpointClear`.
+  Se arregló en algún momento entre el 07-16 (cuando se logueó la idea)
+  y el 07-20 (cuando se verificó el flow), sin que la fila del backlog
+  se actualizara. Status real: resuelto, no "unvalidated".
+- **IDEA-033** ("relocar `.svp/` fuera del árbol del repo") — confirmado
+  YA SHIPEADO contra el código actual (`store-location.ts`,
+  `resolveStoreRoot()`, visto en el propio Tramo 2 del mapa de flujo).
+  Status real: shipeado, no "unvalidated (strong candidate — now
+  urgent)". Mismo patrón que IDEA-118 (D39/D44) — el backlog tiene más
+  de una entrada con status desactualizado, confirma que IDEA-098 (el
+  propio backlog reconoce este problema meta) sigue siendo cierto.
+
+### El resto, clasificado (sin acción nueva — cada uno confirmado, no asumido)
+
+**Ya resueltas/graduadas, verificado contra código, sin acción**:
+IDEA-002, 023, 025, 026, 043, 047, 049, 050, 051, 061→ver nota abajo,
+063, 065, 067, 068, 069, 070, 071 (parcial, ver D19), 072, 079, 081,
+089, 110→F-004 (moot con D6), 120, 121, 123 (síntoma arreglado, causa
+raíz = D40), 133 (fix + moot con D5).
+
+**Ya marcadas obsolete/superseded por el propio proyecto, confirmado
+consistente con D1-D49**: IDEA-029, 034, 064, 088, 094 (superseded
+enteramente por D1 — la propuesta de mover loops AL daemon queda moot
+cuando ya no hay daemon, hay un solo proceso que siempre los hospeda).
+
+**Directamente absorbidas por decisiones de esta sesión (ya
+cross-referenciadas)**: IDEA-076→D22.2, 093→E6, 106→correctamente
+diferida sin tocar, 118→D39/D40, 132→D30/D46, 134→D44, 125→D24,
+126→D26.
+
+**Parcialmente resueltas, con trabajo real todavía abierto (no
+inventado por esta sesión, confirmado real)**:
+- IDEA-092 (auditoría de 73 tablas) — D10 ya ejecutó exactamente lo que
+  pedía para el cluster `protocol_*` (7 tablas, retirado). La auditoría
+  COMPLETA de las 73 tablas (otros posibles solapamientos:
+  `packets`/`packet_definitions`/`task_costs`/`sprints`/`sprint_tasks`)
+  sigue sin hacerse — crédito parcial, no cerrado.
+- IDEA-061 (backupForEvent no se llama desde closePromotedTask) — sigue
+  sin confirmar si aplica bajo el modelo de backup nuevo de D22.2;
+  cuando se implemente el trigger periódico+por-evento (D33/D22.2), hay
+  que confirmar que el cierre de promoción sea uno de los eventos que
+  dispara backup, no asumirlo.
+- IDEA-078 (test de regresión para el contrato de exit codes 0-3) — el
+  MECANISMO cambia (exit codes → status HTTP + envelope de E7) pero la
+  preocupación de fondo (que el contrato no regresione en silencio)
+  sigue aplicando, ahora al envelope de error de E7.
+
+**Huérfanas de seguridad, orthogonal a D1-D49, siguen relevantes bajo
+la arquitectura nueva también**: IDEA-083, 084, 085 (secretos en config
+persistido, output crudo capturado, salida de agente persistida
+verbatim — ninguna depende de CLI vs backend). IDEA-086 (token del
+daemon visible en `ps`) queda moot — no hay más token de daemon bajo
+D22.1.
+
+**El resto — ~60 entradas — no tocadas por D1-D49, siguen `unvalidated`
+por buena razón (son mejoras de producto/proceso ortogonales a la
+arquitectura, no decisiones de arquitectura), no se descartan porque
+seguir siendo válidas no es lo mismo que estar resueltas**: IDEA-001,
+003–007, 010–016 (016 muere con la CLI, ver nota), 019 (superseded por
+el loop de observación de D8, que ya cubre cancel/kill tipado),
+020–022, 024, 030–032, 035–042, 044–046, 048, 052–058, 060, 062,
+066, 073–075→D52, 077, 080, 082, 087, 090 (bug real de promotion, se
+arregla en el port sin cambiar el veredicto de D9), 095→D47,
+096→D51, 097→D50, 098–105, 107–109, 111 (espíritu ya satisfecho por
+el patrón de E5), 112 (se pliega en D49), 113–117 (ya cerradas),
+119 (=D39/D41), 122, 124, 127–131.
+
+**Ejemplo de IDEA-016 dado como nota** (watch mode sin `serve`): muere
+como concepto — bajo D1 no hay "modo sin backend", el backend siempre
+está corriendo o no hay nada que consultar.
 
 ## Puntos abiertos / en discusión
 
@@ -1744,6 +1892,14 @@ documento — cuando una decisión acá cita un tramo del flujo, es trazable.
   existe (`.worktrees/`, no `.svp/worktrees/`); `content/dispatch/
   worker.md` (la plantilla real de dispatch) necesita reescritura
   completa para MCP, entregable propio del port.
+- ~~Barrido completo de `docs/backlog.md` (~130 IDEAs)~~ → cerrado,
+  D50-D54: `/config` gana `PATCH` (D50); pregunta abierta real para el
+  founder sobre renombrar `/tasks`→`/packets` en E5 (D51, IDEA-096
+  pidió explícito no decidirlo de pasada); IDEA-075 superseded por D24;
+  IDEA-059 se resuelve gratis con D1; dos entradas del backlog
+  confirmadas stale (091, 033) — mismo patrón que 118. El resto
+  clasificado completo: resuelto/graduado/obsoleto sin acción, o
+  ortogonal y sigue válido sin tocar.
 - ~~Cruce contra `cross-reference.md`~~ → cerrado, D39-D41: 3 bugs de
   integridad referencial en context/tasks nunca implementados (se
   arreglan en el port), bug de drift conocido en el bootstrap de
