@@ -451,15 +451,249 @@ exclusivo" una responsabilidad ya clasificada `DETERMINISTIC` — si es
 determinista, es del runtime, no de un agente, mecánicamente impuesto,
 no sólo documentado.
 
-## Pendiente real (no recorrido todavía, en orden de prioridad sugerido)
+## Tramo 11 — `contracts/artifacts.ts`: el registro de schemas que todo el resto valida contra
 
-- `db/` (3209L) — schema completo, migraciones (`store.migrations.ts`),
-  lo que no se cubrió ya en Tramos 1-3 (`store.ts` en sí).
-- `check/`+`enforcement/` (1421L+?) — los gates mecánicos
-  (duplicateStrings, literalComparisons, ormApplicationSql —
-  mencionados en `playbook.config.json`) y `conformance.ts`
-  (enforcement/, referenciado de pasada en D10).
-- `adopt/` (580L) — no recorrido, propósito a confirmar.
-- `schema/` (570L) — el sistema de validación interno (`s.object`,
-  visto de pasada en `promotion-operation.ts`) — no confundir con
-  `contracts/` (JSON Schema para artifacts externos).
+Ver [arquitectura-simplificacion.md § D10](2026-07-23-arquitectura-simplificacion.md)
+— acá el detalle de la parte que SÍ sobrevive (el 20%, `artifacts.ts` +
+constants/types, 289L; el 80% restante, `protocol-*`, muere sin uso real
+confirmado).
+
+1. **`addArtifactContract(store, contract)`** (`contracts/artifacts.ts:34`)
+   — registra un schema JSON nuevo: valida que el propio schema compile
+   (`Ajv2020.validateSchema`, `strict: true`) antes de insertarlo, guarda
+   `schema_digest` (`digest()`, mismo mecanismo determinístico que
+   `packId` en `context/compiler.ts`, Tramo 9) junto al JSON canonicalizado.
+2. **`contractDependencies()`/`mergedDefinitions()`** (`artifacts.ts:76,107`)
+   — resuelven `$ref` entre contratos como grafo de profundidad
+   arbitraria con detección de conflictos (dos contratos con un `$defs`
+   del mismo nombre pero contenido distinto = error). D10 ya señaló que
+   esto es más generalidad de la que el problema real tiene (sólo 3
+   bloques compartidos fijos, jerarquía de un solo nivel en la
+   práctica) — visto acá con el código real, no sólo de memoria.
+3. **`checkArtifactContracts(store)`** (`artifacts.ts:224`) — chequeo
+   PROACTIVO (no reactivo): valida que todo contrato que un
+   `role_contract`/`role_handoff` referencia exista y compile, ANTES de
+   que algo intente usarlo en runtime. Sin esto, un rol apuntando a un
+   contrato roto quedaría silenciosamente inoperable recién al primer
+   uso real — mecanización directa de HJ-002.
+4. **`validateArtifact(store, ref, artifact)`** (`artifacts.ts:237`) — el
+   punto de entrada que SÍ se llama en caliente, desde `review/`
+   (Tramo 6b, `assembleReviewCandidate` valida contra
+   `REVIEW_CANDIDATE_CONTRACT_REF_V3`) y desde `orchestration/`
+   (Tramo 4, `resolveHumanWorkflowEffect` valida el output humano
+   contra `outputContractRef`). Rechaza si el `ref` no está en
+   `activeSchemas()` (`ARTIFACT_CONTRACT_ERROR.UNKNOWN_CONTRACT`), si el
+   schema no compila, o si el artifact no matchea
+   (`CONTRACT_VIOLATION`, con el texto de error de Ajv incluido).
+
+Confirma D10 con evidencia línea a línea: este archivo es el único
+punto de `contracts/` que `gateway/`, `review/`, y `orchestration/`
+llaman funcionalmente — todo lo demás en el directorio
+(`protocol-proposal*`, `protocol-work*`, `protocol-reconciliation*`,
+`protocol-evolution.ts`) sólo se referencia entre sí y desde
+`cli/commands/contract.ts`, que muere con la CLI (D6).
+
+## Tramo 12 — `verification/` → `check/` → `enforcement/`: tres piezas relacionadas, una sola conectada al pipeline real
+
+1. **`runVerification(executor, manifest)`** (`verification/runner.ts:14`)
+   — motor genérico: corre cada componente del manifiesto secuencialmente
+   vía un `VerificationExecutor` inyectado, cualquiera que falle vuelve
+   el resultado global `FAIL`. `manifestDigest` (`digest(manifest)`) ata
+   el receipt a la versión exacta del manifiesto — mismo patrón de
+   reproducibilidad que `packId` (Tramo 9) y `schema_digest` (Tramo 11).
+2. **`VERIFICATION_MANIFEST`** (`verification/verification.constants.ts:20`)
+   — los 4 componentes reales que `npm run verify` corre, en pie de
+   igualdad: `typecheck` (`npm run typecheck`), `lint` (`npm run lint`),
+   `test` (`npm run test`), y **`playbook`** (`node bin/sv-playbook.js
+   check`) — el componente que conecta este motor genérico con
+   `check/`. Esto es lo que D20 ya había encontrado desde el lado de
+   `package.json`: `npm run lint` invoca `check/source-policy-cli.js`
+   directo; acá se ve el resto del cableado — `verify` como concepto
+   entero (el mismo que D9/D15 invocan dos veces, en preflight y de
+   nuevo justo antes de integrar) pasa SIEMPRE por los gates de `check/`
+   como uno de sus 4 componentes obligatorios, no como algo aparte.
+3. **`checkCatalogClosure(store, projections)`** (`check/catalog-closure.ts:81`)
+   — el gate que D44 ya identificó como bloqueador mecánico de D2/D32:
+   tres axiomas verificados a la vez — `roleProfileViolations`
+   (`catalog-closure.ts:27`, todo rol REQUERIDO necesita ≥1 perfil de
+   ejecución habilitado), `duplicateBindingViolations` (`:61`, ningún
+   agente de un adapter atado a más de un rol), `projectionViolations`
+   (`:50`, lo que el adapter proyecta realmente coincide con lo que los
+   perfiles esperan, ni de más ni de menos). Confirma D44 línea a línea:
+   `roleProfileViolations` itera `requiredRoleIds(store)` sin distinguir
+   activo/dormido — el fix de E1 (filtrar contra
+   `role_activation.status='active'`) aplica exactamente acá.
+4. **`enforcement/conformance.ts`** — `runConformance(contractPath,
+   schemaPath, profilePath)` (`conformance.ts:355`) es una pieza
+   AUTÓNOMA, sin conexión al resto: valida una tripleta
+   contrato+schema+profile de archivos en disco (no de la DB) contra 6
+   chequeos estructurales (IDs de control duplicados, escenarios
+   huérfanos, referencias colgantes, metadata de enforcement
+   incompleta, y un chequeo curioso — `AGENT_OWNER_PATTERN`
+   (`conformance.ts:19`), que rechaza mecánicamente cualquier control
+   cuyo `owner` declarado contenga las palabras "llm"/"agent"/"ai": un
+   control de enforcement no puede estar "a cargo de la IA", tiene que
+   tener un dueño humano o determinístico real). Confirma D25 con
+   evidencia directa: no hay ningún caller de `runConformance` fuera de
+   su propio test — no está en `VERIFICATION_MANIFEST` (paso 2 arriba)
+   ni en ningún comando CLI activo. Construido, nunca conectado.
+
+## Tramo 13 — `db/` migraciones + `schema/core.ts`: plomería estándar, un gap conocido con ubicación exacta
+
+1. **`checkVersionAndMigrate(db, repoRoot, options)`**
+   (`db/store.migrations.ts:326`) — se llama desde `openStoreAt`
+   (Tramo 1, paso 6) cada vez que se abre un store existente. Tres
+   casos: versión atrasada (≥3, migra), igual (no-op), o **más nueva**
+   que el binario conoce → rechaza con `tooNewText()`
+   (`store.migrations.ts:317`, mensaje con instrucciones de recuperación
+   explícitas — nunca intenta "desmigrar").
+2. **`migrateStore(repoRoot, options)`** (`store.migrations.ts:356`) —
+   la migración EXPLÍCITA (vía comando, distinta del auto-migrate del
+   paso 1): `assertMigrationBranch` primero, backup verificado
+   (`createVerifiedBackup`), `assertNoForeignLeases` (rechaza si otro
+   worktree/sesión tiene un lease fresco sobre el store compartido —
+   protege contra migrar mientras otro proceso escribe), migra dentro
+   de una transacción `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK`.
+3. **`assertMigrationBranch(repoRoot, migrateLive)`**
+   (`db/store.migration-branch.ts:29`) — **acá está el gap exacto que
+   D19 ya señaló, ahora con línea precisa**: si no se está en la rama
+   default (`isOnDefaultBranch`, `:12`, trata "sin rama"/detached HEAD
+   como default — común en worktrees), exige `migrateLive === true` o
+   tira `"migration refused: auto-migration from non-default branch...
+   requires explicit live-migration opt-in"`. El flag existe en el
+   tipo (`MigrateStoreOptions.migrateLive`) y la función lo respeta
+   perfectamente — el gap no es acá, es que **ningún comando CLI llega
+   a parsear `--migrate-live` y pasarlo hasta acá**. Confirma D19 con
+   evidencia de código, no de memoria: la ruta REST nueva
+   (`POST /migrate {migrateLive?}`, ya en la tabla de E5) es la que
+   por fin le da un camino real a este flag.
+4. **`schema/core.ts`** — mini-librería de validación interna, tipo-Zod
+   liviana sin dependencia externa (`string()`, `nonEmptyString()`,
+   `object()`, `array()`, `enu()`, `record()`, `json()`,
+   `core.ts:19-234`). `object()` (`:130`) acumula el `path` del campo
+   que falló a través de anidamiento (`parseField`, `:109`, agrega la
+   key al `SchemaError.path` del hijo) — un error en un campo anidado
+   profundo trae el camino completo, no sólo "algo falló". Es el DSL
+   detrás de `promotion-operation.ts` (visto de pasada en D14/Tramo 4).
+   No confundir con `contracts/artifacts.ts` (Tramo 11) — JSON Schema
+   para artifacts EXTERNOS/agénticos versionados en DB; `schema/core.ts`
+   es TypeScript puro para validar estructuras internas del propio
+   código, dominios distintos que sólo comparten la palabra "schema".
+
+## Tramo 14 — `adopt/`: inventario → gaps → scaffold, con una inconsistencia real contra D7
+
+1. **`inventoryRepo(root)`** (`adopt/inventory.ts:160`) — punto de
+   entrada: lee `package.json`, detecta stack (`detectStack`, `:97`,
+   TypeScript/React/lockfile/monorepo-tool vía presencia de dependencia
+   o archivo), resuelve el comando de verify con prioridad
+   `test > verify > ci` (`:169-172`), escanea `.github/workflows/`, y
+   chequea 4 artefactos de playbook ya presentes
+   (`checkPlaybookArtifacts`, `:119`: `AGENTS.md`,
+   `playbook.config.json`, **`docs/packets/`**, `.svp/`). Puramente
+   descriptivo — no decide qué falta, sólo observa.
+2. **`analyzeGaps(inventory)`** (`adopt/gap.ts:24`) — compara el
+   inventario contra 6 requisitos mínimos (`checkArtifact`, `:4`, cada
+   uno con razón textual para el caso presente/ausente).
+   `BRANCH_PROTECTION` queda deliberadamente `'unknown'` (`:60-63`) —
+   no hay forma de verificarlo offline, se le pide al humano confirmarlo
+   en vez de fingir una respuesta.
+3. **`scaffold(repoRoot, inventory, gaps, force, store, tier)`**
+   (`adopt/scaffold.ts:118`) — escribe `playbook.config.json` +
+   `AGENTS.md` (si no existían), y por cada gap no-`PRESENT` crea un
+   packet de remediación real en el board (`writeRemediationPacket`,
+   `:80`, vía `createPacket` — mismo servicio de `tasks/service.ts`
+   visto en Tramo 6) — así la adopción no deja gaps silenciosos.
+
+**Hallazgo real, no anotado hasta ahora**: `scaffold()` línea 137 hace
+`mkdirSync(join(repoRoot, PACKETS_DOCS_DIR, PACKETS_DIR), { recursive:
+true })` **incondicionalmente** — crea `docs/packets/` en todo repo
+adoptado — y `gap.ts` (`:46-51`, `PACKETS_DIRECTORY`) trata la ausencia
+de esa carpeta como un gap a remediar. Esto contradice D7 directamente:
+D7 ya decidió que la DB es la única fuente de verdad para packets, sin
+espejo `.md`, y que `docs/packets/*.md` "deja de ser un artefacto que
+el sistema mantiene sincronizado". `adopt/` sigue tratando esa carpeta
+como parte del checklist mínimo de instalación bajo la arquitectura
+vieja. Se cierra como **D56** en
+[arquitectura-simplificacion.md](2026-07-23-arquitectura-simplificacion.md).
+
+## Tramo 15 — `packets/document.ts`: serialización `.md` ↔ `PacketDefinition`
+
+Ver [arquitectura-simplificacion.md § D43](2026-07-23-arquitectura-simplificacion.md).
+
+1. **`generatePacketDocument(def, body)`** (`packets/document.ts:24`) —
+   serializa un `PacketDefinition` a `.md` con frontmatter, prefijado
+   con un comentario `GENERATED FROM THE BOARD — do not edit` (`:27`):
+   la DB es la fuente, este archivo es una vista exportada, nunca al
+   revés.
+2. **`parsePacketDocument(text)`** (`document.ts:60`) — el parser
+   inverso: tolera el prefijo GENERATED (lo descarta si está, para
+   poder re-parsear lo que el propio sistema exportó), frontmatter
+   YAML-like simple (`clave: valor` por línea, arrays como JSON
+   inline), cuerpo libre después del segundo `---`.
+3. **`assertValid(def)`** (`document.ts:5`) — validación compartida por
+   ambas direcciones: `id` debe matchear `ID_RE`, `title` no vacío,
+   `writeSet` no vacío.
+
+Sólo el TIPO (`PacketDefinition`) y estas dos funciones puras
+sobreviven según D43 — el resto de lo que hoy usa este formato
+(`upsertPacketFile`/`importPacketFile`/`importPackets` en
+`tasks/service.ts`, Tramo 6) muere con el import en lote (D22.4).
+
+## Tramo 16 — `sprints/service.ts`: qué existe hoy vs. los 3 mutators que le faltan (E3)
+
+Confirma E3 con evidencia exacta: el archivo (`sprints/service.ts`)
+expone `createSprint` (`:36`), `addTaskToSprint`/`removeTaskFromSprint`/
+`orderTasksInSprint` (`:50,63,67`), `recordTaskCost`/`sprintSpent`
+(`:82,87`), `showSprint`/`listSprints`/`closeSprint`/`getBacklog`
+(`:94,122,139,155`), `getActiveCount`/`sprintWipLimit`/`taskSprintId`
+(`:168,175,183`) — **13 exports, ninguno de los tres que E3 pide
+agregar** (`updateSprintGoal`/`updateSprintBudget`/
+`updateSprintWipLimit`). Confirma que esos tres SÓLO existen hoy como
+SQL embebido en `cli/commands/sprint.ts` (ya visto en la Auditoría
+`cli/` de arriba), exactamente como D6/E3 lo describen — no hay una
+tercera ubicación oculta.
+
+Todas las mutaciones pasan por `transact()` (`service.ts:9`, wrapper
+`BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` — mismo patrón que
+`store.migrations.ts`, Tramo 13) — `addTaskToSprint`/
+`orderTasksInSprint` además rechazan si el sprint no está `OPEN`
+(`:53,70`) antes de tocar nada.
+
+## Tramo 17 — `reconcile/reconcile.ts`: divergencia DB↔GitHub, SAFE se aplica sola, UNSAFE espera humano
+
+Ver [arquitectura-simplificacion.md § D6.3/E4](2026-07-23-arquitectura-simplificacion.md).
+
+1. **`reconcile(store, repoRoot, gh, exec, options)`**
+   (`reconcile/reconcile.ts:120`) — arma 4 tipos de fila de divergencia:
+   PRs behind (`behindPrRows`, `:12`, SAFE — `gh pr update-branch`),
+   PRs con conflicto (`conflictPrRows`, `:26`, UNSAFE — sólo reporta),
+   packets en `review` cuyo PR ya mergeó (`reviewMergedRows`, `:40`,
+   SAFE — cierra el packet), y backup stale (`backupRow`, `:67`, SAFE).
+2. **`applyRow(row, exec, events)`** (`:96`) — sólo filas `SAFE` se
+   aplican solas; si algún argumento requerido llegó vacío (`''`), se
+   registra un evento `REFUSED` (`:100-105`) en vez de ejecutar con un
+   argumento roto — nunca actúa sobre datos parciales.
+3. **`ReconcilerExecutor`** (`reconcile.types.ts:51`) — la interfaz
+   inyectable ya diseñada: `updateBranch`, `taskClose`, `createBackup`,
+   `recordEvent`. Confirma E4 exacto: sólo falta una implementación
+   nueva para el backend (`src/reconcile/backend-executor.ts` o
+   similar) que reemplace la que hoy vive inline en
+   `cli/commands/reconcile.ts` — la interfaz, la lógica de decisión
+   SAFE/UNSAFE, y el flujo completo ya están acá, sin cambios
+   necesarios.
+4. **`GhReader`** (`reconcile.types.ts:46`) — el puerto hacia `gh`
+   (comentario inline cita F-003 de `findings.md`: `gh pr list --state
+   all` es la única forma confiable de detectar PRs squash-mergeados,
+   `git merge-base --is-ancestor` no alcanza).
+
+## Pendiente real
+
+Ninguno — con Tramos 11-17 quedan cubiertos todos los subsistemas que
+faltaban: `contracts/`, `check/`+`enforcement/`+`verification/`, `db/`
+migraciones, `schema/`, `adopt/`, `packets/`, `sprints/`, `reconcile/`.
+El mapa cubre ahora el inventario completo de subsistemas de la
+sección "Mapa de tamaño actual" de
+[arquitectura-simplificacion.md](2026-07-23-arquitectura-simplificacion.md),
+más los tres directorios menores que esa tabla agrupaba en "resto"
+(`enforcement`, `sprints`, `reconcile`) y que sí se recorrieron acá con
+cita `archivo:línea`.

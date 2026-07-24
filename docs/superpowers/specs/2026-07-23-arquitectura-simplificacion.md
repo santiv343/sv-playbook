@@ -1830,6 +1830,40 @@ el patrón de E5), 112 (se pliega en D49), 113–117 (ya cerradas),
 como concepto — bajo D1 no hay "modo sin backend", el backend siempre
 está corriendo o no hay nada que consultar.
 
+## Cierre de tramos faltantes del mapa de flujo (`contracts/`, `check/`+`enforcement/`+`verification/`, `db/` migraciones, `schema/`, `adopt/`, `packets/`, `sprints/`, `reconcile/`)
+
+Completa el mapa de flujo para el resto de la app (pregunta explícita
+del founder: "¿el mapa está completo? de toda la app?"). Detalle línea
+a línea en
+[mapa-flujo-app.md § Tramos 11-17](2026-07-23-mapa-flujo-app.md#tramo-11--contractsartifactsts-el-registro-de-schemas-que-todo-el-resto-valida-contra).
+Confirma sin sorpresas D10 (Tramo 11), D20/D25/D44 (Tramo 12), D19
+(Tramo 13, con la línea exacta del gap de `migrateLive`:
+`db/store.migration-branch.ts:29`), D43 (Tramo 15), D6/E3 (Tramo 16),
+D6/E4 (Tramo 17) — un hallazgo real nuevo:
+
+### D56 — `adopt/scaffold.ts` sigue creando `docs/packets/` como parte del checklist de instalación, contradice D7
+
+`adopt/gap.ts` (`PACKETS_DIRECTORY`, líneas 46-51) trata la ausencia de
+`docs/packets/` como un gap a remediar, y `adopt/scaffold.ts:137` la
+crea incondicionalmente al adoptar un repo nuevo — checklist heredado
+de la arquitectura vieja (packets espejados a `.md` en git). D7 ya
+decidió que la DB es la única fuente de verdad para packets, sin
+espejo `.md` — bajo la arquitectura nueva, `docs/packets/` no es un
+requisito de instalación, es a lo sumo el destino opcional de un
+export/import puntual de autoría (la pregunta que D6 dejó abierta:
+"¿la conveniencia de autoría en `.md` se mantiene aunque el espejo
+automático no exista más?").
+
+**Fix para el port**: `adopt/gap.ts` deja de listar
+`PACKETS_DIRECTORY` como requisito de instalación (se quita del
+checklist de `analyzeGaps`, D7 ya no lo requiere); `adopt/scaffold.ts`
+deja de crear el directorio por defecto. Si la conveniencia de autoría
+en `.md` sobrevive (pregunta abierta de D6, no resuelta acá), el
+directorio se crea sólo cuando esa función se usa, no como parte
+incondicional de la instalación. Encontrado recién al recorrer
+`adopt/` con evidencia real (Tramo 14) — ni D6 ni D7 lo habían cruzado
+contra este archivo específico en su momento.
+
 ## Puntos abiertos / en discusión
 
 Ninguno. Inventario completo (D1-D22), cruce contra la auditoría
@@ -1837,15 +1871,21 @@ PRINCIPLE-016 previa (D23-D27), cruce contra los 16 PRINCIPLE-XXX
 completos (D28-D31), cruce contra el perfil de juicio humano completo
 HJ-001..HJ-021 (D32-D38), cruce contra `cross-reference.md` (D39-D41),
 inventario completo de los 39 documentos de `docs/`+`content/`
-(D46-D49), y barrido completo del backlog de ~130 IDEAs (D50-D54)
-cierran todo lo identificado. La única pregunta que había quedado
-formalmente abierta para el founder (D51: renombrar `/tasks`→`/packets`
-en E5) ya se respondió y se aplicó (D55) — no queda ninguna decisión
-pendiente de terceros. Salvedad honesta de D38 sigue vigente: todo
-sigue en estado `DECLARED`, ninguna de estas correcciones está
-implementada todavía. Puntos nuevos que surjan durante la
-implementación se agregan como entradas nuevas, no reabren lo ya
-cerrado sin evidencia nueva.
+(D46-D49), barrido completo del backlog de ~130 IDEAs (D50-D54), la
+resolución del founder sobre el rename de rutas (D55), y el cierre de
+los tramos faltantes del mapa de flujo (D56, `contracts/`,
+`check/`+`enforcement/`+`verification/`, `db/` migraciones, `schema/`,
+`adopt/`, `packets/`, `sprints/`, `reconcile/`) cierran todo lo
+identificado. La única pregunta que había quedado formalmente abierta
+para el founder (D51: renombrar `/tasks`→`/packets` en E5) ya se
+respondió y se aplicó (D55) — no queda ninguna decisión pendiente de
+terceros, y el mapa de flujo ([mapa-flujo-app.md](2026-07-23-mapa-flujo-app.md))
+cubre ahora los ~28.000 líneas de la tabla de tamaño original completa,
+subsistema por subsistema, con cita `archivo:línea`. Salvedad honesta
+de D38 sigue vigente: todo sigue en estado `DECLARED`, ninguna de estas
+correcciones está implementada todavía. Puntos nuevos que surjan
+durante la implementación se agregan como entradas nuevas, no reabren
+lo ya cerrado sin evidencia nueva.
 
 ## Mapa de flujo de la app
 
@@ -1944,3 +1984,9 @@ documento — cuando una decisión acá cita un tramo del flujo, es trazable.
   "detección de divergencia por digest" que aparece en 6 lugares
   distintos — se extrae como utilidad única en vez de 3 arreglos
   separados.
+- ~~Tramos faltantes del mapa de flujo (`contracts/`,
+  `check/`+`enforcement/`+`verification/`, `db/` migraciones,
+  `schema/`, `adopt/`, `packets/`, `sprints/`, `reconcile/`)~~ →
+  cerrado, Tramos 11-17 del mapa de flujo, con hallazgo nuevo D56
+  (`adopt/scaffold.ts` sigue creando `docs/packets/` como parte del
+  checklist de instalación, contradice D7 — corregido).

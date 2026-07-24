@@ -127,6 +127,71 @@ vivo de "qué existe hoy" es `how-it-works.md §13`; el de "qué falta" es
 `docs/backlog.md`. Estos dos archivos no se fusionaron porque hacerlo
 habría reintroducido afirmaciones falsas ("PLANNED" sobre algo ya hecho).
 
+## Planes de implementación shipeados de la semana 2026-07-17/19 (archivados 2026-07-23)
+
+Once planes 100% ejecutados, su contenido ya es código (o ya graduó a
+otro doc vivo) — mismo criterio que P1-P4 arriba:
+
+- `2026-07-17-complexity-checkpoint.md` — shipeado; diseño consolidado
+  vivía en `2026-07-16-complexity-checkpoint-design.md` (también
+  archivado, ver abajo).
+- `2026-07-17-context-bootstrap-cold-start.md` y su fix posterior de
+  idempotencia (PR #195, `IDEA-123`) — shipeados; el mecanismo real es
+  `compileContext`/`context_items` en DB, documentado en
+  `docs/superpowers/specs/2026-07-23-mapa-flujo-app.md` § Tramo 4.
+- `2026-07-17-self-discoverable-cli.md` — shipeado (`Command.usage`
+  obligatorio, `describe --json`); moot de todos modos bajo el pivote de
+  arquitectura del 2026-07-23 (la CLI misma se retira, ver
+  `2026-07-23-arquitectura-simplificacion.md` D1/D6).
+- `2026-07-18-aged-store-promotion-migration.md`,
+  `2026-07-18-daemon-build-staleness.md`,
+  `2026-07-18-relocate-svp-outside-repo.md`,
+  `2026-07-18-role-catalog-self-heal.md`,
+  `2026-07-18-secret-scanner.md` — shipeados, confirmado en
+  `docs/REORG.md` ("Qué hay hoy, en main, funcionando").
+- `2026-07-18-review-candidate-inspection.md` — shipeado; el mecanismo
+  real es `review/review-candidate.ts`, recorrido con evidencia en
+  `2026-07-23-mapa-flujo-app.md` § Tramo 6b.
+- `2026-07-18-serve-shutdown-lifecycle.md` + su v2
+  (`2026-07-19-serve-shutdown-lifecycle-v2.md`) — v2 shipeado y
+  verificado (PR #196, `IDEA-065`, `gh pr view 196` confirma
+  `mergedAt`). Bajo el pivote de arquitectura (D1), la clase de bug que
+  resolvían (dos procesos, `serve` + `daemon`, sin coordinación de
+  apagado) deja de poder existir por diseño — un solo proceso backend,
+  no dos a coordinar.
+- `2026-07-19-error-boundary-audit.md` y
+  `2026-07-19-referential-integrity-audit.md` — shipeados y verificados
+  (PR #194/#193 respectivamente, confirmado en
+  `docs/codebase-guide/findings.md` F-001 con `gh pr view`, no de
+  memoria).
+
+## Diseño/spec de la consola web vieja, superseded por el pivote de arquitectura (archivado 2026-07-23)
+
+`docs/superpowers/plans/2026-07-21-serve-web-console.md` (1618 líneas),
+`docs/superpowers/specs/2026-07-21-serve-web-console-design.md` (326
+líneas), y `docs/design/serve-mockup.html` — trabajo en curso (no
+shipeado, a diferencia de los planes de arriba) sobre rediseñar la
+consola operativa vanilla-JS (arreglar F-002/SSE, completar las 6
+vistas, evaluar migrar a React/Vite) cuando el founder frenó con "no me
+gusta nada este spam de consolas" y arrancó el pivote de arquitectura
+completo en su lugar. El *contenido* de la decisión sobrevive — D12
+(`2026-07-23-arquitectura-simplificacion.md`) ya eligió React+Vite por
+las mismas razones que este spec estaba evaluando, y D17 confirma que
+`src/serve/server.ts` (el backend real detrás de esa consola) es la
+base del backend nuevo — pero el documento en sí quedó interrumpido a
+mitad de camino por una decisión más grande, no completado ni
+descartado por sus propios méritos.
+
+## Investigación de CI graduada (archivada 2026-07-23)
+
+`docs/research/2026-07-19-ci-instructions-drift-root-cause.md` — causa
+raíz encontrada y corregida (reorden de `TARGETS` en
+`cli/commands/check.ts` para que `roles` corra antes que
+`instructions`), verificado en el propio documento ("Verificado con
+`LOCALAPPDATA` redirigido... `CHECK_EXIT=0`"). Moot de todos modos bajo
+D1 (la CLI se retira), pero se archiva por sus propios méritos: el fix
+ya está en el código.
+
 ## Handoffs de sesión del 2026-07-16 (archivados 2026-07-19)
 
 `docs/research/2026-07-16-agent-handoff.md` y
