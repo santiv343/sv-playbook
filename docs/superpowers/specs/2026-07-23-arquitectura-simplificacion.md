@@ -752,7 +752,7 @@ Principio: **una ruta por capacidad, cada una llama directo a la
 función de servicio ya identificada en D6-D21 — nunca un passthrough
 genérico** (eso es justo lo que se tira de `daemon.ts`, D5). Convención:
 REST estándar, recursos en plural, acciones no-CRUD como sub-recurso
-POST (`/tasks/:id/start`).
+POST (`/packets/:id/start`).
 
 **Ya existen** (D17, se mantienen): `GET /board`, `GET /dashboard`,
 `GET /workflow-definitions`, `GET /events` (SSE), `POST /intake`,
@@ -763,25 +763,25 @@ POST (`/tasks/:id/start`).
 
 | Método + ruta | Llama a | Reemplaza comando |
 |---|---|---|
-| `POST /tasks` | `tasks/service.js:createPacket` | `task create` |
-| `PATCH /tasks/:id` | `amendPacket` | `task amend` |
-| `GET /tasks` | `listPackets` | `task list` |
-| `GET /tasks/:id` | `recoverPacket` | `task show`/`recover` |
-| `POST /tasks/:id/start` | `startPacket` | `task start` |
-| `POST /tasks/:id/move` `{status}` | `movePacket`/`movePacketToReview` | `task move` |
-| `POST /tasks/:id/takeover` | `takeoverPacket` | `task takeover` |
-| `POST /tasks/:id/release` | `releaseLease` | `task release` |
-| `POST /tasks/:id/notes` `{text}` | `notePacket` | `task note` |
-| `POST /tasks/:id/evidence` `{label,detail}` | `recordEvidence` (D26, nuevo) — exige `actorKind:'human'` para labels marcadas `attestedBy:'human'` (D35) | (no existía) |
-| `GET /tasks/:id/brief` | `briefPacket` | `task brief` |
-| `POST /tasks/:id/cost` `{amount}` | `recordTaskCost` | (sin comando CLI hoy) |
+| `POST /packets` | `tasks/service.js:createPacket` | `task create` |
+| `PATCH /packets/:id` | `amendPacket` | `task amend` |
+| `GET /packets` | `listPackets` | `task list` |
+| `GET /packets/:id` | `recoverPacket` | `task show`/`recover` |
+| `POST /packets/:id/start` | `startPacket` | `task start` |
+| `POST /packets/:id/move` `{status}` | `movePacket`/`movePacketToReview` | `task move` |
+| `POST /packets/:id/takeover` | `takeoverPacket` | `task takeover` |
+| `POST /packets/:id/release` | `releaseLease` | `task release` |
+| `POST /packets/:id/notes` `{text}` | `notePacket` | `task note` |
+| `POST /packets/:id/evidence` `{label,detail}` | `recordEvidence` (D26, nuevo) — exige `actorKind:'human'` para labels marcadas `attestedBy:'human'` (D35) | (no existía) |
+| `GET /packets/:id/brief` | `briefPacket` | `task brief` |
+| `POST /packets/:id/cost` `{amount}` | `recordTaskCost` | (sin comando CLI hoy) |
 | `POST /sprints` | `createSprint` | `sprint create` |
 | `GET /sprints` | `listSprints` | `sprint list` |
 | `GET /sprints/:id` | `showSprint` | `sprint show` |
 | `PATCH /sprints/:id` `{goal\|budgetCap\|wipLimit}` | E3 (nuevo) | `sprint goal`/`budget`/`wip` |
-| `POST /sprints/:id/tasks` `{packetId}` | `addTaskToSprint` | `sprint add` |
-| `DELETE /sprints/:id/tasks/:packetId` | `removeTaskFromSprint` | `sprint remove` |
-| `PUT /sprints/:id/tasks/order` `{taskIds}` | `orderTasksInSprint` | `sprint order` |
+| `POST /sprints/:id/packets` `{packetId}` | `addTaskToSprint` | `sprint add` |
+| `DELETE /sprints/:id/packets/:packetId` | `removeTaskFromSprint` | `sprint remove` |
+| `PUT /sprints/:id/packets/order` `{taskIds}` | `orderTasksInSprint` | `sprint order` |
 | `POST /sprints/:id/close` | `closeSprint` | `sprint close` |
 | `GET /backlog` | `getBacklog` | `sprint backlog` |
 | `POST /decisions` `{question,packetId?}` | E2 (nuevo) | `decision ask` |
@@ -932,7 +932,7 @@ tool source más.
 - **Estructura de páginas del frontend**: no se enumera acá a
   propósito — las páginas siguen 1:1 los recursos REST de E5 (una vista
   de board/dashboard ya definida por `GET /dashboard`, una vista de
-  detalle de task por `GET /tasks/:id`, etc.). Es transcripción de
+  detalle de task por `GET /packets/:id` (D55), etc.). Es transcripción de
   implementación, no una decisión de arquitectura — mismo criterio que
   las 13 rutas de `role` de arriba.
 
@@ -1038,7 +1038,7 @@ evento, sin importar cuál. Diseño para el port:
   un evento por CADA label en `evidenceRequired`?" — el mismo patrón de
   `assertPreflight`/`checkArtifactContracts` (acumular violaciones,
   nunca aprobar con hallazgos parciales sin resolver).
-- Ruta REST nueva (se agrega a E5): `POST /tasks/:id/evidence`
+- Ruta REST nueva (se agrega a E5): `POST /packets/:id/evidence`
   `{label, detail}`.
 
 ### D27 — F-012: `persistReviewCandidate` se envuelve en `transact()` al portar
@@ -1276,7 +1276,7 @@ como requisito duro a D22.2, no como nice-to-have.
 
 Releyendo D26 contra HJ-019 ("an agent checking its own permissions or
 claiming its own evidence" — anti-patrón explícito): el diseño tal como
-quedó (`POST /tasks/:id/evidence {label, detail}`) no distingue entre
+quedó (`POST /packets/:id/evidence {label, detail}`) no distingue entre
 evidencia **mecánica** (la que ya existe hoy — `persistPreflightEvent`,
 generada por un chequeo real, no reclamada) y evidencia **manual/
 reclamada** (un caller diciendo "hice el security-signoff, confiá en
@@ -1284,7 +1284,7 @@ mí" sin que nada lo verifique). Tal como está diseñado, un agente podría
 auto-declarar `security-signoff` sin que nadie lo haya revisado
 realmente — exactamente el anti-patrón que HJ-019 rechaza.
 
-**Corrección a D26**: la ruta `POST /tasks/:id/evidence` exige
+**Corrección a D26**: la ruta `POST /packets/:id/evidence` exige
 `actorKind === 'human'` (mismo campo de D24) para labels que el work
 definition marque como `attestedBy: 'human'` en vez de mecánicos —
 evidencia que sólo un chequeo automático puede satisfacer
@@ -1622,7 +1622,7 @@ despacha a cada worker (`content/dispatch/worker.md`) tiene al agente
 corriendo la CLI directo en cada paso (`CLI task brief/start/note/move`,
 `CLI = node <WORKDIR>/bin/sv-playbook.js`) — la CLI muere entera con D6.
 Bajo la arquitectura nueva, cada uno de esos pasos (`task brief`→
-`GET /tasks/:id/brief`, `task start`→`POST /tasks/:id/start`, etc., ya
+`GET /packets/:id/brief`, `task start`→`POST /packets/:id/start`, etc., ya
 en la tabla de E5) se convierte en una llamada MCP en vez de un comando
 de shell. **Esto no es un detalle menor de E6** — es que la plantilla
 de dispatch completa (`content/dispatch/worker.md`, la que efectivamente
@@ -1719,7 +1719,7 @@ proceso. Se cierra IDEA-075 citando D24 como superset.
 IDEA-059 pedía una vía CLI para inspeccionar candidatos de review sin
 leer `.svp` SQLite directo (violación de PRINCIPLE-012 que un operador
 cometió en producción, GATE-012, 2026-07-15). Bajo D1/E5, esto se
-resuelve por construcción: `GET /tasks/:id` ya expone exactamente ese
+resuelve por construcción: `GET /packets/:id` (D55) ya expone exactamente ese
 detalle vía API — no hace falta ningún trabajo adicional, es un efecto
 colateral de la arquitectura nueva.
 
@@ -1739,6 +1739,37 @@ colateral de la arquitectura nueva.
   urgent)". Mismo patrón que IDEA-118 (D39/D44) — el backlog tiene más
   de una entrada con status desactualizado, confirma que IDEA-098 (el
   propio backlog reconoce este problema meta) sigue siendo cierto.
+
+#### D55 — Resuelto D51: el founder elige renombrar `/tasks/...` a `/packets/...` en E5
+
+Pregunta devuelta al founder tal como pedía IDEA-096 (no decidir de
+pasada). Respuesta: **renombrar**, con el razonamiento de que este es el
+momento más barato posible — la superficie de rutas se está escribiendo
+de cero en E5, nunca va a ser más fácil que ahora — y porque "packet" ya
+es el sustantivo dominante en código/DB (tabla `packets`, tipo
+`PacketDefinition`) mientras que "task" sólo sobrevivía por el nombre
+del comando CLI viejo, que de todos modos muere entero con D6.
+
+**Aplicado a E5**: todas las rutas `/tasks/...` de la tabla principal
+pasan a `/packets/...` (`POST /packets`, `GET /packets`, `GET
+/packets/:id`, `POST /packets/:id/start`, `/move`, `/takeover`,
+`/release`, `/notes`, `/evidence`, `/brief`, `/cost`). Mismo criterio
+para el sub-recurso dentro de sprints: `/sprints/:id/tasks` →
+`/sprints/:id/packets` (y su `DELETE .../packets/:packetId`, `PUT
+.../packets/order`). La columna "Reemplaza comando" de la tabla NO se
+toca — sigue documentando el comando CLI viejo (`task create`, etc.)
+como referencia histórica de qué reemplaza cada ruta, no como
+convención de nombres a seguir. El identificador de recurso interno ya
+se llamaba `packetId`/`PacketDefinition` en todos lados — el rename es
+puramente de superficie HTTP, no toca ninguna decisión de servicio
+(E2-E4) ni de schema.
+
+No se transcriben las ~20 filas de la tabla una por una acá (mismo
+criterio que las 13 rutas de `role` en E5: es transcripción mecánica,
+no una decisión nueva) — el patrón (`/tasks` → `/packets`,
+`/sprints/:id/tasks` → `/sprints/:id/packets`) es la parte que hacía
+falta decidir, y queda cerrado. Se aplica a la tabla de E5 en la misma
+pasada de edición que este hallazgo.
 
 ### El resto, clasificado (sin acción nueva — cada uno confirmado, no asumido)
 
@@ -1801,15 +1832,20 @@ está corriendo o no hay nada que consultar.
 
 ## Puntos abiertos / en discusión
 
-Ninguno de los identificados hasta esta pasada. Inventario completo
-(D1-D22), cruce contra la auditoría PRINCIPLE-016 previa (D23-D27),
-cruce contra los 16 PRINCIPLE-XXX completos (D28-D31), cruce contra el
-perfil de juicio humano completo HJ-001..HJ-021 (D32-D38), y cruce
-contra `cross-reference.md` (D39-D41) cierran todo lo identificado
-hasta acá — con la salvedad honesta de D38: todo sigue en estado
-`DECLARED`, ninguna de estas correcciones está implementada todavía.
-Puntos nuevos que surjan durante la implementación se agregan como
-entradas nuevas, no reabren lo ya cerrado sin evidencia nueva.
+Ninguno. Inventario completo (D1-D22), cruce contra la auditoría
+PRINCIPLE-016 previa (D23-D27), cruce contra los 16 PRINCIPLE-XXX
+completos (D28-D31), cruce contra el perfil de juicio humano completo
+HJ-001..HJ-021 (D32-D38), cruce contra `cross-reference.md` (D39-D41),
+inventario completo de los 39 documentos de `docs/`+`content/`
+(D46-D49), y barrido completo del backlog de ~130 IDEAs (D50-D54)
+cierran todo lo identificado. La única pregunta que había quedado
+formalmente abierta para el founder (D51: renombrar `/tasks`→`/packets`
+en E5) ya se respondió y se aplicó (D55) — no queda ninguna decisión
+pendiente de terceros. Salvedad honesta de D38 sigue vigente: todo
+sigue en estado `DECLARED`, ninguna de estas correcciones está
+implementada todavía. Puntos nuevos que surjan durante la
+implementación se agregan como entradas nuevas, no reabren lo ya
+cerrado sin evidencia nueva.
 
 ## Mapa de flujo de la app
 
@@ -1893,13 +1929,14 @@ documento — cuando una decisión acá cita un tramo del flujo, es trazable.
   worker.md` (la plantilla real de dispatch) necesita reescritura
   completa para MCP, entregable propio del port.
 - ~~Barrido completo de `docs/backlog.md` (~130 IDEAs)~~ → cerrado,
-  D50-D54: `/config` gana `PATCH` (D50); pregunta abierta real para el
-  founder sobre renombrar `/tasks`→`/packets` en E5 (D51, IDEA-096
-  pidió explícito no decidirlo de pasada); IDEA-075 superseded por D24;
-  IDEA-059 se resuelve gratis con D1; dos entradas del backlog
-  confirmadas stale (091, 033) — mismo patrón que 118. El resto
-  clasificado completo: resuelto/graduado/obsoleto sin acción, o
-  ortogonal y sigue válido sin tocar.
+  D50-D54: `/config` gana `PATCH` (D50); pregunta sobre renombrar
+  `/tasks`→`/packets` en E5 devuelta al founder (D51, IDEA-096 pidió
+  explícito no decidirlo de pasada) y **resuelta: renombrar** (D55,
+  tabla de E5 ya actualizada); IDEA-075 superseded por D24; IDEA-059 se
+  resuelve gratis con D1; dos entradas del backlog confirmadas stale
+  (091, 033) — mismo patrón que 118. El resto clasificado completo:
+  resuelto/graduado/obsoleto sin acción, o ortogonal y sigue válido sin
+  tocar.
 - ~~Cruce contra `cross-reference.md`~~ → cerrado, D39-D41: 3 bugs de
   integridad referencial en context/tasks nunca implementados (se
   arreglan en el port), bug de drift conocido en el bootstrap de
