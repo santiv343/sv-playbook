@@ -688,6 +688,15 @@ antes de llamar `compileContext` (mismo lugar donde hoy se arma
 `requiredRoles` es binario (está o no está); pasa a filtrar sólo contra
 roles con `status='active'`.
 
+**Mismo fix aplica a `check/catalog-closure.ts`'s `roleProfileViolations`
+(D44)** — exige perfil de ejecución habilitado para todo rol en
+`requiredRoles`, sin distinguir activo/dormido. Sin este fix, el gate
+de cierre de catálogo bloquea mecánicamente el modelo de 4 roles
+activos/5 dormidos: exigiría perfiles de ejecución para roles que por
+diseño nunca se despachan solos. Ambos fixes (`checkRoleCatalog` y
+`checkCatalogClosure`) se implementan juntos, mismo cambio de fondo:
+filtrar `requiredRoles` contra `role_activation.status='active'`.
+
 ### E2 — `src/decisions/service.ts`: firma exacta (rescate D6)
 
 Traducción directa de lo que hoy vive sólo en `cli/commands/decision.ts`
@@ -1397,6 +1406,70 @@ de `packets/document.types.ts` (no la función de parseo) — dependencia
 débil, sin relación con D22.4, `PacketDefinition` sigue siendo la forma
 que un packet tiene al crearse vía API, con o sin archivo de por medio.
 
+## Cruce contra `docs/backlog.md` completo (148 líneas, ~130 IDEAs) — leído entero, no de índice
+
+### Confirmaciones que no cambian nada, pero valen registrarse
+
+- **IDEA-093** (wrapper MCP del CLI) es la motivación original de E6 —
+  founder ya sospechaba en 2026-07-16 que agentes con sólo shell
+  subusan el CLI. Grounding evidence, no acción nueva.
+- **IDEA-106** (ruteo/dispatch de agentes) — founder pidió explícito NO
+  scopearlo todavía ("hay que analizarlo bien bien bien"). D1-D43 no lo
+  toca, y no debería — sigue diferido, correcto.
+- **IDEA-132** ya proponía, el 2026-07-21, casi textualmente la
+  reformulación de PRINCIPLE-012 que hicimos en D30 — pero aplicada más
+  ancho: no sólo estado operativo, TODO contenido autorado
+  (`content/*.md`, incluso `docs/backlog.md` mismo) debería vivir en DB
+  con autoría vía API, nunca archivo a mano. Confirma que D30 va en la
+  dirección correcta, y sugiere que cuando se implemente D28
+  (`instructions --write`) vale la pena evaluar si el pipeline de
+  contenido completo (no sólo principles/instructions) merece el mismo
+  tratamiento — no se decide acá, es una idea explícitamente marcada
+  "needs its own dedicated brainstorm".
+- **IDEA-132 también confirma D7 de forma independiente**: "**Decidido
+  2026-07-21**: deprecar `rebuild` enteramente... `backup`/`restore`
+  son el camino soportado de recuperación" — el proyecto ya había
+  llegado a la misma conclusión que D7 antes de esta sesión, sin que yo
+  lo supiera al decidir D7.
+
+### D44 — `checkCatalogClosure` bloquea mecánicamente D2/D32 si no se actualiza junto con `role_activation` (E1)
+
+De `IDEA-134` ("real, standing gap in this repo's own npm run verify
+right now"), verificado contra el código actual:
+`check/catalog-closure.ts`'s `roleProfileViolations` exige que **todo**
+rol en la tabla `requiredRoles` tenga un perfil de ejecución habilitado
+— binario, sin noción de "requerido pero dormido". Confirmado en vivo
+por el propio proyecto: agregar 2 perfiles reales (`implementer`,
+`reviewer`) rompió `npm run verify` project-wide porque los otros 7
+roles no tenían perfil.
+
+Bajo D2/D32 (4 roles activos, 5 dormidos absorbidos), si los 9 siguen
+en `requiredRoles` tal cual, este gate seguiría exigiendo perfiles de
+ejecución para los 5 dormidos — que por diseño nunca se despachan
+solos (su charter se pliega en el rol que los absorbe, E1). El gate y
+el mecanismo de roles dormidos se contradicen si no se conectan.
+
+**Fix requerido, parte de implementar E1**: `roleProfileViolations`
+(o `requiredRoleIds`) filtra contra `role_activation.status = 'active'`
+antes de exigir cobertura de perfil — un rol dormido no necesita perfil
+de ejecución propio, su capacidad vive en el perfil del rol que lo
+absorbe. Mismo patrón que D8's `requireActiveRoleCatalog`: la
+verificación de cierre del catálogo debe conocer la distinción
+activo/dormido, no tratarla como invisible.
+
+### Corrección menor: `docs/backlog.md` tiene un status desactualizado
+
+`IDEA-118` marca `validateSelectorReferences` como "**GRADUATED,
+confirmed shipped 2026-07-21**" — verificado contra el código real
+(`grep -rn "validateSelectorReferences" src/`): **no existe**.
+`context/repository.ts` sigue usando el set estático `KNOWN_ROLE_IDS`
+que D39 (bug #1) ya identificó como el problema. Tercera confirmación
+independiente del mismo bug (cross-reference.md 2026-07-19, D39, y
+ahora esto) — D39 queda más confirmado, no menos. El backlog.md propio
+del proyecto tiene al menos una entrada con status incorrecto — no se
+corrige acá (no es alcance de esta auditoría de arquitectura), sólo se
+deja registrado para quien retome `docs/backlog.md`.
+
 ## Puntos abiertos / en discusión
 
 Ninguno de los identificados hasta esta pasada. Inventario completo
@@ -1470,6 +1543,13 @@ documento — cuando una decisión acá cita un tramo del flujo, es trazable.
   `verification/` confirmado sin cambios (misma categoría que D20);
   `packets/` (parseo de `.md`) muere con el import, sólo sobreviven los
   tipos.
+- ~~Cruce contra `docs/backlog.md` completo (148L, ~130 IDEAs)~~ →
+  cerrado, D44: `checkCatalogClosure` bloquea mecánicamente D2/D32 si
+  no se actualiza junto con `role_activation` — fix ya incorporado a
+  E1. Confirmaciones sin acción: IDEA-093 (motiva E6), IDEA-106
+  (correctamente diferido, no tocar), IDEA-132 (valida D30 y confirma
+  D7 de forma independiente). `docs/backlog.md` tiene un status
+  desactualizado (IDEA-118) — D39 queda con tercera confirmación.
 - ~~Cruce contra `cross-reference.md`~~ → cerrado, D39-D41: 3 bugs de
   integridad referencial en context/tasks nunca implementados (se
   arreglan en el port), bug de drift conocido en el bootstrap de
