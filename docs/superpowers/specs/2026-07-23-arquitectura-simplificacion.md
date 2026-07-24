@@ -1622,6 +1622,35 @@ para MCP, no sólo "existe un mapeo 1:1" en abstracto. Mismo destino para
 propio — se anota como entregable explícito del port, no como detalle
 implícito de E6.
 
+### Cierre del inventario: los 6 archivos restantes, confirmados
+
+`content/instructions/cold-start.md` — confirma exacto el template que
+D28 ya documentaba, sin novedad. `content/cli.md` (307L, completo) tiene
+la misma clase de staleness que `how-it-works.md` (D47) — su sección de
+`serve` describe una versión mucho más simple y vieja
+(`GET /api/board`, polling cada 3s, "mutations never available") que el
+`server.ts` real (rutas de mutación reales + SSE, D17) — mismo hallazgo,
+no uno nuevo, se pliega dentro de D47. Confirma por tercera vez (junto
+a `anatomy.md` y `VISION.md`) que el backup remoto es "an adapter, not
+a core requirement" — refuerzo adicional de D22.2.
+
+Los 5 `content/roles/{format,implementer,orchestrator,planner,
+product,reviewer}.md` — confirmados en vivo, ahora sí leídos completos
+(no sólo confiados de `docs/backlog.md`): son la taxonomía vieja de 6
+roles con formato EXEC/JUDGMENT, superseded por el catálogo de 9 roles
+en DB (`generated-charters.md`), exactamente como IDEA-113/117 ya
+documentaron. Sin efecto sobre D1-D49. Un detalle real que sí aporta:
+`orchestrator.md` confirma POR TERCERA VEZ (junto a `dispatch/
+adapters.md` y `dispatch/worker.md`) la convención de worktree que D48
+corrigió — y `reviewer.md` (paso M3) confirma que HOY el worktree lo
+borra el reviewer a mano, como último paso manual de cerrar el packet
+— no es automático. Esto refuerza que D22.3 (el backend administra el
+ciclo de vida completo) es una mejora real sobre un paso manual
+existente, no una invención sin precedente.
+
+**Con esto, el inventario completo de los 39 documentos de `docs/` +
+`content/` está cerrado — los 39, uno por uno, confirmados leídos.**
+
 ## Puntos abiertos / en discusión
 
 Ninguno de los identificados hasta esta pasada. Inventario completo
