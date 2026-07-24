@@ -1358,6 +1358,45 @@ HJ-012 aplicado literalmente ("buscar la abstracción compartida... en
 vez de un parche local que deja la clase de falla abierta") — el mismo
 principio que ya usamos para encontrar D39/D40 en primer lugar.
 
+## Cruce contra `docs/codebase-guide/repository-map.md` — dos dominios nunca cerrados explícitamente
+
+D21 afirmó "queda cubierto el inventario completo original" pero
+`verification/` (5 archivos) nunca se nombró explícitamente en ningún D
+anterior, y `packets/` (4 archivos, parseo de documentos `.md`) nunca se
+evaluó contra las consecuencias de D7/D22.4. Corrección de precisión, no
+de fondo:
+
+### D42 — `verification/`: confirmado, misma categoría que D20, sin acción
+
+`verification/cli.ts` es el entry point real de `npm run verify`
+(`node dist/verification/cli.js`) — orquesta typecheck + lint + test +
+los gates de `check/` en una sola corrida. Misma categoría que D20
+(`check/`+`enforcement/`): build-time/CI, ortogonal a D1, sin cambios.
+
+### D43 — `packets/`: la lógica de parseo muere con el import; los tipos sobreviven
+
+`parsePacketDocument` (`packets/document.ts`) tiene 4 callers reales,
+verificados uno por uno:
+- `cli/commands/rebuild.ts`, `cli/commands/task.ts` (vía `importPacketFile`),
+  `tasks/service.ts` — todos mueren con D6/D7/D22.4 (CLI, rebuild,
+  import en lote, respectivamente).
+- `db/work-definition.migrations.ts` — uso real, pero es una migración
+  de datos legacy (compara un `.md` exportado contra la DB) — categoría
+  D19, sin acción, sigue existiendo para stores viejos que necesiten
+  esa migración puntual.
+- `cli/commands/check.ts` — valida `docs/packets/*.md` contra el
+  baseline de `playbook.config.json` (`fingerprints`). Bajo D7, sin
+  espejo `.md` nuevo, y con `docs/packets/` YA vacío en este propio
+  repo — este chequeo específico queda vacío, sin nada que validar. No
+  amerita esfuerzo de remoción activa (es barato dejarlo, no hace daño),
+  pero se anota como candidato de limpieza futura si el patrón se repite
+  en otros proyectos que adopten sv-playbook.
+
+`amend.ts`/`work-definitions.ts` sólo importan el TIPO `PacketDefinition`
+de `packets/document.types.ts` (no la función de parseo) — dependencia
+débil, sin relación con D22.4, `PacketDefinition` sigue siendo la forma
+que un packet tiene al crearse vía API, con o sin archivo de por medio.
+
 ## Puntos abiertos / en discusión
 
 Ninguno de los identificados hasta esta pasada. Inventario completo
@@ -1427,6 +1466,10 @@ documento — cuando una decisión acá cita un tramo del flujo, es trazable.
   distinguir verdad mecánica de resumen de agente (D36), clasificación
   build explícita (D37), recordatorio de madurez (D38). PR #207
   (HJ-022) sigue sin mergear — corrección de proceso pendiente.
+- ~~Cruce contra `repository-map.md`~~ → cerrado, D42-D43:
+  `verification/` confirmado sin cambios (misma categoría que D20);
+  `packets/` (parseo de `.md`) muere con el import, sólo sobreviven los
+  tipos.
 - ~~Cruce contra `cross-reference.md`~~ → cerrado, D39-D41: 3 bugs de
   integridad referencial en context/tasks nunca implementados (se
   arreglan en el port), bug de drift conocido en el bootstrap de
